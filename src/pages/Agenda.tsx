@@ -523,22 +523,24 @@ export default function Agenda() {
                    }) => <FormItem>
                          <FormLabel>Horário de Início</FormLabel>
                          <FormControl>
-                           <input 
-                             type="time" 
-                             step="300"
-                             list="time-options"
-                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                             {...field}
-                           />
-                           <datalist id="time-options">
-                             {Array.from({ length: 288 }, (_, i) => {
-                               const minutes = i * 5;
-                               const hours = Math.floor(minutes / 60);
-                               const mins = minutes % 60;
-                               const time = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-                               return <option key={time} value={time} />;
-                             })}
-                           </datalist>
+                           <div className="relative">
+                             <input 
+                               type="time" 
+                               step="300"
+                               list="time-options"
+                               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                               {...field}
+                             />
+                             <datalist id="time-options">
+                               {Array.from({ length: 288 }, (_, i) => {
+                                 const minutes = i * 5;
+                                 const hours = Math.floor(minutes / 60);
+                                 const mins = minutes % 60;
+                                 const time = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+                                 return <option key={time} value={time} />;
+                               })}
+                             </datalist>
+                           </div>
                          </FormControl>
                          <FormMessage />
                        </FormItem>} />
@@ -548,22 +550,24 @@ export default function Agenda() {
                    }) => <FormItem>
                          <FormLabel>Horário de Término (Opcional)</FormLabel>
                          <FormControl>
-                           <input 
-                             type="time" 
-                             step="300"
-                             list="time-options-end"
-                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                             {...field}
-                           />
-                           <datalist id="time-options-end">
-                             {Array.from({ length: 288 }, (_, i) => {
-                               const minutes = i * 5;
-                               const hours = Math.floor(minutes / 60);
-                               const mins = minutes % 60;
-                               const time = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-                               return <option key={time} value={time} />;
-                             })}
-                           </datalist>
+                           <div className="relative">
+                             <input 
+                               type="time" 
+                               step="300"
+                               list="time-options-end"
+                               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                               {...field}
+                             />
+                             <datalist id="time-options-end">
+                               {Array.from({ length: 288 }, (_, i) => {
+                                 const minutes = i * 5;
+                                 const hours = Math.floor(minutes / 60);
+                                 const mins = minutes % 60;
+                                 const time = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+                                 return <option key={time} value={time} />;
+                               })}
+                             </datalist>
+                           </div>
                          </FormControl>
                          <FormMessage />
                        </FormItem>} />
