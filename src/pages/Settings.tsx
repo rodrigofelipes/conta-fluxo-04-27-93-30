@@ -100,6 +100,68 @@ export default function Settings() {
     }
   };
 
+  // Alterar senha
+  const updatePassword = async () => {
+    if (!profileForm.newPassword || !profileForm.confirmPassword) {
+      toast({
+        title: "Erro",
+        description: "Preencha todos os campos de senha",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (profileForm.newPassword !== profileForm.confirmPassword) {
+      toast({
+        title: "Erro",
+        description: "As senhas não coincidem",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (profileForm.newPassword.length < 6) {
+      toast({
+        title: "Erro",
+        description: "A nova senha deve ter pelo menos 6 caracteres",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const { error } = await supabase.auth.updateUser({
+        password: profileForm.newPassword
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Senha alterada com sucesso!"
+      });
+
+      // Limpar os campos de senha
+      setProfileForm(prev => ({
+        ...prev,
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: ""
+      }));
+
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao alterar senha",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Aplicar gradiente e paleta de cores selecionados
   const handleGradientChange = (gradientName: string) => {
     applyGradient(gradientName);
@@ -276,7 +338,12 @@ export default function Settings() {
                 </div>
               </div>
               <div className="flex justify-end">
-                <Button variant="outline" disabled={loading}>
+                <Button 
+                  variant="outline" 
+                  disabled={loading || !profileForm.newPassword || !profileForm.confirmPassword}
+                  onClick={updatePassword}
+                >
+                  {loading && <RefreshCw className="mr-2 size-4 animate-spin" />}
                   Alterar Senha
                 </Button>
               </div>
