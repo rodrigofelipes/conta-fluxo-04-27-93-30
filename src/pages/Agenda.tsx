@@ -518,25 +518,25 @@ export default function Agenda() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <FormField control={form.control} name="horario" render={({
-                    field
-                  }) => <FormItem>
-                        <FormLabel>Horário de Início</FormLabel>
-                        <FormControl>
-                          <Input type="time" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>} />
+                     <FormField control={form.control} name="horario" render={({
+                     field
+                   }) => <FormItem>
+                         <FormLabel>Horário de Início</FormLabel>
+                         <FormControl>
+                           <Input type="time" step="300" {...field} />
+                         </FormControl>
+                         <FormMessage />
+                       </FormItem>} />
 
-                    <FormField control={form.control} name="horario_fim" render={({
-                    field
-                  }) => <FormItem>
-                        <FormLabel>Horário de Término (Opcional)</FormLabel>
-                        <FormControl>
-                          <Input type="time" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>} />
+                     <FormField control={form.control} name="horario_fim" render={({
+                     field
+                   }) => <FormItem>
+                         <FormLabel>Horário de Término (Opcional)</FormLabel>
+                         <FormControl>
+                           <Input type="time" step="300" {...field} />
+                         </FormControl>
+                         <FormMessage />
+                       </FormItem>} />
                   </div>
 
                   <FormField control={form.control} name="local" render={({
