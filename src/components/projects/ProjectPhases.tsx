@@ -1,0 +1,576 @@
+import { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
+import { Plus, Edit, Trash2, DollarSign, CheckCircle, Clock, AlertCircle, UserPlus, User } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
+import { PhaseAssignmentDialog } from "./PhaseAssignmentDialog";
+
+interface ProjectPhase {
+  id: string;
+  project_id: string;
+  phase_name: string;
+  description?: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  order_index: number;
+  value_percentage: number;
+  value_amount: number;
+  allocated_hours: number;
+  executed_hours: number;
+  assigned_to?: string;
+  supervised_by?: string;
+  assigned_profile?: {
+    name: string;
+  };
+  supervisor_profile?: {
+    name: string;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+interface ProjectPhasesProps {
+  projectId: string;
+  contractedValue: number;
+  contractedHours: number;
+  onPhasesChange?: () => void;
+}
+
+const statusLabels = {
+  pending: "Pendente",
+  in_progress: "Em Andamento", 
+  completed: "Concluída",
+  cancelled: "Cancelada"
+};
+
+const statusColors = {
+  pending: "bg-yellow-100 text-yellow-800 border-yellow-200",
+  in_progress: "bg-blue-100 text-blue-800 border-blue-200",
+  completed: "bg-green-100 text-green-800 border-green-200",
+  cancelled: "bg-red-100 text-red-800 border-red-200"
+};
+
+const statusIcons = {
+  pending: Clock,
+  in_progress: AlertCircle,
+  completed: CheckCircle,
+  cancelled: Trash2
+};
+
+export function ProjectPhases({ projectId, contractedValue, contractedHours, onPhasesChange }: ProjectPhasesProps) {
+  const [phases, setPhases] = useState<ProjectPhase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingPhase, setEditingPhase] = useState<ProjectPhase | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [selectedPhaseForAssignment, setSelectedPhaseForAssignment] = useState<ProjectPhase | null>(null);
+  const [isAssignmentDialogOpen, setIsAssignmentDialogOpen] = useState(false);
+
+  const [formData, setFormData] = useState({
+    phase_name: "",
+    description: "",
+    status: "pending" as ProjectPhase['status'],
+    allocated_hours: 0
+  });
+
+  // Calcular valor por hora
+  const valuePerHour = contractedHours > 0 ? contractedValue / contractedHours : 0;
+
+  const loadPhases = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('project_phases')
+        .select(`
+          *,
+          assigned_profile:profiles!assigned_to(name),
+          supervisor_profile:profiles!supervised_by(name)
+        `)
+        .eq('project_id', projectId)
+        .order('order_index', { ascending: true });
+
+      if (error) throw error;
+
+      // Calcular valores baseado nas horas alocadas
+      const phasesWithValues = (data || []).map(phase => ({
+        ...phase,
+        status: phase.status as ProjectPhase['status'],
+        value_amount: phase.allocated_hours * valuePerHour,
+        value_percentage: contractedHours > 0 ? (phase.allocated_hours / contractedHours) * 100 : 0,
+        assigned_profile: Array.isArray(phase.assigned_profile) ? phase.assigned_profile[0] : phase.assigned_profile,
+        supervisor_profile: Array.isArray(phase.supervisor_profile) ? phase.supervisor_profile[0] : phase.supervisor_profile
+      }));
+
+      setPhases(phasesWithValues);
+    } catch (error) {
+      console.error('Erro ao carregar fases:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar as fases do projeto",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPhases();
+  }, [projectId, contractedValue, contractedHours]);
+
+  const resetForm = () => {
+    setFormData({
+      phase_name: "",
+      description: "",
+      status: "pending",
+      allocated_hours: 0
+    });
+    setEditingPhase(null);
+  };
+
+  const handleOpenDialog = (phase?: ProjectPhase) => {
+    if (phase) {
+      setEditingPhase(phase);
+      setFormData({
+        phase_name: phase.phase_name,
+        description: phase.description || "",
+        status: phase.status,
+        allocated_hours: phase.allocated_hours
+      });
+    } else {
+      resetForm();
+    }
+    setIsDialogOpen(true);
+  };
+
+  const handleSavePhase = async () => {
+    if (!formData.phase_name.trim()) {
+      toast({
+        title: "Campo obrigatório",
+        description: "Nome da fase é obrigatório",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Verificar se a soma das horas não excede as horas contratuais
+    const totalAllocatedHours = phases
+      .filter(p => p.id !== editingPhase?.id)
+      .reduce((sum, p) => sum + p.allocated_hours, 0) + formData.allocated_hours;
+
+    if (totalAllocatedHours > contractedHours) {
+      toast({
+        title: "Horas inválidas",
+        description: `A soma das horas não pode exceder ${contractedHours}h. Atual: ${totalAllocatedHours}h`,
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (formData.allocated_hours <= 0) {
+      toast({
+        title: "Campo obrigatório",
+        description: "Horas alocadas deve ser maior que zero",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Usuário não autenticado');
+
+      const calculatedPercentage = contractedHours > 0 ? (formData.allocated_hours / contractedHours) * 100 : 0;
+
+      if (editingPhase) {
+        // Atualizar fase existente
+        const { error } = await supabase
+          .from('project_phases')
+          .update({
+            phase_name: formData.phase_name,
+            description: formData.description,
+            status: formData.status,
+            allocated_hours: formData.allocated_hours,
+            value_percentage: calculatedPercentage
+          })
+          .eq('id', editingPhase.id);
+
+        if (error) throw error;
+      } else {
+        // Criar nova fase
+        const nextOrderIndex = Math.max(...phases.map(p => p.order_index), 0) + 1;
+        
+        const { error } = await supabase
+          .from('project_phases')
+          .insert({
+            project_id: projectId,
+            phase_name: formData.phase_name,
+            description: formData.description,
+            status: formData.status,
+            allocated_hours: formData.allocated_hours,
+            value_percentage: calculatedPercentage,
+            order_index: nextOrderIndex,
+            created_by: userData.user.id
+          });
+
+        if (error) throw error;
+      }
+
+      toast({
+        title: "Sucesso",
+        description: editingPhase ? "Fase atualizada com sucesso" : "Fase criada com sucesso"
+      });
+
+      setIsDialogOpen(false);
+      resetForm();
+      loadPhases();
+      onPhasesChange?.();
+    } catch (error) {
+      console.error('Erro ao salvar fase:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível salvar a fase",
+        variant: "destructive"
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeletePhase = async (phaseId: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta fase?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('project_phases')
+        .delete()
+        .eq('id', phaseId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Fase excluída com sucesso"
+      });
+
+      loadPhases();
+      onPhasesChange?.();
+    } catch (error) {
+      console.error('Erro ao excluir fase:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível excluir a fase",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const openAssignmentDialog = (phase: ProjectPhase) => {
+    setSelectedPhaseForAssignment(phase);
+    setIsAssignmentDialogOpen(true);
+  };
+
+  const handleAssignmentUpdate = () => {
+    loadPhases();
+    setSelectedPhaseForAssignment(null);
+  };
+
+  const totalAllocatedHours = phases.reduce((sum, phase) => sum + phase.allocated_hours, 0);
+  const remainingHours = contractedHours - totalAllocatedHours;
+  const totalAllocatedPercentage = contractedHours > 0 ? (totalAllocatedHours / contractedHours) * 100 : 0;
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Fases do Projeto</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="animate-pulse space-y-4">
+            <div className="h-4 bg-muted rounded w-3/4"></div>
+            <div className="h-20 bg-muted rounded"></div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="w-5 h-5" />
+            Fases do Projeto
+          </CardTitle>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={() => handleOpenDialog()} size="sm">
+                <Plus className="w-4 h-4 mr-2" />
+                Nova Fase
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>
+                  {editingPhase ? 'Editar Fase' : 'Nova Fase'}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="phase_name">Nome da Fase *</Label>
+                  <Input
+                    id="phase_name"
+                    value={formData.phase_name}
+                    onChange={(e) => setFormData({...formData, phase_name: e.target.value})}
+                    placeholder="Ex: Projeto Executivo"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="description">Descrição</Label>
+                  <Textarea
+                    id="description"
+                    value={formData.description}
+                    onChange={(e) => setFormData({...formData, description: e.target.value})}
+                    placeholder="Descrição detalhada da fase"
+                    rows={3}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="status">Status</Label>
+                  <Select 
+                    value={formData.status} 
+                    onValueChange={(value) => setFormData({...formData, status: value as ProjectPhase['status']})}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(statusLabels).map(([key, label]) => (
+                        <SelectItem key={key} value={key}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="allocated_hours">Horas Alocadas *</Label>
+                  <Input
+                    id="allocated_hours"
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={formData.allocated_hours}
+                    onChange={(e) => setFormData({...formData, allocated_hours: Number(e.target.value)})}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Valor: R$ {(formData.allocated_hours * valuePerHour).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Restante disponível: {remainingHours.toFixed(1)}h de {contractedHours}h
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Valor por hora: R$ {valuePerHour.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+
+                <div className="flex gap-2 pt-4">
+                  <Button 
+                    onClick={handleSavePhase} 
+                    disabled={saving}
+                    className="flex-1"
+                  >
+                    {saving ? "Salvando..." : "Salvar"}
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setIsDialogOpen(false)}
+                    disabled={saving}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Resumo de Distribuição */}
+        <div className="bg-muted/50 p-4 rounded-lg">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm font-medium">Distribuição por Horas</span>
+            <span className="text-sm text-muted-foreground">
+              {totalAllocatedHours.toFixed(1)}h de {contractedHours}h
+            </span>
+          </div>
+          <Progress value={totalAllocatedPercentage} className="h-2" />
+          <div className="flex justify-between text-xs text-muted-foreground mt-1">
+            <span>R$ {(totalAllocatedHours * valuePerHour).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+            <span>R$ {contractedValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+          </div>
+          <div className="text-xs text-muted-foreground mt-1">
+            Valor por hora: R$ {valuePerHour.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </div>
+        </div>
+
+        {/* Lista de Fases */}
+        {phases.length > 0 ? (
+          <div className="space-y-3">
+            {phases.map((phase, index) => {
+              const StatusIcon = statusIcons[phase.status];
+              return (
+                <div 
+                  key={phase.id}
+                  className="border rounded-lg p-4 hover:bg-muted/30 transition-colors"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="font-medium">{index + 1}. {phase.phase_name}</span>
+                        <Badge variant="outline" className={statusColors[phase.status]}>
+                          <StatusIcon className="w-3 h-3 mr-1" />
+                          {statusLabels[phase.status]}
+                        </Badge>
+                      </div>
+                      
+                      {phase.description && (
+                        <p className="text-sm text-muted-foreground mb-2">
+                          {phase.description}
+                        </p>
+                      )}
+                      
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-4 text-sm">
+                          <span className="text-muted-foreground">
+                            {phase.allocated_hours}h ({phase.value_percentage.toFixed(1)}%)
+                          </span>
+                          <span className="font-medium text-primary">
+                            R$ {phase.value_amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        
+                        {/* Assignment info */}
+                        <div className="flex items-center gap-4 text-xs">
+                          {phase.assigned_profile ? (
+                            <div className="flex items-center gap-1 text-green-600">
+                              <User className="h-3 w-3" />
+                              <span>Responsável: {phase.assigned_profile.name}</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 text-muted-foreground">
+                              <UserPlus className="h-3 w-3" />
+                              <span>Não atribuída</span>
+                            </div>
+                          )}
+                          {phase.supervisor_profile && (
+                            <div className="flex items-center gap-1 text-blue-600">
+                              <span>Supervisor: {phase.supervisor_profile.name}</span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Progress bar if executed_hours exists */}
+                        {phase.executed_hours !== undefined && (
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>Progresso</span>
+                              <span>{phase.executed_hours.toFixed(1)}h / {phase.allocated_hours}h</span>
+                            </div>
+                            <div className="w-full bg-secondary rounded-full h-1.5">
+                              <div 
+                                className={`h-1.5 rounded-full transition-all duration-300 ${
+                                  phase.executed_hours > phase.allocated_hours 
+                                    ? 'bg-red-500' 
+                                    : 'bg-primary'
+                                }`}
+                                style={{ 
+                                  width: `${Math.min((phase.executed_hours / phase.allocated_hours) * 100, 100)}%` 
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-1">
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => openAssignmentDialog(phase)}
+                        title="Atribuir responsável"
+                      >
+                        <UserPlus className="w-4 h-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleOpenDialog(phase)}
+                        title="Editar fase"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleDeletePhase(phase.id)}
+                        className="text-destructive hover:text-destructive"
+                        title="Excluir fase"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <DollarSign className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <h3 className="font-medium mb-2">Nenhuma fase criada</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Divida seu projeto em fases para melhor controle financeiro
+            </p>
+            <Button onClick={() => handleOpenDialog()} size="sm">
+              <Plus className="w-4 h-4 mr-2" />
+              Criar Primeira Fase
+            </Button>
+          </div>
+        )}
+      </CardContent>
+
+      {/* Assignment Dialog */}
+      <PhaseAssignmentDialog
+        isOpen={isAssignmentDialogOpen}
+        onClose={() => {
+          setIsAssignmentDialogOpen(false);
+          setSelectedPhaseForAssignment(null);
+        }}
+        phase={selectedPhaseForAssignment ? {
+          id: selectedPhaseForAssignment.id,
+          phase_name: selectedPhaseForAssignment.phase_name,
+          allocated_hours: selectedPhaseForAssignment.allocated_hours,
+          executed_hours: selectedPhaseForAssignment.executed_hours || 0,
+          status: selectedPhaseForAssignment.status,
+          assigned_to: selectedPhaseForAssignment.assigned_to || '',
+          supervised_by: selectedPhaseForAssignment.supervised_by || ''
+        } : null}
+        onAssignmentUpdate={handleAssignmentUpdate}
+      />
+    </Card>
+  );
+}

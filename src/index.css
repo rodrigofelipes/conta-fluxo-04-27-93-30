@@ -1,0 +1,347 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  /* Global fluid scaling system */
+  html {
+    /* Fluid font-size: 16px at 1024px, scales down to 12px at 320px */
+    font-size: clamp(0.75rem, 0.5rem + 1.25vw, 1rem);
+    /* CSS custom property for precise scaling calculations */
+    --ui-scale: clamp(0.75, 0.5 + 1.25vw / 16, 1);
+  }
+
+  :root {
+    /* Cores base com tom creme suave */
+    --background: 41 7% 96%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 41 10% 98%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 41 10% 98%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    /* Brand tokens mantidos */
+    --brand: 41 94% 56%;
+    --brand-2: 45 95% 70%;
+    --brand-3: 35 90% 45%;
+
+    --primary: var(--brand);
+    --primary-foreground: 210 40% 98%;
+
+    /* Secondary com tons creme suaves */
+    --secondary: 41 12% 94%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    /* Muted colors em tom creme */
+    --muted: 41 8% 92%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 41 10% 90%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --priority-medium: 45 93% 47%;
+    --priority-medium-foreground: 0 0% 100%;
+    --priority-low: 142 76% 36%;
+    --priority-low-foreground: 0 0% 100%;
+
+    /* Task status colors */
+    --status-pending: 0 84% 60%;
+    --status-pending-foreground: 0 0% 100%;
+    --status-in-progress: 217 91% 60%;
+    --status-in-progress-foreground: 0 0% 100%;
+    --status-completed: 142 76% 36%;
+    --status-completed-foreground: 0 0% 100%;
+
+    /* Role colors */
+    --role-supervisor: 217 91% 60%;
+    --role-supervisor-foreground: 0 0% 100%;
+    --role-coordenador: 142 70% 45%;
+    --role-coordenador-foreground: 0 0% 100%;
+
+    /* Borders em tom creme */
+    --border: 41 15% 85%;
+    --input: 41 12% 88%;
+    --ring: var(--brand);
+
+    --radius: 0.5rem;
+
+    /* Sidebar com tons creme */
+    --sidebar-background: 41 8% 95%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: var(--brand);
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 41 10% 88%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 41 15% 80%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Custom background */
+    --custom-bg: 41 7% 96%;
+
+  /* Gradientes atualizados com tons creme */
+  --gradient-primary: linear-gradient(135deg, hsl(41 88% 52%) 0%, hsl(45 85% 65%) 40%, hsl(41 88% 52%) 80%, hsl(35 82% 42%) 100%);
+  --gradient-subtle: linear-gradient(180deg, hsl(41 7% 96%) 0%, hsl(41 8% 95%) 100%);
+  --gradient-support: linear-gradient(135deg, hsl(41 88% 52%) 0%, hsl(45 85% 65%) 70%, hsl(35 82% 42%) 100%);
+  --shadow-elevated: 0 4px 8px -4px hsl(var(--brand) / 0.15);
+  --shadow-glow: 0 0 6px hsl(var(--brand-2) / 0.20);
+  --shadow-message: 0 2px 4px -1px hsl(var(--brand) / 0.10);
+  --shadow-chat: 0 1px 2px -1px hsl(0 0% 0% / 0.06);
+  }
+
+  .dark {
+    /* Background suave, não muito escuro */
+    --background: 220 13% 18%;
+    --foreground: 41 20% 92%;
+
+    /* Cards com tom levemente mais claro que o background */
+    --card: 220 14% 22%;
+    --card-foreground: 41 15% 88%;
+
+    --popover: 220 14% 22%;
+    --popover-foreground: 41 15% 88%;
+
+    /* Mantém as cores de brand douradas para contraste harmonioso */
+    --brand: 41 86% 58%;
+    --brand-2: 45 88% 72%;
+    --brand-3: 35 82% 48%;
+
+    --primary: var(--brand);
+    --primary-foreground: 220 15% 15%;
+
+    /* Secondary com tons suaves */
+    --secondary: 220 12% 25%;
+    --secondary-foreground: 41 15% 85%;
+
+    /* Muted em tons harmoniosos */
+    --muted: 220 10% 28%;
+    --muted-foreground: 41 8% 65%;
+
+    --accent: 220 12% 32%;
+    --accent-foreground: 41 15% 88%;
+
+    --destructive: 0 75% 55%;
+    --destructive-foreground: 210 20% 95%;
+
+    /* Cores de prioridade ajustadas para dark mode */
+    --priority-medium: 45 85% 52%;
+    --priority-medium-foreground: 220 15% 15%;
+    --priority-low: 142 65% 42%;
+    --priority-low-foreground: 220 15% 15%;
+
+    /* Task status colors para dark mode */
+    --status-pending: 0 75% 58%;
+    --status-pending-foreground: 210 20% 95%;
+    --status-in-progress: 217 82% 65%;
+    --status-in-progress-foreground: 210 20% 95%;
+    --status-completed: 142 65% 42%;
+    --status-completed-foreground: 210 20% 95%;
+
+    /* Role colors para dark mode */
+    --role-supervisor: 217 82% 65%;
+    --role-supervisor-foreground: 210 20% 95%;
+    --role-coordenador: 142 65% 48%;
+    --role-coordenador-foreground: 210 20% 95%;
+
+    /* Borders suaves */
+    --border: 220 15% 35%;
+    --input: 220 12% 30%;
+    --ring: var(--brand);
+
+    /* Sidebar harmonizada */
+    --sidebar-background: 220 12% 20%;
+    --sidebar-foreground: 41 15% 85%;
+    --sidebar-primary: var(--brand);
+    --sidebar-primary-foreground: 220 15% 15%;
+    --sidebar-accent: 220 12% 28%;
+    --sidebar-accent-foreground: 41 15% 88%;
+    --sidebar-border: 220 15% 32%;
+    --sidebar-ring: var(--brand);
+
+    /* Custom background para dark mode */
+    --custom-bg: 220 13% 18%;
+
+    /* Gradientes ajustados para dark mode */
+    --gradient-primary: linear-gradient(135deg, hsl(41 86% 58%) 0%, hsl(45 88% 72%) 40%, hsl(41 86% 58%) 80%, hsl(35 82% 48%) 100%);
+    --gradient-subtle: linear-gradient(180deg, hsl(220 13% 18%) 0%, hsl(220 14% 22%) 100%);
+    --gradient-support: linear-gradient(135deg, hsl(41 86% 58%) 0%, hsl(45 88% 72%) 70%, hsl(35 82% 48%) 100%);
+    --shadow-elevated: 0 4px 8px -4px hsl(0 0% 0% / 0.25);
+    --shadow-glow: 0 0 6px hsl(var(--brand-2) / 0.15);
+    --shadow-message: 0 2px 4px -1px hsl(var(--brand) / 0.08);
+    --shadow-chat: 0 1px 2px -1px hsl(0 0% 0% / 0.12);
+  }
+}
+
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1), 
+                color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  /* Unified smooth transitions for theme changes */
+  :root {
+    transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  * {
+    transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1), 
+                border-color 150ms cubic-bezier(0.4, 0, 0.2, 1), 
+                color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 150ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+
+  /* Prevent layout shifts during theme transitions */
+  *,
+  *::before,
+  *::after {
+    transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, text-decoration-color, outline-color;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+@layer components {
+  .card-elevated { 
+    box-shadow: var(--shadow-elevated); 
+  }
+  .glow { 
+    box-shadow: var(--shadow-glow); 
+  }
+  .bg-app-gradient { 
+    background-image: var(--gradient-subtle); 
+  }
+  .btn-hero { 
+    background-image: var(--gradient-primary); 
+    color: hsl(var(--primary-foreground)); 
+    border: 1px solid hsl(var(--ring) / 0.2); 
+    animation: gradient-pan 12s ease-in-out infinite; 
+    background-size: 200% 200%;
+  }
+  .btn-hero-static { 
+    background-image: var(--gradient-primary); 
+    color: hsl(var(--primary-foreground)); 
+    border: 1px solid hsl(var(--ring) / 0.2);
+  }
+  .btn-soft { 
+    background-color: hsl(var(--secondary)); 
+    color: hsl(var(--secondary-foreground)); 
+    border: 1px solid hsl(var(--border));
+  }
+  .chat-container { 
+    box-shadow: var(--shadow-chat); 
+    border: 1px solid hsl(var(--border) / 0.5); 
+    backdrop-filter: blur(10px);
+  }
+  .message-bubble { 
+    box-shadow: var(--shadow-message);
+  }
+  .support-header { 
+    background: var(--gradient-support);
+  }
+  .contact-item { }
+  .pulse-dot { 
+    animation: pulse-dot 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; 
+  }
+  
+  /* Proportional scaling utilities */
+  .proportional-scaler {
+    transform-origin: top left;
+    transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  /* Apply proportional scaling only on very small screens where fluid scaling isn't enough */
+  @media (max-width: 640px) {
+    .proportional-scaler {
+      transform: scale(var(--ui-scale));
+    }
+  }
+  
+  /* Responsive utilities */
+  .responsive-padding { 
+    @apply px-3 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4; 
+  }
+  .responsive-padding-sm { 
+    @apply px-2 py-1 sm:px-3 sm:py-2 md:px-4 md:py-3; 
+  }
+  .responsive-padding-lg { 
+    @apply px-4 py-3 sm:px-6 sm:py-4 md:px-8 md:py-6; 
+  }
+  .responsive-margin { 
+    @apply m-2 sm:m-3 md:m-4; 
+  }
+  .responsive-gap { 
+    @apply gap-2 sm:gap-3 md:gap-4; 
+  }
+  .responsive-gap-sm { 
+    @apply gap-1 sm:gap-2 md:gap-3; 
+  }
+  .responsive-grid { 
+    @apply grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4; 
+  }
+  .responsive-grid-2 { 
+    @apply grid-cols-1 md:grid-cols-2; 
+  }
+  .responsive-grid-3 { 
+    @apply grid-cols-1 sm:grid-cols-2 lg:grid-cols-3; 
+  }
+  .responsive-text { 
+    @apply text-responsive-base; 
+  }
+  .responsive-text-sm { 
+    @apply text-responsive-sm; 
+  }
+  .responsive-text-lg { 
+    @apply text-responsive-lg; 
+  }
+  .responsive-text-xl { 
+    @apply text-responsive-xl; 
+  }
+  .responsive-text-2xl { 
+    @apply text-responsive-2xl; 
+  }
+  .responsive-text-3xl { 
+    @apply text-responsive-3xl; 
+  }
+}
+
+@layer utilities {
+  .animate-gradient-pan { animation: gradient-pan 12s ease-in-out infinite; background-size: 200% 200%; }
+}
+
+@keyframes gradient-pan {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes bounce-in {
+  0% { transform: scale(0.9); opacity: 0; }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
