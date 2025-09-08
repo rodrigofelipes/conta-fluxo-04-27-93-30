@@ -522,25 +522,9 @@ export default function Agenda() {
                     field
                   }) => <FormItem>
                         <FormLabel>Horário de Início</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selecione o horário" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {Array.from({ length: 288 }, (_, i) => {
-                              const hour = Math.floor(i / 12);
-                              const minute = (i % 12) * 5;
-                              const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-                              return (
-                                <SelectItem key={timeString} value={timeString}>
-                                  {timeString}
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectContent>
-                        </Select>
+                        <FormControl>
+                          <Input type="time" {...field} />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>} />
 
@@ -548,25 +532,9 @@ export default function Agenda() {
                     field
                   }) => <FormItem>
                         <FormLabel>Horário de Término (Opcional)</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selecione o horário" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {Array.from({ length: 288 }, (_, i) => {
-                              const hour = Math.floor(i / 12);
-                              const minute = (i % 12) * 5;
-                              const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-                              return (
-                                <SelectItem key={timeString} value={timeString}>
-                                  {timeString}
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectContent>
-                        </Select>
+                        <FormControl>
+                          <Input type="time" {...field} />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>} />
                   </div>
