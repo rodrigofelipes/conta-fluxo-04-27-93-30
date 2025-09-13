@@ -79,15 +79,24 @@ export function PhaseFinancialAnalysis({
         // Fase com prejuízo (sempre mostrar se excedeu as horas)
         const lossData = await calculatePhaseLoss(phase.id);
         if (lossData) {
-          phaseData.loss = lossData;
+          // Garantir que o valor/hora nunca seja zero
+          const excessHours = lossData.excess_hours ?? (phase.executed_hours - phase.allocated_hours);
+          const effectiveHourly = (hourlyRate && hourlyRate > 0) ? hourlyRate : (lossData.hourly_value || 150);
+          phaseData.loss = {
+            excess_hours: excessHours,
+            hourly_value: effectiveHourly,
+            total_loss: excessHours * effectiveHourly,
+            loss_percentage: (excessHours / phase.allocated_hours) * 100,
+          };
         } else {
           // Cálculo manual se a RPC não estiver disponível
           const excessHours = phase.executed_hours - phase.allocated_hours;
+          const effectiveHourly = (hourlyRate && hourlyRate > 0) ? hourlyRate : 150;
           phaseData.loss = {
             excess_hours: excessHours,
-            hourly_value: phaseHourlyRate,
-            total_loss: excessHours * phaseHourlyRate,
-            loss_percentage: (excessHours / phase.allocated_hours) * 100
+            hourly_value: effectiveHourly,
+            total_loss: excessHours * effectiveHourly,
+            loss_percentage: (excessHours / phase.allocated_hours) * 100,
           };
         }
       } else if (phase.executed_hours < phase.allocated_hours && phase.status === 'completed') {
