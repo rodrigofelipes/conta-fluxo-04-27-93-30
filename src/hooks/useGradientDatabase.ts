@@ -187,40 +187,55 @@ export function useGradientDatabase() {
   const { toast } = useToast()
   const [selectedGradient, setSelectedGradient] = useState("Dourado Atual")
 
-  // Load gradient from database when user logs in
+  // Load gradient from localStorage first, then database
   useEffect(() => {
     const loadUserGradient = async () => {
-      if (!user?.id) return
+      // Always try to load from localStorage first for immediate theme application
+      const savedGradient = localStorage.getItem('user-gradient');
+      if (savedGradient) {
+        setSelectedGradient(savedGradient);
+        applyGradient(savedGradient, false);
+      }
+
+      if (!user?.id) {
+        // Apply default gradient if no user and no saved gradient
+        if (!savedGradient) {
+          applyGradient("Dourado Atual", false);
+          localStorage.setItem('user-gradient', 'Dourado Atual');
+        }
+        return;
+      }
 
       try {
         const { data: profile } = await supabase
           .from('profiles')
           .select('gradient')
           .eq('user_id', user.id)
-          .single()
+          .single();
 
         if (profile?.gradient) {
-          setSelectedGradient(profile.gradient)
-          applyGradient(profile.gradient, false)
+          setSelectedGradient(profile.gradient);
+          applyGradient(profile.gradient, false);
+          // Save to localStorage for future immediate loading
+          localStorage.setItem('user-gradient', profile.gradient);
         } else {
-          // Se não há gradiente salvo, aplicar o padrão
-          applyGradient("Dourado Atual", false)
+          // Apply default gradient if no gradient found in database
+          if (!savedGradient) {
+            applyGradient("Dourado Atual", false);
+            localStorage.setItem('user-gradient', 'Dourado Atual');
+          }
         }
       } catch (error) {
-        console.error('Erro ao carregar gradiente:', error)
-        // Em caso de erro, aplicar o gradiente padrão
-        applyGradient("Dourado Atual", false)
+        console.error('Erro ao carregar gradiente:', error);
+        // In case of error, apply default if no saved gradient
+        if (!savedGradient) {
+          applyGradient("Dourado Atual", false);
+          localStorage.setItem('user-gradient', 'Dourado Atual');
+        }
       }
-    }
+    };
 
-    loadUserGradient()
-  }, [user?.id])
-
-  // Aplicar gradiente padrão na inicialização se não houver usuário
-  useEffect(() => {
-    if (!user?.id) {
-      applyGradient("Dourado Atual", false)
-    }
+    loadUserGradient();
   }, [user?.id])
 
   // Apply gradient and save to database
@@ -246,6 +261,9 @@ export function useGradientDatabase() {
     root.style.setProperty('--sidebar-ring', selectedGradientOption.colors.ring)
     
     setSelectedGradient(gradientName)
+    
+    // Always save to localStorage for immediate loading
+    localStorage.setItem('user-gradient', gradientName);
     
     if (saveToDb && user?.id) {
       try {
