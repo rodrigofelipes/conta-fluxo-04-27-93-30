@@ -8,11 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { Plus, Edit, Trash2, DollarSign, CheckCircle, Clock, AlertCircle, UserPlus, User } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Plus, Edit, Trash2, DollarSign, CheckCircle, Clock, AlertCircle, UserPlus, User, FileText, TrendingUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { PhaseAssignmentDialog } from "./PhaseAssignmentDialog";
-import { PhaseFinancialAnalysis } from "./PhaseFinancialAnalysis";
+import { ProjectBankOfHours } from "./ProjectBankOfHours";
 
 interface ProjectPhase {
   id: string;
@@ -305,13 +306,27 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <DollarSign className="w-5 h-5" />
+    <div className="space-y-6">
+      <Tabs defaultValue="phases" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="phases" className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
             Fases do Projeto
-          </CardTitle>
+          </TabsTrigger>
+          <TabsTrigger value="bank-hours" className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Banco de Horas
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="phases">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="w-5 h-5" />
+                  Fases do Projeto
+                </CardTitle>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={() => handleOpenDialog()} size="sm">
@@ -552,7 +567,18 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
             </Button>
           </div>
         )}
-      </CardContent>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="bank-hours">
+          <ProjectBankOfHours 
+            projectId={projectId}
+            contractedValue={contractedValue}
+            contractedHours={contractedHours}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Assignment Dialog */}
       <PhaseAssignmentDialog
@@ -572,13 +598,6 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
         } : null}
         onAssignmentUpdate={handleAssignmentUpdate}
       />
-
-      {/* Análise Financeira das Fases */}
-      <PhaseFinancialAnalysis 
-        projectId={projectId}
-        contractedValue={contractedValue}
-        contractedHours={contractedHours}
-      />
-    </Card>
+    </div>
   );
 }

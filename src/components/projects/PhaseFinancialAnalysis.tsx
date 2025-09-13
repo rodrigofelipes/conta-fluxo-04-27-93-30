@@ -61,8 +61,8 @@ export function PhaseFinancialAnalysis({
     const results: PhaseFinancialData[] = [];
 
     for (const phase of phases) {
-      const phaseValue = (contractedValue * phase.value_percentage) / 100;
-      const phaseHourlyRate = phaseValue / phase.allocated_hours;
+      // Usar o valor por hora baseado no contrato, não no valor da fase
+      const phaseHourlyRate = hourlyRate;
       
       let phaseData: PhaseFinancialData = {
         id: phase.id,
