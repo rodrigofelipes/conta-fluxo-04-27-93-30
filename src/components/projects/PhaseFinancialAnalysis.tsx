@@ -54,6 +54,8 @@ export function PhaseFinancialAnalysis({
     ? contractedValue / contractedHours 
     : 150; // Valor padrão de R$ 150/hora
 
+  console.log('PhaseFinancialAnalysis - hourlyRate:', hourlyRate, 'contractedValue:', contractedValue, 'contractedHours:', contractedHours);
+
   const calculatePhaseFinancials = async () => {
     if (phases.length === 0) return;
     
@@ -61,8 +63,8 @@ export function PhaseFinancialAnalysis({
     const results: PhaseFinancialData[] = [];
 
     for (const phase of phases) {
-      // Usar o valor por hora baseado no contrato, não no valor da fase
-      const phaseHourlyRate = hourlyRate;
+      // Garantir que sempre usamos um valor válido por hora
+      const phaseHourlyRate = hourlyRate > 0 ? hourlyRate : 150;
       
       let phaseData: PhaseFinancialData = {
         id: phase.id,
