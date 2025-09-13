@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, Phone, Mail, MessageSquare, Calendar, FileText, DollarSign, Building, Upload, Download, X, Clock, Play, MapPin, Users, Eye } from "lucide-react";
+import { ArrowLeft, Plus, Phone, Mail, MessageSquare, Calendar, FileText, DollarSign, Building, Upload, Download, X, Clock, Play, MapPin, Users, Eye, User } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
@@ -48,6 +48,7 @@ interface Document {
   file_path: string;
   file_size: number;
   created_at: string;
+  uploader_name?: string;
 }
 interface Financial {
   id: string;
@@ -164,13 +165,31 @@ export default function ClientDetail() {
       
       setContacts(processedContacts);
 
-      // Buscar documentos
-      const {
-        data: documentsData
-      } = await supabase.from('client_documents').select('*').eq('client_id', id).order('created_at', {
-        ascending: false
-      });
-      setDocuments(documentsData || []);
+      // Buscar documentos com informações do uploader
+      const { data: documentsData } = await supabase
+        .from('client_documents')
+        .select(`
+          *,
+          uploader:uploaded_by(name)
+        `)
+        .eq('client_id', id)
+        .order('created_at', { ascending: false });
+      
+      // Buscar perfis dos uploaders
+      const uploaderIds = [...new Set(documentsData?.map(d => d.uploaded_by).filter(Boolean) || [])];
+      const { data: uploaderProfiles } = await supabase
+        .from('profiles')
+        .select('user_id, name')
+        .in('user_id', uploaderIds);
+      
+      const uploaderProfilesMap = new Map(uploaderProfiles?.map(p => [p.user_id, p.name]) || []);
+      
+      const processedDocuments = (documentsData || []).map(doc => ({
+        ...doc,
+        uploader_name: uploaderProfilesMap.get(doc.uploaded_by) || 'Usuário desconhecido'
+      }));
+      
+      setDocuments(processedDocuments);
 
       // Buscar financeiro
       const {
@@ -316,8 +335,8 @@ export default function ClientDetail() {
       } = await supabase.from('client_documents').insert({
         client_id: id,
         document_name: file.name,
-        // Manter o nome original na base de dados
-        document_type: 'other',
+        // Remover restrição de tipo de arquivo - permitir qualquer tipo
+        document_type: file.type || 'application/octet-stream',
         file_path: data.path,
         file_size: file.size,
         uploaded_by: user.id
@@ -689,7 +708,7 @@ export default function ClientDetail() {
                   </div>
                 </div>
                 <div className="relative group">
-                  <Input type="file" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
+                  <Input type="file" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                   <Button size="sm" className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md hover:shadow-lg transition-all duration-200">
                     <Upload className="mr-2 h-4 w-4" />
                     Enviar Documento
@@ -732,6 +751,10 @@ export default function ClientDetail() {
                         year: 'numeric'
                       })}
                           </div>
+                          <div className="text-xs text-muted-foreground flex items-center gap-1">
+                            <User className="h-3 w-3" />
+                            Por: {doc.uploader_name}
+                          </div>
                         </div>
                         
                         {/* Actions */}
@@ -752,7 +775,7 @@ export default function ClientDetail() {
                     Comece enviando o primeiro documento para este cliente. Formatos aceitos: PDF, DOC, DOCX, JPG, PNG.
                   </p>
                   <div className="relative inline-block">
-                    <Input type="file" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
+                    <Input type="file" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                     <Button className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
                       <Upload className="mr-2 h-4 w-4" />
                       Enviar Primeiro Documento

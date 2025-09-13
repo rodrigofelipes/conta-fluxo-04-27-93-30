@@ -1001,6 +1001,10 @@ export type Database = {
         Args: { new_schedule: string; user_id: string }
         Returns: Json
       }
+      phase_has_time_entries: {
+        Args: { phase_id_param: string }
+        Returns: boolean
+      }
       send_daily_whatsapp_agenda: {
         Args: Record<PropertyKey, never>
         Returns: Json

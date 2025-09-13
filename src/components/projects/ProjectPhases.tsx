@@ -86,6 +86,8 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
   const valuePerHour = contractedHours > 0 ? contractedValue / contractedHours : 0;
 
   const loadPhases = async () => {
+    if (!projectId) return;
+    
     try {
       setLoading(true);
       const { data, error } = await supabase
@@ -100,14 +102,25 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
 
       if (error) throw error;
 
-      // Calcular valores baseado nas horas alocadas
-      const phasesWithValues = (data || []).map(phase => ({
-        ...phase,
-        status: phase.status as ProjectPhase['status'],
-        value_amount: phase.allocated_hours * valuePerHour,
-        value_percentage: contractedHours > 0 ? (phase.allocated_hours / contractedHours) * 100 : 0,
-        assigned_profile: Array.isArray(phase.assigned_profile) ? phase.assigned_profile[0] : phase.assigned_profile,
-        supervisor_profile: Array.isArray(phase.supervisor_profile) ? phase.supervisor_profile[0] : phase.supervisor_profile
+      // Para cada fase, verificar se tem time_entries para determinar status correto
+      const phasesWithValues = await Promise.all((data || []).map(async (phase) => {
+        const { data: hasTimeEntries } = await supabase
+          .rpc('phase_has_time_entries', { phase_id_param: phase.id });
+        
+        // Determinar status correto baseado em time_entries
+        let actualStatus = phase.status;
+        if (phase.status === 'in_progress' && !hasTimeEntries) {
+          actualStatus = 'pending';
+        }
+
+        return {
+          ...phase,
+          status: actualStatus as ProjectPhase['status'],
+          value_amount: phase.allocated_hours * valuePerHour,
+          value_percentage: contractedHours > 0 ? (phase.allocated_hours / contractedHours) * 100 : 0,
+          assigned_profile: Array.isArray(phase.assigned_profile) ? phase.assigned_profile[0] : phase.assigned_profile,
+          supervisor_profile: Array.isArray(phase.supervisor_profile) ? phase.supervisor_profile[0] : phase.supervisor_profile
+        };
       }));
 
       setPhases(phasesWithValues);

@@ -307,7 +307,7 @@ export default function Chat() {
           </div>
         </CardHeader>
         <CardContent className="flex-1 p-0">
-          <ScrollArea className="h-full">
+          <ScrollArea className="h-[calc(100vh-300px)]">
             {loading ? <div className="p-4 text-center text-muted-foreground">
                 Carregando contatos...
               </div> : filteredContacts.length > 0 ? <div className="space-y-1">

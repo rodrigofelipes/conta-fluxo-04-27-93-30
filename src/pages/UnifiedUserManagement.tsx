@@ -470,7 +470,7 @@ export default function UnifiedUserManagement() {
       // Update role using the profile id
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({ role: newRole })
+        .update({ role: newRole, updated_at: new Date().toISOString() })
         .eq('id', profile.id);
 
       if (updateError) {
@@ -478,13 +478,21 @@ export default function UnifiedUserManagement() {
         throw updateError;
       }
 
+      // Atualizar entidade localmente para feedback imediato
+      setEntities(prev => prev.map(entity => {
+        if (entity.type === 'system_user' && entity.user_id === userId) {
+          return { ...entity, role: newRole };
+        }
+        return entity;
+      }));
+
       toast({
         title: "Sucesso",
         description: `Role do usuário atualizado para ${getRoleLabel(newRole)}`
       });
 
-      // Refresh data to show updated role
-      await fetchAllData();
+      // Refresh data to ensure consistency
+      setTimeout(() => fetchAllData(), 1000);
 
       // If updating current user, refresh their session
       if (userId === user?.id) {
