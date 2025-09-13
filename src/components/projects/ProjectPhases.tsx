@@ -476,6 +476,11 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
                           <span className="font-medium text-primary">
                             R$ {phase.value_amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </span>
+                          {phase.executed_hours > phase.allocated_hours && (
+                            <span className="text-xs text-red-600 font-medium bg-red-50 px-2 py-1 rounded">
+                              Prejuízo: R$ {((phase.executed_hours - phase.allocated_hours) * valuePerHour).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </span>
+                          )}
                         </div>
                         
                         {/* Assignment info */}
