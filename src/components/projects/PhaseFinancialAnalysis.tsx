@@ -74,7 +74,7 @@ export function PhaseFinancialAnalysis({
       };
 
       if (phase.executed_hours > phase.allocated_hours) {
-        // Fase com prejuízo
+        // Fase com prejuízo (sempre mostrar se excedeu as horas)
         const lossData = await calculatePhaseLoss(phase.id);
         if (lossData) {
           phaseData.loss = lossData;
@@ -88,8 +88,8 @@ export function PhaseFinancialAnalysis({
             loss_percentage: (excessHours / phase.allocated_hours) * 100
           };
         }
-      } else if (phase.executed_hours < phase.allocated_hours) {
-        // Fase com economia (horas poupadas)
+      } else if (phase.executed_hours < phase.allocated_hours && phase.status === 'completed') {
+        // Fase com economia (só mostrar se a fase foi concluída)
         const savedHours = phase.allocated_hours - phase.executed_hours;
         phaseData.savings = {
           saved_hours: savedHours,
@@ -251,11 +251,17 @@ export function PhaseFinancialAnalysis({
               ) : phase.savings ? (
                 <Badge variant="default" className="flex items-center gap-1 bg-green-600">
                   <CheckCircle2 className="h-3 w-3" />
-                  Economia
+                  Economia (Concluída)
+                </Badge>
+              ) : phase.executed_hours === phase.allocated_hours && (phase as any).status === 'completed' ? (
+                <Badge variant="secondary">
+                  Executada no Prazo
                 </Badge>
               ) : (
-                <Badge variant="secondary">
-                  No Prazo
+                <Badge variant="outline">
+                  {(phase as any).status === 'completed' ? 'Concluída' : 
+                   (phase as any).status === 'in_progress' ? 'Em Andamento' : 
+                   (phase as any).status === 'pending' ? 'Pendente' : 'Cancelada'}
                 </Badge>
               )}
             </div>
@@ -318,12 +324,19 @@ export function PhaseFinancialAnalysis({
               </div>
             )}
 
-            {!phase.loss && !phase.savings && phase.executed_hours === phase.allocated_hours && (
+            {!phase.loss && !phase.savings && (
               <div className="bg-blue-50 border border-blue-200 rounded p-3">
                 <div className="flex items-center gap-2 text-blue-600">
                   <CheckCircle2 className="h-4 w-4" />
                   <span className="text-sm font-medium">
-                    Fase executada exatamente no prazo previsto
+                    {phase.executed_hours === phase.allocated_hours && (phase as any).status === 'completed'
+                      ? 'Fase executada exatamente no prazo previsto'
+                      : (phase as any).status === 'completed'
+                      ? 'Fase concluída'
+                      : (phase as any).status === 'in_progress'
+                      ? 'Fase em andamento - aguardando conclusão para análise final'
+                      : 'Fase ainda não iniciada'
+                    }
                   </span>
                 </div>
               </div>

@@ -140,7 +140,7 @@ export function ProjectBankOfHours({
                     <div className="grid gap-3">
                       {collaborator.phases.map((phase, index) => {
                         const isOverAllocated = phase.executed_hours > phase.allocated_hours;
-                        const isUnderAllocated = phase.executed_hours < phase.allocated_hours;
+                        const isUnderAllocated = phase.executed_hours < phase.allocated_hours && phase.status === 'completed';
                         const difference = phase.executed_hours - phase.allocated_hours;
                         
                         return (
