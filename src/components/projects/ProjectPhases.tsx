@@ -12,6 +12,7 @@ import { Plus, Edit, Trash2, DollarSign, CheckCircle, Clock, AlertCircle, UserPl
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { PhaseAssignmentDialog } from "./PhaseAssignmentDialog";
+import { PhaseFinancialAnalysis } from "./PhaseFinancialAnalysis";
 
 interface ProjectPhase {
   id: string;
@@ -570,6 +571,13 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
           supervised_by: selectedPhaseForAssignment.supervised_by || ''
         } : null}
         onAssignmentUpdate={handleAssignmentUpdate}
+      />
+
+      {/* Análise Financeira das Fases */}
+      <PhaseFinancialAnalysis 
+        projectId={projectId}
+        contractedValue={contractedValue}
+        contractedHours={contractedHours}
       />
     </Card>
   );
