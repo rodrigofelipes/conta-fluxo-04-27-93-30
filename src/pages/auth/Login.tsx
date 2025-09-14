@@ -69,7 +69,7 @@ export default function Login() {
             <div className="text-center space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <Link to="/forgot" className="underline">Esqueci minha senha----++++</Link>
-                <Link to="/signup" className="underline">Criar conta</Link>
+                <Link to="/signup" className="underline">Criar conta----+++++</Link>
               </div>
               <div className="pt-2 border-t">
                 <Link to="/admin-login">
