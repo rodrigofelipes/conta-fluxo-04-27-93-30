@@ -61,7 +61,53 @@ async function findClientByPhone(phone: string) {
   return data;
 }
 
-// Função para encontrar usuário por role
+// Função para encontrar usuário por nome específico
+async function findUserByName(name: string): Promise<any> {
+  console.log(`🔍 Procurando usuário: ${name}`);
+  
+  const cacheKey = `name_${name}`;
+  const cached = userRoleCache.get(cacheKey);
+  
+  if (cached && (Date.now() - cached.cacheTime) < USER_CACHE_TTL) {
+    if (cached.user) {
+      console.log(`✅ Usuário ${name} do cache: ${cached.user.name}`);
+      return cached.user;
+    }
+  }
+
+  const { data: userData, error } = await supabase
+    .from('profiles')
+    .select('id, user_id, name, email, role')
+    .eq('name', name)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`❌ Erro ao buscar usuário ${name}:`, error);
+    userRoleCache.set(cacheKey, { user: null, cacheTime: Date.now() });
+    return null;
+  }
+
+  if (!userData) {
+    console.log(`❌ Usuário ${name} não encontrado`);
+    userRoleCache.set(cacheKey, { user: null, cacheTime: Date.now() });
+    return null;
+  }
+
+  const user = {
+    id: userData.id,
+    user_id: userData.user_id,
+    name: userData.name,
+    email: userData.email,
+    role: userData.role
+  };
+
+  userRoleCache.set(cacheKey, { user, cacheTime: Date.now() });
+  console.log(`✅ Usuário ${name} encontrado (${user.role})`);
+  return user;
+}
+
+// Função para encontrar usuário por role (fallback)
 async function findUserByRole(role: string): Promise<any> {
   console.log(`🔍 Procurando usuário com role: ${role}`);
   
@@ -177,17 +223,21 @@ async function routeUserBySelection(selection: string): Promise<any> {
   
   switch (selection.trim()) {
     case '1': // Coordenador -> Leticia
-      return await findUserByRole('coordenador');
+      console.log('🎯 Procurando Leticia (coordenador)');
+      return await findUserByName('Leticia');
     case '2': // Supervisor -> Thuany
-      return await findUserByRole('supervisor');
+      console.log('🎯 Procurando Thuany (supervisor)');
+      return await findUserByName('Thuany');
     case '3': // Admin -> Mara
-    case '0': // Não sei o departamento -> Admin (Mara)
-      return await findUserByRole('admin');
-    case '4': // Colaborador -> Admin como fallback
-      return await findUserByRole('admin');
+    case '0': // Não sei o departamento -> Mara
+      console.log('🎯 Procurando Mara (admin)');
+      return await findUserByName('Mara');
+    case '4': // Colaborador -> Mara como fallback
+      console.log('🎯 Procurando Mara (fallback colaborador)');
+      return await findUserByName('Mara');
     default:
-      console.log(`⚠️ Seleção inválida: ${selection}, usando admin como fallback`);
-      return await findUserByRole('admin');
+      console.log(`⚠️ Seleção inválida: ${selection}, usando Mara como fallback`);
+      return await findUserByName('Mara');
   }
 }
 
