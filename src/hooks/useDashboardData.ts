@@ -197,12 +197,20 @@ export function useDashboardData() {
 
         // Filtrar compromissos para mostrar apenas futuros
         const filteredMeetings = agendaRes.data.filter(meeting => {
-          if (meeting.data === todayString) {
-            // Para hoje, só mostrar compromissos futuros
+          const meetingDate = meeting.data;
+          
+          // Garantir que a reunião é de hoje ou amanhã
+          if (meetingDate !== todayString && meetingDate !== tomorrowString) {
+            return false;
+          }
+          
+          // Para hoje, só mostrar compromissos futuros
+          if (meetingDate === todayString) {
             return meeting.horario >= currentTime;
           }
+          
           // Para amanhã, mostrar todos
-          return meeting.data === tomorrowString;
+          return meetingDate === tomorrowString;
         });
 
         const meetingsWithAttendees = filteredMeetings.map(meeting => ({
