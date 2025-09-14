@@ -68,7 +68,7 @@ export default function Login() {
             <Button className="w-full" variant="hero-static" type="submit" disabled={loading}>{loading ? "Entrando..." : "Entrar"}</Button>
             <div className="text-center space-y-3">
               <div className="flex items-center justify-between text-sm">
-                <Link to="/forgot" className="underline">Esqueci minha senha</Link>
+                <Link to="/forgot" className="underline">Esqueci minha senha----++++</Link>
                 <Link to="/signup" className="underline">Criar conta</Link>
               </div>
               <div className="pt-2 border-t">
