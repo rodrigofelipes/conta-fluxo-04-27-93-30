@@ -423,8 +423,7 @@ const [preview, setPreview] = useState<{
   type: "image" | "pdf" | "other";
 } | null>(null);
 
-// Se ainda não tiver esta constante no arquivo, mantenha:
-const BUCKET_NAME = typeof BUCKET_NAME !== "undefined" ? BUCKET_NAME : "client-documents";
+
 
 // Se você já definiu clientId em outro lugar, mantenha o seu.
 // Aqui só uso para reconstruir o path quando doc.path não existir.
@@ -460,6 +459,52 @@ const handlePreview = async (doc: any) => {
     }
 
     // Outros formatos (DOC/DOCX): sem preview — abre no navegador (download/visualizador)
+    window.open(data.signedUrl, "_blank");
+  } catch (err: any) {
+    console.error(err);
+    toast({
+      title: "Erro na visualização",
+      description: "Não foi possível gerar o link de visualização.",
+      variant: "destructive",
+    });
+  }
+};
+
+  const clientId = String(client?.id ?? "");
+
+  // Pré-visualização (imagem/pdf)
+const [preview, setPreview] = useState<{
+  url: string;
+  name: string;
+  type: "image" | "pdf" | "other";
+} | null>(null);
+
+const getExt = (name?: string) => (name?.split(".").pop() || "").toLowerCase();
+const isImg = (ext: string) => ["jpg", "jpeg", "png", "webp"].includes(ext);
+const isPdf = (ext: string) => ext === "pdf";
+
+// Gera URL assinada e abre modal de preview
+const handlePreview = async (doc: any) => {
+  try {
+    const ext = getExt(doc?.document_name);
+    const path = doc?.path ?? (clientId ? `${clientId}/${doc?.document_name}` : String(doc?.document_name));
+
+    const { data, error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .createSignedUrl(path, 300); // 5 minutos
+
+    if (error || !data?.signedUrl) throw error;
+
+    if (isPdf(ext)) {
+      setPreview({ url: data.signedUrl, name: doc.document_name, type: "pdf" });
+      return;
+    }
+    if (isImg(ext)) {
+      setPreview({ url: data.signedUrl, name: doc.document_name, type: "image" });
+      return;
+    }
+
+    // Outros formatos (DOC/DOCX): abre em nova aba (download/visualizador)
     window.open(data.signedUrl, "_blank");
   } catch (err: any) {
     console.error(err);
@@ -904,18 +949,11 @@ const handlePreview = async (doc: any) => {
       </DialogHeader>
 
       {preview?.type === "image" && (
-        <img
-          src={preview.url}
-          alt={preview.name}
-          className="w-full h-auto rounded-md"
-        />
+        <img src={preview.url} alt={preview.name} className="w-full h-auto rounded-md" />
       )}
 
       {preview?.type === "pdf" && (
-        <iframe
-          src={preview.url}
-          className="w-full h-[70vh] rounded-md"
-        />
+        <iframe src={preview.url} className="w-full h-[70vh] rounded-md" />
       )}
 
       {!preview || preview?.type === "other" ? (
@@ -926,6 +964,7 @@ const handlePreview = async (doc: any) => {
     </DialogContent>
   </Dialog>
 </TabsContent>
+
 
 
 
