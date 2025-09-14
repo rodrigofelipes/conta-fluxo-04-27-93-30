@@ -416,6 +416,61 @@ export default function ClientDetail() {
   }
 };
 
+  // Pré-visualização (imagem/pdf)
+const [preview, setPreview] = useState<{
+  url: string;
+  name: string;
+  type: "image" | "pdf" | "other";
+} | null>(null);
+
+// Se ainda não tiver esta constante no arquivo, mantenha:
+const BUCKET_NAME = typeof BUCKET_NAME !== "undefined" ? BUCKET_NAME : "client-documents";
+
+// Se você já definiu clientId em outro lugar, mantenha o seu.
+// Aqui só uso para reconstruir o path quando doc.path não existir.
+const clientIdSafe = typeof clientId !== "undefined" ? String(clientId) : "";
+
+// Helpers
+const getExt = (name?: string) =>
+  (name?.split(".").pop() || "").toLowerCase();
+const isImg = (ext: string) => ["jpg", "jpeg", "png", "webp"].includes(ext);
+const isPdf = (ext: string) => ext === "pdf";
+
+// Gera URL assinada e abre modal de preview
+const handlePreview = async (doc: any) => {
+  try {
+    const ext = getExt(doc?.document_name);
+    const path: string =
+      doc?.path ??
+      (clientIdSafe ? `${clientIdSafe}/${doc?.document_name}` : String(doc?.document_name));
+
+    const { data, error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .createSignedUrl(path, 60); // 60s
+
+    if (error || !data?.signedUrl) throw error;
+
+    if (isPdf(ext)) {
+      setPreview({ url: data.signedUrl, name: doc.document_name, type: "pdf" });
+      return;
+    }
+    if (isImg(ext)) {
+      setPreview({ url: data.signedUrl, name: doc.document_name, type: "image" });
+      return;
+    }
+
+    // Outros formatos (DOC/DOCX): sem preview — abre no navegador (download/visualizador)
+    window.open(data.signedUrl, "_blank");
+  } catch (err: any) {
+    console.error(err);
+    toast({
+      title: "Erro na visualização",
+      description: "Não foi possível gerar o link de visualização.",
+      variant: "destructive",
+    });
+  }
+};
+
   if (loading) {
     return <div className="space-y-6">
         <div className="text-center py-8">
@@ -750,7 +805,7 @@ export default function ClientDetail() {
     <CardContent className="p-6">
       {documents.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {documents.map(doc => (
+          {documents.map((doc: any) => (
             <div
               key={doc.id}
               className="group relative border-2 border-border/50 rounded-xl p-4 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-300 hover:shadow-lg bg-gradient-to-br from-card to-muted/20"
@@ -788,12 +843,20 @@ export default function ClientDetail() {
                   </div>
                   <div className="text-xs text-muted-foreground flex items-center gap-1">
                     <UserIcon className="h-3 w-3" />
-                    Por: {doc.uploader_name}
+                    Por: {doc.uploader_name ?? '—'}
                   </div>
                 </div>
 
                 {/* Actions */}
-                <div className="pt-2 border-t border-border/30">
+                <div className="pt-2 border-t border-border/30 grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePreview(doc)}
+                    className="w-full hover:bg-blue-50 dark:hover:bg-blue-950/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-200"
+                  >
+                    Visualizar
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -832,7 +895,38 @@ export default function ClientDetail() {
       )}
     </CardContent>
   </Card>
+
+  {/* Modal de Pré-visualização */}
+  <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
+    <DialogContent className="max-w-4xl w-full">
+      <DialogHeader>
+        <DialogTitle className="truncate">{preview?.name ?? "Visualização"}</DialogTitle>
+      </DialogHeader>
+
+      {preview?.type === "image" && (
+        <img
+          src={preview.url}
+          alt={preview.name}
+          className="w-full h-auto rounded-md"
+        />
+      )}
+
+      {preview?.type === "pdf" && (
+        <iframe
+          src={preview.url}
+          className="w-full h-[70vh] rounded-md"
+        />
+      )}
+
+      {!preview || preview?.type === "other" ? (
+        <div className="text-sm text-muted-foreground">
+          Este formato não possui pré-visualização embutida. Utilize o botão <b>Baixar</b>.
+        </div>
+      ) : null}
+    </DialogContent>
+  </Dialog>
 </TabsContent>
+
 
 
         {/* Aba Financeiro */}
