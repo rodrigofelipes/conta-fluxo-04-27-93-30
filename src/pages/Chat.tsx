@@ -275,7 +275,7 @@ export default function Chat() {
       client_id: clientId,
       contact_type: "whatsapp",
       subject: `ROUTING:ASSIGNED:${sector}:${assignedUserId}`,
-      description: `Cliente direcionado para ${assignedUserName} (ID: ${assignedUserId}) no setor ${sector}.`;
+      description: `Cliente direcionado para ${assignedUserName} (ID: ${assignedUserId}) no setor ${sector}.`,
       contact_date: new Date().toISOString(),
       created_by: user?.id ?? null,
     });
