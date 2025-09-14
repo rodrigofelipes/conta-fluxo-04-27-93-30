@@ -146,7 +146,7 @@ export default function Chat() {
   // Perfil do usuário logado (para checar permissões e mostrar nome)
   const loadMyProfile = async () => {
     if (!user?.id) return;
-    const candidates = ["profiles", "users"] as const;
+    const candidates = ["profiles"] as const;
     for (const table of candidates) {
       const selectCols =
         table === "profiles"
@@ -169,7 +169,7 @@ export default function Chat() {
 
   // Tenta buscar usuários por setor em 'profiles' e depois 'users'
   const findUsersBySector = async (sector: SectorKey) => {
-    const candidates = ["profiles", "users"] as const;
+    const candidates = ["profiles"] as const;
     for (const table of candidates) {
       const selectCols =
         table === "profiles" ? "id, full_name, name, email, sector, role" : "id, name, email, sector, role";
