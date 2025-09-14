@@ -11,7 +11,10 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Cache de telefones para evitar busca repetida
 const phoneCache = new Map<string, { client: any; cacheTime: number } | null>();
+const userRoleCache = new Map<string, { user: any; cacheTime: number } | null>();
+const conversationCache = new Map<string, { conversation: any; cacheTime: number } | null>();
 const PHONE_CACHE_TTL = 10 * 60 * 1000; // 10 minutos
+const USER_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
 async function findClientByPhone(phone: string) {
   console.log(`🔍 Procurando cliente com telefone: ${phone}`);
@@ -58,50 +61,140 @@ async function findClientByPhone(phone: string) {
   return data;
 }
 
-// Cache de admin para evitar busca repetida
-let cachedAdmin: { id: string; username: string; fullName: string; cacheTime: number } | null = null;
-const ADMIN_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
-
-async function findAvailableAdmin() {
-  console.log('🔍 Procurando admin disponível...');
-
-  // Usar cache se disponível e não expirado
-  if (cachedAdmin && (Date.now() - cachedAdmin.cacheTime) < ADMIN_CACHE_TTL) {
-    console.log(`✅ Admin do cache: ${cachedAdmin.username}`);
-    return cachedAdmin;
+// Função para encontrar usuário por role
+async function findUserByRole(role: string): Promise<any> {
+  console.log(`🔍 Procurando usuário com role: ${role}`);
+  
+  const cacheKey = `role_${role}`;
+  const cached = userRoleCache.get(cacheKey);
+  
+  if (cached && (Date.now() - cached.cacheTime) < USER_CACHE_TTL) {
+    if (cached.user) {
+      console.log(`✅ Usuário ${role} do cache: ${cached.user.name}`);
+      return cached.user;
+    }
   }
 
-  // Buscar admin usando a tabela profiles
-  const { data: adminData, error } = await supabase
+  const { data: userData, error } = await supabase
     .from('profiles')
-    .select('user_id, name, email')
-    .eq('role', 'admin')
-    .order('created_at', { ascending: true })
+    .select('id, user_id, name, email, role')
+    .eq('role', role)
     .limit(1)
     .maybeSingle();
 
   if (error) {
-    console.error('❌ Erro ao buscar admin:', error);
+    console.error(`❌ Erro ao buscar usuário ${role}:`, error);
+    userRoleCache.set(cacheKey, { user: null, cacheTime: Date.now() });
     return null;
   }
 
-  if (!adminData) {
-    console.log('❌ Nenhum admin encontrado');
+  if (!userData) {
+    console.log(`❌ Nenhum usuário ${role} encontrado`);
+    userRoleCache.set(cacheKey, { user: null, cacheTime: Date.now() });
     return null;
   }
 
-  const admin = {
-    id: adminData.user_id,
-    username: adminData.name || adminData.email,
-    fullName: adminData.name || adminData.email,
-    cacheTime: Date.now()
+  const user = {
+    id: userData.id,
+    user_id: userData.user_id,
+    name: userData.name,
+    email: userData.email,
+    role: userData.role
   };
 
-  // Atualizar cache
-  cachedAdmin = admin;
+  userRoleCache.set(cacheKey, { user, cacheTime: Date.now() });
+  console.log(`✅ Usuário ${role} encontrado: ${user.name}`);
+  return user;
+}
 
-  console.log(`✅ Admin encontrado: ${admin.username}`);
-  return admin;
+// Função para obter ou criar estado da conversa
+async function getOrCreateConversation(phone: string, clientId?: string) {
+  const cacheKey = `conv_${phone}`;
+  const cached = conversationCache.get(cacheKey);
+  
+  if (cached && (Date.now() - cached.cacheTime) < USER_CACHE_TTL) {
+    return cached.conversation;
+  }
+
+  // Buscar conversa existente
+  const { data: conversation, error } = await supabase
+    .from('whatsapp_conversations')
+    .select('*')
+    .eq('phone_number', phone)
+    .maybeSingle();
+
+  if (conversation) {
+    conversationCache.set(cacheKey, { conversation, cacheTime: Date.now() });
+    return conversation;
+  }
+
+  // Criar nova conversa se não existir
+  const { data: newConversation, error: createError } = await supabase
+    .from('whatsapp_conversations')
+    .insert({
+      phone_number: phone,
+      client_id: clientId,
+      state: 'awaiting_selection'
+    })
+    .select()
+    .single();
+
+  if (createError) {
+    console.error('❌ Erro ao criar conversa:', createError);
+    return null;
+  }
+
+  conversationCache.set(cacheKey, { conversation: newConversation, cacheTime: Date.now() });
+  console.log(`✅ Nova conversa criada para: ${phone}`);
+  return newConversation;
+}
+
+// Função para atualizar estado da conversa
+async function updateConversationState(phone: string, updates: any) {
+  const cacheKey = `conv_${phone}`;
+  conversationCache.delete(cacheKey); // Limpar cache
+
+  const { data, error } = await supabase
+    .from('whatsapp_conversations')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('phone_number', phone)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('❌ Erro ao atualizar conversa:', error);
+    return null;
+  }
+
+  conversationCache.set(cacheKey, { conversation: data, cacheTime: Date.now() });
+  console.log(`✅ Conversa atualizada: ${phone} -> ${updates.state || 'sem mudança de estado'}`);
+  return data;
+}
+
+// Função para rotear usuário baseado na seleção
+async function routeUserBySelection(selection: string): Promise<any> {
+  console.log(`🎯 Roteando baseado na seleção: ${selection}`);
+  
+  switch (selection.trim()) {
+    case '1': // Coordenador -> Leticia
+      return await findUserByRole('coordenador');
+    case '2': // Supervisor -> Thuany
+      return await findUserByRole('supervisor');
+    case '3': // Admin -> Mara
+    case '0': // Não sei o departamento -> Admin (Mara)
+      return await findUserByRole('admin');
+    case '4': // Colaborador -> Admin como fallback
+      return await findUserByRole('admin');
+    default:
+      console.log(`⚠️ Seleção inválida: ${selection}, usando admin como fallback`);
+      return await findUserByRole('admin');
+  }
+}
+
+// Função para verificar se mensagem é seleção do menu
+function isMenuSelection(message: string): boolean {
+  const trimmed = message.trim();
+  return ['0', '1', '2', '3', '4'].includes(trimmed);
 }
 
 async function saveWhatsAppMessage(clientId: string, messageText: string, isOutgoing: boolean, adminId?: string) {
@@ -188,40 +281,88 @@ serve(async (req) => {
               const messageText = message.text?.body || 'Mensagem de mídia';
               
               // Buscar cliente pelo telefone
-              const cliente = await findClientByPhone(senderPhone);
+              let cliente = await findClientByPhone(senderPhone);
               
-              // Buscar admin disponível
-              const admin = await findAvailableAdmin();
-              if (!admin) {
-                console.log('❌ Nenhum admin disponível');
+              // Se cliente não existir, criar um novo
+              if (!cliente) {
+                console.log(`❓ Contato desconhecido: ${senderPhone} - criando novo cliente`);
+                cliente = await createUnknownClient(senderPhone, messageText);
+                if (!cliente) {
+                  console.error('❌ Não foi possível criar cliente para o número:', senderPhone);
+                  continue;
+                }
+              }
+              
+              // Obter ou criar conversa
+              const conversation = await getOrCreateConversation(senderPhone, cliente.id);
+              if (!conversation) {
+                console.error('❌ Não foi possível gerenciar conversa');
                 continue;
               }
               
-              if (cliente) {
-                // Cliente encontrado - salvar mensagem
-                console.log(`📱 Salvando mensagem do cliente ${cliente.name}`);
+              let assignedUser = null;
+              
+              // Verificar se é uma seleção do menu
+              if (conversation.state === 'awaiting_selection' && isMenuSelection(messageText)) {
+                console.log(`🎯 Cliente selecionou opção: ${messageText}`);
+                
+                // Rotear para usuário baseado na seleção
+                assignedUser = await routeUserBySelection(messageText);
+                
+                if (assignedUser) {
+                  // Atualizar conversa com usuário atribuído
+                  await updateConversationState(senderPhone, {
+                    state: 'routed',
+                    selected_option: messageText,
+                    assigned_to: assignedUser.id
+                  });
+                  
+                  console.log(`✅ Conversa roteada para: ${assignedUser.name} (${assignedUser.role})`);
+                } else {
+                  // Fallback para admin se não encontrar usuário específico
+                  assignedUser = await findUserByRole('admin');
+                  if (assignedUser) {
+                    await updateConversationState(senderPhone, {
+                      state: 'routed',
+                      selected_option: messageText,
+                      assigned_to: assignedUser.id
+                    });
+                    console.log(`⚠️ Roteamento fallback para admin: ${assignedUser.name}`);
+                  }
+                }
+              } else if (conversation.state === 'routed' && conversation.assigned_to) {
+                // Conversa já roteada - usar usuário atribuído
+                const { data: userData } = await supabase
+                  .from('profiles')
+                  .select('*')
+                  .eq('id', conversation.assigned_to)
+                  .single();
+                
+                if (userData) {
+                  assignedUser = userData;
+                  console.log(`📨 Mensagem para usuário atribuído: ${assignedUser.name}`);
+                } else {
+                  // Fallback se usuário atribuído não for encontrado
+                  assignedUser = await findUserByRole('admin');
+                  console.log(`⚠️ Usuário atribuído não encontrado, usando admin fallback`);
+                }
+              } else {
+                // Estado inicial ou não definido - usar admin
+                assignedUser = await findUserByRole('admin');
+                console.log(`📨 Usando admin padrão para mensagem`);
+              }
+              
+              // Salvar mensagem
+              if (assignedUser) {
+                console.log(`📱 Salvando mensagem do cliente ${cliente.name} para ${assignedUser.name}`);
                 await saveWhatsAppMessage(
                   cliente.id,
                   messageText,
                   false, // não é mensagem enviada, é recebida
-                  admin.id
+                  assignedUser.user_id
                 );
               } else {
-                // Cliente não encontrado - criar novo cliente
-                console.log(`❓ Contato desconhecido: ${senderPhone} - criando novo cliente`);
-                
-                const newClient = await createUnknownClient(senderPhone, messageText);
-                if (newClient) {
-                  // Salvar mensagem do novo cliente
-                  await saveWhatsAppMessage(
-                    newClient.id,
-                    messageText,
-                    false,
-                    admin.id
-                  );
-                } else {
-                  console.error('❌ Não foi possível criar cliente para o número:', senderPhone);
-                }
+                console.error('❌ Nenhum usuário disponível para receber a mensagem');
               }
               
               console.log('✅ Mensagem WhatsApp processada com sucesso');
