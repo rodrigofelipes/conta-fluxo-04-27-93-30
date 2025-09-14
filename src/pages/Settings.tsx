@@ -61,6 +61,7 @@ export default function Settings() {
   const [profileForm, setProfileForm] = useState({
     username: user?.username || "",
     fullName: user?.name || "",
+    email: user?.email || "",
     telefone: "",
     currentPassword: "",
     newPassword: "",
@@ -74,11 +75,19 @@ export default function Settings() {
     try {
       setLoading(true);
       
+      // Atualizar email se foi alterado
+      if (profileForm.email !== user.email) {
+        const { error: emailError } = await supabase.auth.updateUser({
+          email: profileForm.email
+        });
+        if (emailError) throw emailError;
+      }
+      
       const { error } = await supabase
         .from('profiles')
         .update({
           name: profileForm.fullName,
-          email: user.email,
+          email: profileForm.email,
           telefone: profileForm.telefone
         })
         .eq('user_id', user.id);
@@ -180,6 +189,7 @@ export default function Settings() {
         setProfileForm({
           username: user?.username || "",
           fullName: user?.name || "",
+          email: user?.email || "",
           telefone: profile?.telefone || "",
           currentPassword: "",
           newPassword: "",
@@ -270,8 +280,13 @@ export default function Settings() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Email</Label>
-                  <Input value={user?.email || ""} disabled className="bg-muted" />
+                  <Label htmlFor="email">Email</Label>
+                  <Input 
+                    id="email"
+                    value={user?.email || ""} 
+                    onChange={(e) => setProfileForm(prev => ({ ...prev, email: e.target.value }))}
+                    placeholder="Digite seu email"
+                  />
                 </div>
               </div>
               <div className="flex justify-end">

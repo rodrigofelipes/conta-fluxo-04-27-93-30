@@ -82,10 +82,11 @@ export function useTeamReports() {
         meetingsResult,
         clientDocumentsResult
       ] = await Promise.all([
-        // Buscar todos os profiles
+        // Buscar apenas profiles de colaboradores (não admins)
         supabase
           .from('profiles')
-          .select('id, user_id, name, email, role, created_at'),
+          .select('id, user_id, name, email, role, created_at')
+          .neq('role', 'admin'),
 
         // Buscar time entries das últimas 4 semanas
         supabase

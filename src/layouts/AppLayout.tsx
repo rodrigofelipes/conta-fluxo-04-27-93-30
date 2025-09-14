@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Home, Calendar, Users, Building2, DollarSign, Settings, LogOut, Shield, UserCog, MessageSquare, FolderOpen } from "lucide-react";
+import { Home, Calendar, Users, Building2, DollarSign, Settings, LogOut, Shield, UserCog, MessageSquare, FolderOpen, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -41,6 +41,14 @@ const nav: NavItem[] = [{
   label: "Minhas Etapas",
   icon: Building2
 }, {
+  to: "/coordinator-phases",
+  label: "Etapas",
+  icon: Users
+}, {
+  to: "/reports",
+  label: "Relatórios",
+  icon: BarChart3
+}, {
   to: "/financeiro",
   label: "Financeiro",
   icon: DollarSign,
@@ -76,14 +84,26 @@ export default function AppLayout() {
         n.to !== "/users" && 
         n.to !== "/clients" && 
         n.to !== "/chat" &&
-        n.to !== "/projects"
+        n.to !== "/projects" &&
+        n.to !== "/reports"
       );
     } else if (user?.role === "admin") {
       // Remove user-specific projects tab for admins
       filteredNav = filteredNav.filter(n => n.to !== "/user-projects");
-    } else if (user?.role === "coordenador" || user?.role === "supervisor") {
-      // Coordenadores and Supervisores have same access: projects and chat but not user-specific projects and financeiro
-      filteredNav = filteredNav.filter(n => n.to !== "/user-projects" && n.to !== "/financeiro");
+    } else if (user?.role === "coordenador") {
+      // Coordenadores: access to projects, reports, chat, coordinator-phases, but not clients, financeiro, users, user-projects
+      filteredNav = filteredNav.filter(n => 
+        n.to !== "/user-projects" && 
+        n.to !== "/financeiro" && 
+        n.to !== "/clients"
+      );
+    } else if (user?.role === "supervisor") {
+      // Supervisores: access to projects, reports, chat, clients but not financeiro, users, coordinator-phases
+      filteredNav = filteredNav.filter(n => 
+        n.to !== "/user-projects" && 
+        n.to !== "/financeiro" && 
+        n.to !== "/coordinator-phases"
+      );
     }
 
     // Filter admin-only items (now also includes coordenador for some features)
@@ -91,9 +111,13 @@ export default function AppLayout() {
       if (n.adminOnly) {
         return user?.role === "admin";
       }
-      if (n.to === "/chat") {
-        // Chat is accessible to admin, supervisor, and coordenador
+      if (n.to === "/chat" || n.to === "/reports") {
+        // Chat and Reports are accessible to admin, supervisor, and coordenador
         return user?.role === "admin" || user?.role === "supervisor" || user?.role === "coordenador";
+      }
+      if (n.to === "/coordinator-phases") {
+        // Coordinator phases are only accessible to coordenador
+        return user?.role === "coordenador";
       }
       return true;
     });

@@ -86,12 +86,16 @@ export function useDashboardData() {
       setLoading(true);
 
       // Obter a data atual no fuso horário local
+      const now = new Date();
       const today = new Date();
       today.setHours(0, 0, 0, 0); // Zerar horas para garantir comparação apenas da data
       const todayString = today.toISOString().split('T')[0];
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
       const tomorrowString = tomorrow.toISOString().split('T')[0];
+      
+      // Calcular hora atual para filtrar compromissos passados
+      const currentTime = now.toTimeString().slice(0, 5); // HH:MM
 
       // Carregar dados básicos
       const [clientsRes, projectsRes, usersRes] = await Promise.all([
@@ -113,8 +117,8 @@ export function useDashboardData() {
             .gte('data', todayString)
             .lte('data', tomorrowString)
             .or(`created_by.eq.${user.id},collaborators_ids.cs.{${user.id}}`)
-            .order('horario', { ascending: true })
-            .limit(5),
+            .order('data, horario', { ascending: true })
+            .limit(10),
           supabase.from('client_financials')
             .select('id, description, amount, status, transaction_date, transaction_type')
             .or('amount.gte.5000,status.eq.urgent')
@@ -130,8 +134,8 @@ export function useDashboardData() {
           .gte('data', todayString)
           .lte('data', tomorrowString)
           .or(`created_by.eq.${user.id},collaborators_ids.cs.{${user.id}}`)
-          .order('horario', { ascending: true })
-          .limit(5);
+          .order('data, horario', { ascending: true })
+          .limit(10);
       }
 
       // Estatísticas básicas
@@ -191,7 +195,17 @@ export function useDashboardData() {
           collaboratorsProfiles = profilesData || [];
         }
 
-        const meetingsWithAttendees = agendaRes.data.map(meeting => ({
+        // Filtrar compromissos para mostrar apenas futuros
+        const filteredMeetings = agendaRes.data.filter(meeting => {
+          if (meeting.data === todayString) {
+            // Para hoje, só mostrar compromissos futuros
+            return meeting.horario >= currentTime;
+          }
+          // Para amanhã, mostrar todos
+          return meeting.data === tomorrowString;
+        });
+
+        const meetingsWithAttendees = filteredMeetings.map(meeting => ({
           ...meeting,
           created_by_name: 'Colaborador',
           attendees_display: getAttendeesDisplay(meeting.collaborators_ids || [], collaboratorsProfiles)
