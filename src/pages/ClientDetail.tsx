@@ -394,6 +394,28 @@ export default function ClientDetail() {
       currency: 'BRL'
     }).format(amount);
   };
+
+  const BUCKET_NAME = "client-documents"; // ajuste o nome se o seu bucket for outro
+
+  const handleDownload = async (doc: any) => {
+  try {
+    // doc.path deve ser algo como: `${clientId}/nome-do-arquivo.ext`
+    const { data, error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .createSignedUrl(doc.path, 60); // URL válida por 60s
+
+    if (error || !data?.signedUrl) throw error;
+    window.open(data.signedUrl, "_blank");
+  } catch (err: any) {
+    console.error(err);
+    toast({
+      title: "Erro ao baixar",
+      description: "Não foi possível gerar o link de download.",
+      variant: "destructive",
+    });
+  }
+};
+
   if (loading) {
     return <div className="space-y-6">
         <div className="text-center py-8">
