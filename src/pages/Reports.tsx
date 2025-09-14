@@ -66,7 +66,17 @@ export default function Reports() {
     tarefasPorStatus: []
   });
   const [loading, setLoading] = useState(true);
-  const { teamStats, teamMembers, loading: teamLoading } = useTeamReports();
+  const { teamStats, teamMembers, loading: teamLoading, refetch } = useTeamReports();
+
+  // Real-time updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refetch();
+      fetchMetrics();
+    }, 30000); // Atualizar a cada 30 segundos
+
+    return () => clearInterval(interval);
+  }, [refetch]);
 
   useEffect(() => {
     fetchMetrics();

@@ -18,6 +18,7 @@ import UserProjects from "./pages/UserProjects";
 import UnifiedUserManagement from "./pages/UnifiedUserManagement";
 import WhatsAppTestPage from "./pages/WhatsAppTest";
 import Reports from "./pages/Reports";
+import CoordinatorPhases from "./pages/CoordinatorPhases";
 
 import Login from "./pages/auth/Login";
 import AdminLogin from "./pages/auth/AdminLogin";
@@ -71,6 +72,7 @@ const App = () => (
                 <Route path="projects/:id" element={<ProjectDetail />} />
                 <Route path="financeiro" element={<AdminRoute><Financeiro /></AdminRoute>} />
                 <Route path="user-projects" element={<UserProjects />} />
+                <Route path="coordinator-phases" element={<CoordinatorPhases />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="whatsapp-test" element={<WhatsAppTestPage />} />

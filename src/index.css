@@ -345,3 +345,36 @@ All colors MUST be HSL.
   50% { transform: scale(1.05); }
   100% { transform: scale(1); opacity: 1; }
 }
+
+/* Print styles for reports */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  .print-page-break {
+    page-break-before: always;
+  }
+  
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  
+  .print-container {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 20px !important;
+  }
+  
+  .print-card {
+    break-inside: avoid;
+    margin-bottom: 20px;
+  }
+  
+  .print-chart {
+    width: 100% !important;
+    height: 300px !important;
+  }
+}
