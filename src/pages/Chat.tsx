@@ -51,7 +51,7 @@ const SECTOR_BY_OPTION: Record<string, SectorKey> = {
   "2": "supervisor",
   "3": "admin",
   "4": "colaborador",
-  "0": "triagem", // opção "Não sei" -> enviamos para 'admin' por padrão (ver pickUserBySector)
+  "0": "triagem", // "Não sei" -> cai para admin em pickUserBySector
 };
 
 const AUTO_MENU_TEXT =
@@ -122,29 +122,25 @@ export default function Chat() {
     return client as { id: string; name: string; phone: string };
   };
 
-  // Tenta buscar usuários por setor em 'profiles' e depois 'users'
+  // Busca atendentes no setor (consulta EXPLÍCITA à tabela 'profiles' para evitar TS2769)
   const findUsersBySector = async (sector: SectorKey) => {
-    const candidates = ["profiles", "users"];
-    for (const table of candidates) {
-      const selectCols =
-        table === "profiles" ? "id, full_name, name, email, sector, role" : "id, name, email, sector, role";
-      const { data, error } = await supabase
-        .from(table)
-        .select(selectCols)
-        .or(`sector.eq.${sector},role.eq.${sector}`)
-        .limit(50);
-      if (!error && data && data.length > 0) {
-        return data.map((u: any) => ({
-          id: u.id,
-          name: u.full_name || u.name || u.email || "Usuário",
-          sector: (u.sector || u.role || "").toLowerCase(),
-        })) as Array<{ id: string; name: string; sector: string }>;
-      }
-    }
-    return [] as Array<{ id: string; name: string; sector: string }>;
+    // Se o schema não tiver 'sector', troque para a coluna que você usa (ex.: 'role' ou 'department')
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, full_name, email, sector")
+      .eq("sector", sector)
+      .limit(50);
+
+    if (error || !data) return [] as Array<{ id: string; name: string; sector: string }>;
+
+    return data.map((u: any) => ({
+      id: u.id,
+      name: u.full_name || u.email || "Usuário",
+      sector: (u.sector || "").toLowerCase(),
+    })) as Array<{ id: string; name: string; sector: string }>;
   };
 
-  // Escolhe o atendente (random simples). Para "triagem", cai para "admin".
+  // Escolhe um atendente; para "triagem" cai para "admin"
   const pickUserBySector = async (sector: SectorKey) => {
     const effectiveSector: SectorKey = sector === "triagem" ? "admin" : sector;
     const users = await findUsersBySector(effectiveSector);
@@ -153,7 +149,7 @@ export default function Chat() {
     return users[idx];
   };
 
-  // Lê os eventos ROUTING:* e devolve o estado de roteamento
+  // Lê o estado de roteamento via eventos ROUTING:*
   const readRoutingState = async (clientId: string): Promise<RoutingState> => {
     const { data, error } = await supabase
       .from("client_contacts")
@@ -192,7 +188,7 @@ export default function Chat() {
     return state;
   };
 
-  // Envia o menu automático (anti-spam 10min)
+  // Envia o menu (com anti-spam de 10min)
   const ensureMenuSent = async (clientId: string, phone: string) => {
     const routing = await readRoutingState(clientId);
     if (routing.isAssigned) return;
@@ -213,7 +209,7 @@ export default function Chat() {
     }
   };
 
-  // Trata a escolha "0-4" e atribui
+  // Processa a resposta "0-4" e atribui
   const handleRoutingSelection = async (clientId: string, selectionText: string) => {
     const choice = (selectionText || "").trim();
     if (!/^[0-4]$/.test(choice)) return false;
@@ -256,7 +252,7 @@ export default function Chat() {
     return true;
   };
 
-  // Encerrar chat: volta à triagem para o próximo contato
+  // Encerrar chat (volta à triagem no próximo contato)
   const closeChatForClient = async (clientId: string) => {
     await supabase.from("client_contacts").insert({
       client_id: clientId,
@@ -278,7 +274,7 @@ export default function Chat() {
     }
   };
 
-  // ---------------- Carregar Contatos ----------------
+  // ---------------- Contatos ----------------
 
   const loadWhatsAppContacts = async () => {
     setLoading(true);
@@ -351,7 +347,7 @@ export default function Chat() {
     }
   };
 
-  // ---------------- Carregar Mensagens (respeitando triagem) ----------------
+  // ---------------- Mensagens ----------------
 
   const loadMessages = async (contactId: string, state?: RoutingState) => {
     try {
@@ -367,12 +363,12 @@ export default function Chat() {
 
       if (error) throw error;
 
-      // Se não estiver atribuído, escondemos o histórico (UI mostra aviso de triagem)
       let showFromIndex = 0;
       if (!routing.isAssigned) {
-        showFromIndex = contactHistory?.length || 0; // ocultar tudo
+        // Em triagem: ocultar histórico (UI mostra aviso)
+        showFromIndex = contactHistory?.length || 0;
       } else {
-        // Poderíamos exibir apenas a partir do último ASSIGNED, se quiser
+        // Exibe a partir da última atribuição
         let assignPos = -1;
         for (let i = (contactHistory?.length || 0) - 1; i >= 0; i--) {
           const subj = (contactHistory![i].subject || "") as string;
@@ -417,7 +413,6 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Realtime: novas mensagens WhatsApp
   useEffect(() => {
     const channel = supabase
       .channel("chat-messages")
@@ -429,17 +424,15 @@ export default function Chat() {
             const isIncomingMessage = payload.new.created_by !== user?.id;
             const clientId = payload.new.client_id as string;
 
-            // Atualiza a lista de contatos
+            // Atualiza lista
             loadWhatsAppContacts();
 
             if (isIncomingMessage) {
-              // Verifica estado de roteamento
               const state = await readRoutingState(clientId);
               const client = await getClientById(clientId);
               const text = (payload.new.description || payload.new.subject || "").trim();
 
               if (!state.isAssigned) {
-                // Se cliente enviou "0-4", tenta atribuir
                 if (/^[0-4]$/.test(text)) {
                   const ok = await handleRoutingSelection(clientId, text);
                   if (ok && selectedContact && selectedContact.id === clientId) {
@@ -448,14 +441,11 @@ export default function Chat() {
                     await loadMessages(clientId, st);
                   }
                 } else {
-                  // Ainda não escolheu: envia/garante o menu
                   await ensureMenuSent(clientId, client.phone);
                 }
-                // Enquanto em triagem, não notifica a equipe fora da conversa ativa
-                return;
+                return; // não notifica enquanto estiver em triagem
               }
 
-              // Já atribuído: notifica se não for a conversa atual
               const isCurrent = selectedContact && clientId === selectedContact.id;
               if (!isCurrent) {
                 const { data: cli } = await supabase
@@ -463,15 +453,12 @@ export default function Chat() {
                   .select("name")
                   .eq("id", clientId)
                   .single();
-                if (cli) {
-                  notifyNewMessage(text || "Mensagem recebida", cli.name);
-                }
+                if (cli) notifyNewMessage(text || "Mensagem recebida", cli.name);
               } else {
                 await loadMessages(clientId, state);
                 setUnreadMessagesCount((prev) => Math.max(0, prev - 1));
               }
             } else {
-              // Mensagem enviada por mim
               if (selectedContact && payload.new.client_id === selectedContact.id) {
                 await loadMessages(selectedContact.id);
               }
@@ -488,12 +475,11 @@ export default function Chat() {
     };
   }, [selectedContact, user?.id]);
 
-  // ---------------- Ações UI ----------------
+  // ---------------- Ações ----------------
 
   const handleContactSelect = async (contact: WhatsAppContact) => {
     setSelectedContact(contact);
 
-    // Marca mensagens como lidas (somente para o badge da lista)
     const readMessagesKey = `read_messages_${contact.id}`;
     const { data: unreadMessages } = await supabase
       .from("client_contacts")
@@ -514,7 +500,6 @@ export default function Chat() {
     setRoutingState(st);
     await loadMessages(contact.id, st);
 
-    // Se estiver em triagem, garante menu enviado
     if (!st.isAssigned) {
       await ensureMenuSent(contact.id, contact.phone);
     }
@@ -523,7 +508,6 @@ export default function Chat() {
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedContact || !user) return;
 
-    // Bloqueia envio se ainda estiver em triagem
     if (!routingState?.isAssigned) {
       toast({
         title: "Aguardando seleção do setor",
@@ -534,7 +518,6 @@ export default function Chat() {
       return;
     }
 
-    // Envia localmente para resposta instantânea
     const newMsg: ChatMessage = {
       id: Date.now().toString(),
       content: newMessage,
