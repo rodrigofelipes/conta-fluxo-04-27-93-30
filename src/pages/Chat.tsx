@@ -256,7 +256,7 @@ export default function Chat() {
         subject: "ROUTING:MENU_SENT",
         description: AUTO_MENU_TEXT,
         contact_date: new Date().toISOString(),
-        created_by: assignedUserId,
+        created_by: user?.id ?? null,
       });
     }
   };
