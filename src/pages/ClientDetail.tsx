@@ -18,6 +18,8 @@ import { useAuth } from "@/state/auth";
 import { ProjectTimeline } from "@/components/projects/ProjectTimeline";
 import { ClientProjectsTab } from "@/components/projects/ClientProjectsTab";
 import { ClientBudgetsTab } from "@/components/client/ClientBudgetsTab";
+import {FileText as DocIcon,Upload as UploadIcon,User as UserIcon,Download as DownloadIcon,Calendar as CalendarMini} from "lucide-react";
+
 interface Client {
   id: string;
   name: string;
