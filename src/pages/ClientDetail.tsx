@@ -18,7 +18,6 @@ import { useAuth } from "@/state/auth";
 import { ProjectTimeline } from "@/components/projects/ProjectTimeline";
 import { ClientProjectsTab } from "@/components/projects/ClientProjectsTab";
 import { ClientBudgetsTab } from "@/components/client/ClientBudgetsTab";
-import { Trash2 } from "lucide-react";
 
 interface Client {
   id: string;
