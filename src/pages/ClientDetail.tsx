@@ -350,8 +350,7 @@ export default function ClientDetail() {
         description: "Documento enviado com sucesso!"
       });
 
-      // Garantir que permanece na aba de documentos
-      setActiveTab('documentos');
+      // Manter na aba atual após upload
 
       // Limpar o input file
       event.target.value = '';
