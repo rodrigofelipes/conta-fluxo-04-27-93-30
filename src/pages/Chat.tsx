@@ -50,16 +50,20 @@ const SECTOR_BY_OPTION: Record<string, SectorKey> = {
   "1": "coordenador",
   "2": "supervisor",
   "3": "admin",
-  "4": "colaborador",
   "0": "triagem", // opção "Não sei" -> cai para 'admin' (via pickUserBySector)
 };
 
 const AUTO_MENU_TEXT =
-  "Olá! 👋\nPor gentileza, informe o número do setor para o qual você deseja atendimento:\n\n" +
-  "1 - Coordenador\n" +
-  "2 - Supervisor\n" +
-  "3 - Admin\n" +
-  "4 - Colaborador\n" +
+  "Olá! 👋
+Por gentileza, informe o número do setor para o qual você deseja atendimento:
+
+" +
+  "1 - Coordenador
+" +
+  "2 - Supervisor
+" +
+  "3 - Admin
+" +
   "0 - Não sei o departamento (encaminharemos para Admin)";
 
 export default function Chat() {
@@ -90,9 +94,8 @@ export default function Chat() {
 
   const canReply = useMemo(() => {
     if (!routingState?.isAssigned) return false;
-    if (routingState.assignedUserId === user?.id) return true;
-    return isPrivileged;
-  }, [routingState?.isAssigned, routingState?.assignedUserId, user?.id, isPrivileged]);
+    return routingState.assignedUserId === user?.id;
+  }, [routingState?.isAssigned, routingState?.assignedUserId, user?.id]);
 
   const canCloseChat = useMemo(() => {
     if (!routingState) return isPrivileged; // se não sabemos, deixa só privilegiado
@@ -148,58 +151,61 @@ export default function Chat() {
     if (!user?.id) return;
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, user_id, name, email, role")
-      .eq("user_id", user.id)
+      .select("id, full_name, name, email, sector, role")
+      .eq("id", user.id)
       .limit(1)
       .single();
     if (!error && data) {
       setMyRole((data as any).role || "");
-      setMySector(((data as any).role || "").toLowerCase());
-      setMyName((data as any).name || (data as any).email || "");
+      setMySector((data as any).sector || "");
+      setMyName((data as any).full_name || (data as any).name || (data as any).email || "");
     }
   };
 
   // Tenta buscar usuários por setor em 'profiles' e depois 'users'
   const findUsersBySector = async (sector: SectorKey) => {
-    // Mapeia sinônimos para bater com valores variados no banco (usaremos apenas role)
+    // Mapeia sinônimos para bater com valores variados no banco (maiúsculas/minúsculas, PT/EN)
     const synonyms: Record<SectorKey, string[]> = {
       coordenador: ["coordenador", "coordinator"],
       supervisor: ["supervisor", "supervisão", "supervisor(a)"],
       admin: ["admin", "administrator", "administrador", "administração"],
       colaborador: ["colaborador", "colaborador(a)", "staff", "employee"],
-      triagem: ["admin"],
+      triagem: ["admin"], // triagem cai em admin no pickUserBySector
     };
 
     const variants = synonyms[sector] || [sector];
-    const orExpr = variants.map((v) => `role.ilike.*${v}*`).join(",");
+    const orExpr = variants
+      .map((v) => [`sector.ilike.*${v}*`, `role.ilike.*${v}*`])
+      .flat()
+      .join(",");
 
     const { data, error } = await supabase
       .from("profiles")
-      .select("user_id, name, email, role")
+      .select("id, full_name, name, email, sector, role")
       .or(orExpr)
       .limit(50);
 
     if (!error && data && data.length > 0) {
       return data.map((u: any) => ({
-        id: u.user_id, // usamos auth user id
-        name: u.name || u.email || "Usuário",
-        sector: (u.role || "").toLowerCase(),
+        id: u.id,
+        name: u.full_name || u.name || u.email || "Usuário",
+        sector: (u.sector || u.role || "").toLowerCase(),
       })) as Array<{ id: string; name: string; sector: string }>;
     }
 
     return [] as Array<{ id: string; name: string; sector: string }>;
   };
 
-  // Escolhe o atendente (preferência por nome; fallback aleatório por role). Para "triagem", cai para "admin".
+  // Escolhe o atendente (random simples). Para "triagem", cai para "admin".
   const pickUserBySector = async (sector: SectorKey) => {
     const effectiveSector: SectorKey = sector === "triagem" ? "admin" : sector;
 
-    // Preferência por nomes específicos
+    // Preferência por nomes específicos (assinatura direta)
     const PREFERRED_BY_SECTOR: Record<SectorKey, string | undefined> = {
       coordenador: "Leticia",
       supervisor: "Thuany",
       admin: "Mara",
-      colaborador: "Mara",
+      colaborador: undefined,
       triagem: "Mara",
     };
 
@@ -207,24 +213,23 @@ export default function Chat() {
     if (preferredName) {
       const { data: pref } = await supabase
         .from("profiles")
-        .select("user_id, name, role")
-        .eq("name", preferredName)
+        .select("id, full_name, name, sector, role")
+        .ilike("name", `%${preferredName}%`)
         .limit(1)
         .maybeSingle();
       if (pref) {
         return {
-          id: (pref as any).user_id,
-          name: (pref as any).name || preferredName,
-          sector: (((pref as any).role || "") as string).toLowerCase(),
+          id: (pref as any).id,
+          name: (pref as any).full_name || (pref as any).name || preferredName,
+          sector: (((pref as any).sector || (pref as any).role || "") as string).toLowerCase(),
         } as any;
       }
     }
 
-    // Fallback aleatório por role
+    // Fallback por role/sector (determinístico: primeiro da lista)
     const users = await findUsersBySector(effectiveSector);
     if (!users.length) return null;
-    const idx = Math.floor(Math.random() * users.length);
-    return users[idx];
+    return users[0];
   };
 
   // Lê eventos ROUTING:* e devolve o estado de roteamento
@@ -289,7 +294,7 @@ export default function Chat() {
   // Trata a escolha "0-4" e atribui a um atendente do setor
   const handleRoutingSelection = async (clientId: string, selectionText: string) => {
     const choice = (selectionText || "").trim();
-    if (!/^[0-4]$/.test(choice)) return false;
+    if (!/^[0-3]$/.test(choice)) return false;
 
     const sector = SECTOR_BY_OPTION[choice];
     const client = await getClientById(clientId);
@@ -298,10 +303,10 @@ export default function Chat() {
     let finalAssignee = assignee || (await pickUserBySector("admin")) || (await pickUserBySector("supervisor")) || null;
     if (!finalAssignee) {
       const wantSelf =
-        (sector === "admin" && (myRole || "").toLowerCase() === "admin") ||
-        (sector === "supervisor" && (myRole || "").toLowerCase() === "supervisor");
+        (sector === "admin" && ((myRole || "").toLowerCase() === "admin" || (mySector || "").toLowerCase() === "admin")) ||
+        (sector === "supervisor" && ((myRole || "").toLowerCase() === "supervisor" || (mySector || "").toLowerCase() === "supervisor"));
       if (wantSelf && user?.id) {
-        finalAssignee = { id: user.id, name: myName || "Você", sector: (myRole || sector).toLowerCase() } as any;
+        finalAssignee = { id: user.id, name: myName || "Você", sector: (mySector || myRole || sector).toLowerCase() } as any;
       }
     }
 
@@ -358,23 +363,6 @@ Um atendente irá responder em instantes.`
       contact_date: new Date().toISOString(),
       created_by: user?.id ?? null,
     });
-
-    // Também resetar a conversa no backend (whatsapp_conversations) para forçar nova triagem
-    try {
-      const client = await getClientById(clientId);
-      await supabase
-        .from("whatsapp_conversations")
-        .update({
-          state: "awaiting_selection",
-          selected_option: null,
-          assigned_to: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("phone_number", client.phone);
-    } catch (e) {
-      console.warn("Não foi possível resetar whatsapp_conversations:", e);
-    }
-
     toast({
       title: "Chat encerrado",
       description: "O próximo contato do cliente receberá o menu automático novamente.",
@@ -429,13 +417,15 @@ Um atendente irá responder em instantes.`
         const unreadCount = unreadMessages.filter((msg: any) => !readMessages.includes(msg.id)).length;
 
         const notMyAssignment =
-          routing.isAssigned && routing.assignedUserId !== user?.id && !isPrivileged;
+          routing.isAssigned && routing.assignedUserId !== user?.id;
 
         const lastMessage = routing.isAssigned
           ? notMyAssignment
             ? `🔒 Atribuído a ${routing.assignedUserName || "outro atendente"}`
             : lastContact?.description || lastContact?.subject || "Nenhuma conversa ainda"
           : "🟡 Em triagem — aguardando seleção do setor";
+
+        if (notMyAssignment) return null as any;
 
         return {
           id: client.id,
@@ -449,7 +439,7 @@ Um atendente irá responder em instantes.`
         } as WhatsAppContact;
       });
 
-      const contactsWithLastMessage = await Promise.all(contactsPromises);
+      const contactsWithLastMessage = (await Promise.all(contactsPromises)).filter(Boolean) as WhatsAppContact[];
       setContacts(contactsWithLastMessage);
     } catch (error) {
       console.error("Erro ao carregar contatos WhatsApp:", error);
@@ -552,7 +542,7 @@ Um atendente irá responder em instantes.`
                 const assignedUserId = parts[3];
                 // Atualiza lista e estado
                 loadWhatsAppContacts();
-                if (assignedUserId === user?.id || isPrivileged) {
+                if (assignedUserId === user?.id) {
                   const { data: cli } = await supabase
                     .from("clients")
                     .select("name")
@@ -600,7 +590,7 @@ Um atendente irá responder em instantes.`
               }
 
               // Já atribuído — somente notifica quem é o dono (ou quem é admin/supervisor)
-              const mineOrPrivileged = state.assignedUserId === user?.id || isPrivileged;
+              const mineOrPrivileged = state.assignedUserId === user?.id;
               const isCurrent = selectedContact && clientId === selectedContact.id;
 
               if (!mineOrPrivileged) {
@@ -642,7 +632,7 @@ Um atendente irá responder em instantes.`
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedContact, user?.id, isPrivileged]);
+  }, [selectedContact, user?.id]);
 
   // -------- Ações UI --------
   const handleContactSelect = async (contact: WhatsAppContact) => {
@@ -884,7 +874,7 @@ Um atendente irá responder em instantes.`
                     <div className="mb-4 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
                       <div className="font-medium mb-1">Em triagem</div>
                       O cliente ainda não escolheu o setor. O menu automático foi enviado e,
-                      assim que ele responder com <strong>0, 1, 2, 3 ou 4</strong>, o chat será liberado aqui.
+                      assim que ele responder com <strong>0, 1, 2 ou 3</strong>, o chat será liberado aqui.
                     </div>
                   )}
 
