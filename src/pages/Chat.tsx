@@ -50,15 +50,6 @@ const SECTOR_BY_OPTION: Record<string, SectorKey> = {
   "1": "coordenador",
   "2": "supervisor",
   "3": "admin",
-  "0": "triagem", // opção "Não sei" -> cai para 'admin' (via pickUserBySector)
-};
-
-type SectorKey = "coordenador" | "supervisor" | "admin" | "triagem";
-
-const SECTOR_BY_OPTION: Record<string, SectorKey> = {
-  "1": "coordenador",
-  "2": "supervisor",
-  "3": "admin",
   "0": "triagem", // "Não sei" -> Admin
 };
 
@@ -70,8 +61,11 @@ Por gentileza, informe o número do setor para o qual você deseja atendimento:
 2 - Supervisor
 3 - Admin
 0 - Não sei o departamento (encaminharemos para Admin)`;
-// aceitar apenas 0–3
-if (!/^[0-3]$/.test(choice)) return false;
+
+// Função para validar a escolha do menu
+const isValidMenuChoice = (choice: string) => {
+  return /^[0-3]$/.test(choice);
+};
 
 // no aviso da UI
 // ... responder com <strong>0, 1, 2 ou 3</strong>
