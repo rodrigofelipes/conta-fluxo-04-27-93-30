@@ -18,6 +18,7 @@ import { useAuth } from "@/state/auth";
 import { ProjectTimeline } from "@/components/projects/ProjectTimeline";
 import { ClientProjectsTab } from "@/components/projects/ClientProjectsTab";
 import { ClientBudgetsTab } from "@/components/client/ClientBudgetsTab";
+import { Trash2 } from "lucide-react";
 
 interface Client {
   id: string;
@@ -432,6 +433,38 @@ export default function ClientDetail() {
       </div>
     );
   }
+const handleDeleteDocument = async (doc: { id: string; file_path: string; document_name?: string }) => {
+  const confirmar = window.confirm(`Excluir o documento "${doc.document_name || ''}"?`);
+  if (!confirmar) return;
+
+  try {
+    // 1) Remove o arquivo do Storage
+    const { error: storageError } = await supabase
+      .storage
+      .from('client-documents')
+      .remove([doc.file_path]);
+
+    if (storageError) throw storageError;
+
+    // 2) Remove o registro no banco
+    const { error: dbError } = await supabase
+      .from('client_documents')
+      .delete()
+      .eq('id', doc.id);
+
+    if (dbError) throw dbError;
+
+    toast({ title: 'Documento excluído', description: 'O documento foi removido com sucesso.' });
+    loadClientData(); // atualiza a lista
+  } catch (err: any) {
+    console.error(err);
+    toast({
+      title: 'Erro ao excluir',
+      description: err?.message || 'Não foi possível excluir o documento.',
+      variant: 'destructive'
+    });
+  }
+};
 
   if (!client) {
     return (
