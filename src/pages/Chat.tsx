@@ -148,54 +148,79 @@ export default function Chat() {
     if (!user?.id) return;
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, full_name, name, email, sector, role")
-      .eq("id", user.id)
+      .select("id, user_id, name, email, role")
+      .eq("user_id", user.id)
       .limit(1)
       .single();
     if (!error && data) {
       setMyRole((data as any).role || "");
-      setMySector((data as any).sector || "");
-      setMyName((data as any).full_name || (data as any).name || (data as any).email || "");
+      setMySector(((data as any).role || "").toLowerCase());
+      setMyName((data as any).name || (data as any).email || "");
     }
   };
 
   // Tenta buscar usuários por setor em 'profiles' e depois 'users'
   const findUsersBySector = async (sector: SectorKey) => {
-    // Mapeia sinônimos para bater com valores variados no banco (maiúsculas/minúsculas, PT/EN)
+    // Mapeia sinônimos para bater com valores variados no banco (usaremos apenas role)
     const synonyms: Record<SectorKey, string[]> = {
       coordenador: ["coordenador", "coordinator"],
       supervisor: ["supervisor", "supervisão", "supervisor(a)"],
       admin: ["admin", "administrator", "administrador", "administração"],
       colaborador: ["colaborador", "colaborador(a)", "staff", "employee"],
-      triagem: ["admin"], // triagem cai em admin no pickUserBySector
+      triagem: ["admin"],
     };
 
     const variants = synonyms[sector] || [sector];
-    const orExpr = variants
-      .map((v) => [`sector.ilike.*${v}*`, `role.ilike.*${v}*`])
-      .flat()
-      .join(",");
+    const orExpr = variants.map((v) => `role.ilike.*${v}*`).join(",");
 
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, full_name, name, email, sector, role")
+      .select("user_id, name, email, role")
       .or(orExpr)
       .limit(50);
 
     if (!error && data && data.length > 0) {
       return data.map((u: any) => ({
-        id: u.id,
-        name: u.full_name || u.name || u.email || "Usuário",
-        sector: (u.sector || u.role || "").toLowerCase(),
+        id: u.user_id, // usamos auth user id
+        name: u.name || u.email || "Usuário",
+        sector: (u.role || "").toLowerCase(),
       })) as Array<{ id: string; name: string; sector: string }>;
     }
 
     return [] as Array<{ id: string; name: string; sector: string }>;
   };
 
-  // Escolhe o atendente (random simples). Para "triagem", cai para "admin".
+  // Escolhe o atendente (preferência por nome; fallback aleatório por role). Para "triagem", cai para "admin".
   const pickUserBySector = async (sector: SectorKey) => {
     const effectiveSector: SectorKey = sector === "triagem" ? "admin" : sector;
+
+    // Preferência por nomes específicos
+    const PREFERRED_BY_SECTOR: Record<SectorKey, string | undefined> = {
+      coordenador: "Leticia",
+      supervisor: "Thuany",
+      admin: "Mara",
+      colaborador: "Mara",
+      triagem: "Mara",
+    };
+
+    const preferredName = PREFERRED_BY_SECTOR[effectiveSector];
+    if (preferredName) {
+      const { data: pref } = await supabase
+        .from("profiles")
+        .select("user_id, name, role")
+        .eq("name", preferredName)
+        .limit(1)
+        .maybeSingle();
+      if (pref) {
+        return {
+          id: (pref as any).user_id,
+          name: (pref as any).name || preferredName,
+          sector: (((pref as any).role || "") as string).toLowerCase(),
+        } as any;
+      }
+    }
+
+    // Fallback aleatório por role
     const users = await findUsersBySector(effectiveSector);
     if (!users.length) return null;
     const idx = Math.floor(Math.random() * users.length);
@@ -273,10 +298,10 @@ export default function Chat() {
     let finalAssignee = assignee || (await pickUserBySector("admin")) || (await pickUserBySector("supervisor")) || null;
     if (!finalAssignee) {
       const wantSelf =
-        (sector === "admin" && ((myRole || "").toLowerCase() === "admin" || (mySector || "").toLowerCase() === "admin")) ||
-        (sector === "supervisor" && ((myRole || "").toLowerCase() === "supervisor" || (mySector || "").toLowerCase() === "supervisor"));
+        (sector === "admin" && (myRole || "").toLowerCase() === "admin") ||
+        (sector === "supervisor" && (myRole || "").toLowerCase() === "supervisor");
       if (wantSelf && user?.id) {
-        finalAssignee = { id: user.id, name: myName || "Você", sector: (mySector || myRole || sector).toLowerCase() } as any;
+        finalAssignee = { id: user.id, name: myName || "Você", sector: (myRole || sector).toLowerCase() } as any;
       }
     }
 
@@ -333,6 +358,23 @@ Um atendente irá responder em instantes.`
       contact_date: new Date().toISOString(),
       created_by: user?.id ?? null,
     });
+
+    // Também resetar a conversa no backend (whatsapp_conversations) para forçar nova triagem
+    try {
+      const client = await getClientById(clientId);
+      await supabase
+        .from("whatsapp_conversations")
+        .update({
+          state: "awaiting_selection",
+          selected_option: null,
+          assigned_to: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("phone_number", client.phone);
+    } catch (e) {
+      console.warn("Não foi possível resetar whatsapp_conversations:", e);
+    }
+
     toast({
       title: "Chat encerrado",
       description: "O próximo contato do cliente receberá o menu automático novamente.",
