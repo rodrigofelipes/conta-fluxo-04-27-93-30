@@ -394,38 +394,6 @@ export default function ClientDetail() {
       currency: 'BRL'
     }).format(amount);
   };
-
-   const handleDownload = async (document: ProjectDocument) => {
-    try {
-      const { data, error } = await supabase.storage
-        .from('project-documents')
-        .download(document.file_path);
-
-      if (error) throw error;
-
-      // Criar URL para download
-      const url = URL.createObjectURL(data);
-      const a = globalThis.document.createElement('a');
-      a.href = url;
-      a.download = document.document_name;
-      globalThis.document.body.appendChild(a);
-      a.click();
-      globalThis.document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      toast({
-        title: "Sucesso",
-        description: `Download de "${document.document_name}" iniciado`
-      });
-    } catch (error) {
-      console.error('Erro ao fazer download:', error);
-      toast({
-        title: "Erro",
-        description: "Erro ao fazer download do documento",
-        variant: "destructive"
-      });
-    }
-  };
   if (loading) {
     return <div className="space-y-6">
         <div className="text-center py-8">
