@@ -53,18 +53,28 @@ const SECTOR_BY_OPTION: Record<string, SectorKey> = {
   "0": "triagem", // opção "Não sei" -> cai para 'admin' (via pickUserBySector)
 };
 
-const AUTO_MENU_TEXT =
-  "Olá! 👋
+type SectorKey = "coordenador" | "supervisor" | "admin" | "triagem";
+
+const SECTOR_BY_OPTION: Record<string, SectorKey> = {
+  "1": "coordenador",
+  "2": "supervisor",
+  "3": "admin",
+  "0": "triagem", // "Não sei" -> Admin
+};
+
+// usar crase (template string) para evitar erro de quebra de linha
+const AUTO_MENU_TEXT = `Olá! 👋
 Por gentileza, informe o número do setor para o qual você deseja atendimento:
 
-" +
-  "1 - Coordenador
-" +
-  "2 - Supervisor
-" +
-  "3 - Admin
-" +
-  "0 - Não sei o departamento (encaminharemos para Admin)";
+1 - Coordenador
+2 - Supervisor
+3 - Admin
+0 - Não sei o departamento (encaminharemos para Admin)`;
+// aceitar apenas 0–3
+if (!/^[0-3]$/.test(choice)) return false;
+
+// no aviso da UI
+// ... responder com <strong>0, 1, 2 ou 3</strong>
 
 export default function Chat() {
   const { user } = useAuth();
