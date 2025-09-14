@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,7 +51,7 @@ const SECTOR_BY_OPTION: Record<string, SectorKey> = {
   "2": "supervisor",
   "3": "admin",
   "4": "colaborador",
-  "0": "triagem", // opção "Não sei" -> enviamos para 'admin' por padrão (ver pickUserBySector)
+  "0": "triagem", // opção "Não sei" -> cai para 'admin' (via pickUserBySector)
 };
 
 const AUTO_MENU_TEXT =
@@ -60,7 +60,7 @@ const AUTO_MENU_TEXT =
   "2 - Supervisor\n" +
   "3 - Admin\n" +
   "4 - Colaborador\n" +
-  "0 - Não sei o departamento";
+  "0 - Não sei o departamento (encaminharemos para Admin)";
 
 export default function Chat() {
   const { user } = useAuth();
@@ -75,9 +75,30 @@ export default function Chat() {
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [routingState, setRoutingState] = useState<RoutingState | null>(null);
 
+  // Perfil/logado
+  const [myRole, setMyRole] = useState<string>("");
+  const [mySector, setMySector] = useState<string>("");
+  const [myName, setMyName] = useState<string>("");
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // ---------------- Helpers ----------------
+  // -------- Helpers --------
+  const isPrivileged = useMemo(() => {
+    const r = (myRole || "").toLowerCase();
+    return r === "admin" || r === "supervisor";
+  }, [myRole]);
+
+  const canReply = useMemo(() => {
+    if (!routingState?.isAssigned) return false;
+    if (routingState.assignedUserId === user?.id) return true;
+    return isPrivileged;
+  }, [routingState?.isAssigned, routingState?.assignedUserId, user?.id, isPrivileged]);
+
+  const canCloseChat = useMemo(() => {
+    if (!routingState) return isPrivileged; // se não sabemos, deixa só privilegiado
+    if (!routingState.isAssigned) return isPrivileged; // somente admin/supervisor encerra sem dono
+    return routingState.assignedUserId === user?.id || isPrivileged;
+  }, [routingState, user?.id, isPrivileged]);
 
   const notifyNewMessage = (message: string, contactName: string) => {
     showNotification(`📱 Nova mensagem de ${contactName}`, message);
@@ -122,25 +143,53 @@ export default function Chat() {
     return client as { id: string; name: string; phone: string };
   };
 
+  // Perfil do usuário logado (para checar permissões e mostrar nome)
+  const loadMyProfile = async () => {
+    if (!user?.id) return;
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, full_name, name, email, sector, role")
+      .eq("id", user.id)
+      .limit(1)
+      .single();
+    if (!error && data) {
+      setMyRole((data as any).role || "");
+      setMySector((data as any).sector || "");
+      setMyName((data as any).full_name || (data as any).name || (data as any).email || "");
+    }
+  };
+
   // Tenta buscar usuários por setor em 'profiles' e depois 'users'
   const findUsersBySector = async (sector: SectorKey) => {
-    const candidates = ["profiles", "users"];
-    for (const table of candidates) {
-      const selectCols =
-        table === "profiles" ? "id, full_name, name, email, sector, role" : "id, name, email, sector, role";
-      const { data, error } = await supabase
-        .from(table)
-        .select(selectCols)
-        .or(`sector.eq.${sector},role.eq.${sector}`)
-        .limit(50);
-      if (!error && data && data.length > 0) {
-        return data.map((u: any) => ({
-          id: u.id,
-          name: u.full_name || u.name || u.email || "Usuário",
-          sector: (u.sector || u.role || "").toLowerCase(),
-        })) as Array<{ id: string; name: string; sector: string }>;
-      }
+    // Mapeia sinônimos para bater com valores variados no banco (maiúsculas/minúsculas, PT/EN)
+    const synonyms: Record<SectorKey, string[]> = {
+      coordenador: ["coordenador", "coordinator"],
+      supervisor: ["supervisor", "supervisão", "supervisor(a)"],
+      admin: ["admin", "administrator", "administrador", "administração"],
+      colaborador: ["colaborador", "colaborador(a)", "staff", "employee"],
+      triagem: ["admin"], // triagem cai em admin no pickUserBySector
+    };
+
+    const variants = synonyms[sector] || [sector];
+    const orExpr = variants
+      .map((v) => [`sector.ilike.*${v}*`, `role.ilike.*${v}*`])
+      .flat()
+      .join(",");
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, full_name, name, email, sector, role")
+      .or(orExpr)
+      .limit(50);
+
+    if (!error && data && data.length > 0) {
+      return data.map((u: any) => ({
+        id: u.id,
+        name: u.full_name || u.name || u.email || "Usuário",
+        sector: (u.sector || u.role || "").toLowerCase(),
+      })) as Array<{ id: string; name: string; sector: string }>;
     }
+
     return [] as Array<{ id: string; name: string; sector: string }>;
   };
 
@@ -153,7 +202,7 @@ export default function Chat() {
     return users[idx];
   };
 
-  // Lê os eventos ROUTING:* e devolve o estado de roteamento
+  // Lê eventos ROUTING:* e devolve o estado de roteamento
   const readRoutingState = async (clientId: string): Promise<RoutingState> => {
     const { data, error } = await supabase
       .from("client_contacts")
@@ -185,8 +234,7 @@ export default function Chat() {
       if (lastClosed) state.lastClosedAt = lastClosed.contact_date;
 
       state.isAssigned =
-        !!state.lastAssignedAt &&
-        (!state.lastClosedAt || new Date(state.lastAssignedAt) > new Date(state.lastClosedAt));
+        !!state.lastAssignedAt && (!state.lastClosedAt || new Date(state.lastAssignedAt) > new Date(state.lastClosedAt));
     }
 
     return state;
@@ -213,7 +261,7 @@ export default function Chat() {
     }
   };
 
-  // Trata a escolha "0-4" e atribui
+  // Trata a escolha "0-4" e atribui a um atendente do setor
   const handleRoutingSelection = async (clientId: string, selectionText: string) => {
     const choice = (selectionText || "").trim();
     if (!/^[0-4]$/.test(choice)) return false;
@@ -222,8 +270,7 @@ export default function Chat() {
     const client = await getClientById(clientId);
     const assignee = await pickUserBySector(sector);
 
-    const finalAssignee =
-      assignee || (await pickUserBySector("admin")) || (await pickUserBySector("supervisor")) || null;
+    const finalAssignee = assignee || (await pickUserBySector("admin")) || (await pickUserBySector("supervisor")) || null;
 
     const assignedUserId = finalAssignee?.id || "sem-user";
     const assignedUserName = finalAssignee?.name || "Equipe";
@@ -250,8 +297,19 @@ export default function Chat() {
 
     await sendWhatsApp(
       client.phone,
-      `Perfeito! ✅ Você selecionou ${setorLabel}.\nUm atendente irá responder em instantes.`
+      `Perfeito! ✅ Você selecionou ${setorLabel}.
+Um atendente irá responder em instantes.`
     );
+
+    // Cria uma mensagem visível para o atendente após o ASSIGNED
+    await supabase.from("client_contacts").insert({
+      client_id: clientId,
+      contact_type: "whatsapp",
+      subject: "Mensagem recebida via WhatsApp",
+      description: `Novo atendimento iniciado — setor ${setorLabel}.`,
+      contact_date: new Date().toISOString(),
+      created_by: null,
+    });
 
     return true;
   };
@@ -278,8 +336,7 @@ export default function Chat() {
     }
   };
 
-  // ---------------- Carregar Contatos ----------------
-
+  // -------- Carregar Contatos --------
   const loadWhatsAppContacts = async () => {
     setLoading(true);
     try {
@@ -321,8 +378,13 @@ export default function Chat() {
         const readMessages = JSON.parse(localStorage.getItem(readMessagesKey) || "[]");
         const unreadCount = unreadMessages.filter((msg: any) => !readMessages.includes(msg.id)).length;
 
+        const notMyAssignment =
+          routing.isAssigned && routing.assignedUserId !== user?.id && !isPrivileged;
+
         const lastMessage = routing.isAssigned
-          ? lastContact?.description || lastContact?.subject || "Nenhuma conversa ainda"
+          ? notMyAssignment
+            ? `🔒 Atribuído a ${routing.assignedUserName || "outro atendente"}`
+            : lastContact?.description || lastContact?.subject || "Nenhuma conversa ainda"
           : "🟡 Em triagem — aguardando seleção do setor";
 
         return {
@@ -351,8 +413,7 @@ export default function Chat() {
     }
   };
 
-  // ---------------- Carregar Mensagens (respeitando triagem) ----------------
-
+  // -------- Carregar Mensagens (respeitando triagem e propriedade) --------
   const loadMessages = async (contactId: string, state?: RoutingState) => {
     try {
       const routing = state || (await readRoutingState(contactId));
@@ -372,31 +433,17 @@ export default function Chat() {
       if (!routing.isAssigned) {
         showFromIndex = contactHistory?.length || 0; // ocultar tudo
       } else {
-  // Exibir a partir do último ASSIGNED (incluindo a mensagem de escolha 0–4 se veio logo antes)
-  let assignPos = -1;
-  for (let i = (contactHistory?.length || 0) - 1; i >= 0; i--) {
-    const subj = (contactHistory![i].subject || "") as string;
-    if (subj.startsWith("ROUTING:ASSIGNED")) {
-      assignPos = i;
-      break;
-    }
-  }
-  if (assignPos >= 0) {
-    let start = assignPos + 1;
-    if (assignPos > 0) {
-      const prev = contactHistory![assignPos - 1];
-      const prevText = (prev.description || prev.subject || "").trim();
-      const prevIsRouting = ((prev.subject || "") as string).startsWith("ROUTING:");
-      if (!prevIsRouting && /^[0-4]$/.test(prevText)) {
-        start = assignPos - 1; // inclui a escolha do menu
+        // Exibir a partir do último ASSIGNED (para ficar claro o contexto)
+        let assignPos = -1;
+        for (let i = (contactHistory?.length || 0) - 1; i >= 0; i--) {
+          const subj = (contactHistory![i].subject || "") as string;
+          if (subj.startsWith("ROUTING:ASSIGNED")) {
+            assignPos = i;
+            break;
+          }
+        }
+        showFromIndex = assignPos >= 0 ? assignPos + 1 : 0;
       }
-    }
-    showFromIndex = start;
-  } else {
-    showFromIndex = 0;
-  }
-}
-
 
       const visible = (contactHistory || [])
         .slice(showFromIndex)
@@ -421,11 +468,15 @@ export default function Chat() {
     }
   };
 
-  // ---------------- Efeitos ----------------
+  // -------- Efeitos --------
+  useEffect(() => {
+    loadMyProfile();
+  }, [user?.id]);
 
   useEffect(() => {
     loadWhatsAppContacts();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myRole]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -440,8 +491,37 @@ export default function Chat() {
         { event: "INSERT", schema: "public", table: "client_contacts", filter: "contact_type=eq.whatsapp" },
         async (payload: any) => {
           try {
+            const subjectRaw = (payload.new.subject || "") as string;
             const isIncomingMessage = payload.new.created_by !== user?.id;
             const clientId = payload.new.client_id as string;
+
+            // Se for ASSIGNMENT, notifica imediatamente o atendente dono
+            if (subjectRaw.startsWith("ROUTING:ASSIGNED:")) {
+              try {
+                const parts = subjectRaw.split(":");
+                const assignedUserId = parts[3];
+                // Atualiza lista e estado
+                loadWhatsAppContacts();
+                if (assignedUserId === user?.id || isPrivileged) {
+                  const { data: cli } = await supabase
+                    .from("clients")
+                    .select("name")
+                    .eq("id", clientId)
+                    .single();
+                  if (cli) {
+                    notifyNewMessage("Novo atendimento encaminhado para você.", cli.name);
+                  }
+                }
+                if (selectedContact?.id === clientId) {
+                  const st = await readRoutingState(clientId);
+                  setRoutingState(st);
+                  await loadMessages(clientId, st);
+                }
+              } catch (e) {
+                console.error("Erro ao processar ROUTING:ASSIGNED:", e);
+              }
+              return;
+            }
 
             // Atualiza a lista de contatos
             loadWhatsAppContacts();
@@ -469,8 +549,20 @@ export default function Chat() {
                 return;
               }
 
-              // Já atribuído: notifica se não for a conversa atual
+              // Já atribuído — somente notifica quem é o dono (ou quem é admin/supervisor)
+              const mineOrPrivileged = state.assignedUserId === user?.id || isPrivileged;
               const isCurrent = selectedContact && clientId === selectedContact.id;
+
+              if (!mineOrPrivileged) {
+                // Não é meu chat: não notifica
+                if (isCurrent) {
+                  // Mas se por algum motivo eu estiver vendo, apenas recarrega para refletir bloqueio
+                  await loadMessages(clientId, state);
+                }
+                return;
+              }
+
+              // Dono/privilegiado
               if (!isCurrent) {
                 const { data: cli } = await supabase
                   .from("clients")
@@ -500,10 +592,9 @@ export default function Chat() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedContact, user?.id]);
+  }, [selectedContact, user?.id, isPrivileged]);
 
-  // ---------------- Ações UI ----------------
-
+  // -------- Ações UI --------
   const handleContactSelect = async (contact: WhatsAppContact) => {
     setSelectedContact(contact);
 
@@ -537,12 +628,13 @@ export default function Chat() {
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedContact || !user) return;
 
-    // Bloqueia envio se ainda estiver em triagem
-    if (!routingState?.isAssigned) {
+    // Bloqueia envio se ainda estiver em triagem ou se não for meu chat
+    if (!canReply) {
       toast({
-        title: "Aguardando seleção do setor",
-        description:
-          "O cliente ainda não escolheu o setor. Assim que ele responder ao menu automático, você poderá enviar mensagens.",
+        title: routingState?.isAssigned ? "Este chat não está atribuído a você" : "Aguardando seleção do setor",
+        description: routingState?.isAssigned
+          ? "Apenas o atendente responsável (ou Admin/Supervisor) pode responder."
+          : "O cliente ainda não escolheu o setor. Assim que ele responder ao menu automático, você poderá enviar mensagens.",
         variant: "destructive",
       });
       return;
@@ -589,12 +681,10 @@ export default function Chat() {
   };
 
   const filteredContacts = contacts.filter(
-    (contact) =>
-      contact.name.toLowerCase().includes(searchTerm.toLowerCase()) || contact.phone.includes(searchTerm)
+    (contact) => contact.name.toLowerCase().includes(searchTerm.toLowerCase()) || contact.phone.includes(searchTerm)
   );
 
-  // ---------------- Render ----------------
-
+  // -------- Render --------
   return (
     <div className="space-y-6">
       <PageHeader title="Chat" subtitle="Conversas e comunicação com clientes via WhatsApp" />
@@ -665,9 +755,7 @@ export default function Chat() {
                         <div className="flex items-center justify-between">
                           <h4 className="font-medium truncate">{contact.name}</h4>
                           {contact.lastMessageTime && (
-                            <span className="text-xs text-muted-foreground">
-                              {formatTime(contact.lastMessageTime)}
-                            </span>
+                            <span className="text-xs text-muted-foreground">{formatTime(contact.lastMessageTime)}</span>
                           )}
                         </div>
                         <div className="flex items-center justify-between">
@@ -705,12 +793,16 @@ export default function Chat() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3">
                       <h3 className="font-semibold">{selectedContact.name}</h3>
-                      {routingState?.isAssigned ? (
+                      {!routingState?.isAssigned ? (
+                        <Badge variant="secondary">Em triagem</Badge>
+                      ) : canReply ? (
                         <Badge variant="default">
                           Ativo {routingState.assignedUserName ? `• ${routingState.assignedUserName}` : ""}
                         </Badge>
                       ) : (
-                        <Badge variant="secondary">Em triagem</Badge>
+                        <Badge variant="destructive">
+                          Atribuído a {routingState?.assignedUserName || "outro atendente"}
+                        </Badge>
                       )}
                     </div>
 
@@ -726,6 +818,7 @@ export default function Chat() {
                       size="sm"
                       onClick={() => closeChatForClient(selectedContact.id)}
                       title="Encerrar chat"
+                      disabled={!canCloseChat}
                     >
                       <XCircle className="h-4 w-4 mr-2" />
                       Encerrar chat
@@ -745,6 +838,14 @@ export default function Chat() {
                     </div>
                   )}
 
+                  {routingState?.isAssigned && !canReply && (
+                    <div className="mb-4 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                      <div className="font-medium mb-1">Chat atribuído a {routingState?.assignedUserName || "outro atendente"}</div>
+                      Apenas o atendente responsável pode responder. Caso necessário, clique em <em>Encerrar chat</em>
+                      para voltar a triagem e reenviar o menu automático ao cliente.
+                    </div>
+                  )}
+
                   <div className="space-y-4 pb-4">
                     {messages.map((message) => (
                       <div key={message.id} className={`flex mb-4 ${message.isOutgoing ? "justify-end" : "justify-start"}`}>
@@ -756,11 +857,7 @@ export default function Chat() {
                           }`}
                         >
                           <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
-                          <div
-                            className={`flex items-center gap-1 mt-2 ${
-                              message.isOutgoing ? "justify-end" : "justify-start"
-                            }`}
-                          >
+                          <div className={`flex items-center gap-1 mt-2 ${message.isOutgoing ? "justify-end" : "justify-start"}`}>
                             <span
                               className={`text-xs ${
                                 message.isOutgoing ? "text-primary-foreground/70" : "text-muted-foreground"
@@ -789,18 +886,18 @@ export default function Chat() {
               <div className="p-4 border-t">
                 <div className="flex gap-2">
                   <Input
-                    placeholder={
-                      routingState?.isAssigned
-                        ? "Digite sua mensagem..."
-                        : "Aguardando o cliente escolher o setor…"
-                    }
+                    placeholder={!routingState?.isAssigned
+                      ? "Aguardando o cliente escolher o setor…"
+                      : canReply
+                      ? "Digite sua mensagem..."
+                      : "Este chat está atribuído a outro atendente"}
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
                     className="flex-1"
-                    disabled={!routingState?.isAssigned}
+                    disabled={!canReply}
                   />
-                  <Button onClick={handleSendMessage} size="sm" disabled={!routingState?.isAssigned}>
+                  <Button onClick={handleSendMessage} size="sm" disabled={!canReply}>
                     <Send className="h-4 w-4" />
                   </Button>
                 </div>
