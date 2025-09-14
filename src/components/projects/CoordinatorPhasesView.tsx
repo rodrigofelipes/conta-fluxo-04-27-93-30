@@ -126,8 +126,8 @@ export default function CoordinatorPhasesView() {
 
   const handleEditPhase = (phase: ProjectPhase) => {
     setSelectedPhase(phase);
-    setAssignedTo(phase.assigned_to || "");
-    setSupervisedBy(phase.supervised_by || "");
+    setAssignedTo(phase.assigned_to || "none");
+    setSupervisedBy(phase.supervised_by || "none");
     setDialogOpen(true);
   };
 
@@ -138,8 +138,8 @@ export default function CoordinatorPhasesView() {
       const { error } = await supabase
         .from('project_phases')
         .update({
-          assigned_to: assignedTo || null,
-          supervised_by: supervisedBy || null,
+          assigned_to: assignedTo === "none" ? null : assignedTo,
+          supervised_by: supervisedBy === "none" ? null : supervisedBy,
           updated_at: new Date().toISOString()
         })
         .eq('id', selectedPhase.id);
@@ -295,7 +295,7 @@ export default function CoordinatorPhasesView() {
                   <SelectValue placeholder="Selecione um colaborador" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Nenhum</SelectItem>
+                  <SelectItem value="none">Nenhum</SelectItem>
                   {profiles
                     .filter(p => p.role === 'user')
                     .map((profile) => (
@@ -314,7 +314,7 @@ export default function CoordinatorPhasesView() {
                   <SelectValue placeholder="Selecione um supervisor" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Nenhum</SelectItem>
+                  <SelectItem value="none">Nenhum</SelectItem>
                   {profiles
                     .filter(p => p.role === 'supervisor')
                     .map((profile) => (
