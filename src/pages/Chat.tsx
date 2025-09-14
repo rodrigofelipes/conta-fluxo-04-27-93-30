@@ -256,7 +256,7 @@ export default function Chat() {
         subject: "ROUTING:MENU_SENT",
         description: AUTO_MENU_TEXT,
         contact_date: new Date().toISOString(),
-        created_by: user?.id ?? null,
+        created_by: assignedUserId,
       });
     }
   };
@@ -270,7 +270,15 @@ export default function Chat() {
     const client = await getClientById(clientId);
     const assignee = await pickUserBySector(sector);
 
-    const finalAssignee = assignee || (await pickUserBySector("admin")) || (await pickUserBySector("supervisor")) || null;
+    let finalAssignee = assignee || (await pickUserBySector("admin")) || (await pickUserBySector("supervisor")) || null;
+    if (!finalAssignee) {
+      const wantSelf =
+        (sector === "admin" && ((myRole || "").toLowerCase() === "admin" || (mySector || "").toLowerCase() === "admin")) ||
+        (sector === "supervisor" && ((myRole || "").toLowerCase() === "supervisor" || (mySector || "").toLowerCase() === "supervisor"));
+      if (wantSelf && user?.id) {
+        finalAssignee = { id: user.id, name: myName || "Você", sector: (mySector || myRole || sector).toLowerCase() } as any;
+      }
+    }
 
     const assignedUserId = finalAssignee?.id || "sem-user";
     const assignedUserName = finalAssignee?.name || "Equipe";
@@ -308,7 +316,7 @@ Um atendente irá responder em instantes.`
       subject: "Mensagem recebida via WhatsApp",
       description: `Novo atendimento iniciado — setor ${setorLabel}.`,
       contact_date: new Date().toISOString(),
-      created_by: null,
+      created_by: assignedUserId,
     });
 
     return true;
