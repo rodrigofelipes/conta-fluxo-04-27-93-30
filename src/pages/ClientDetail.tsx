@@ -18,8 +18,6 @@ import { useAuth } from "@/state/auth";
 import { ProjectTimeline } from "@/components/projects/ProjectTimeline";
 import { ClientProjectsTab } from "@/components/projects/ClientProjectsTab";
 import { ClientBudgetsTab } from "@/components/client/ClientBudgetsTab";
-import {FileText as DocIcon,Upload as UploadIcon,User as UserIcon,Download as DownloadIcon,Calendar as CalendarMini} from "lucide-react";
-
 interface Client {
   id: string;
   name: string;
@@ -394,128 +392,6 @@ export default function ClientDetail() {
       currency: 'BRL'
     }).format(amount);
   };
-
-  const BUCKET_NAME = "client-documents"; // ajuste o nome se o seu bucket for outro
-
-  const handleDownload = async (doc: any) => {
-  try {
-    // doc.path deve ser algo como: `${clientId}/nome-do-arquivo.ext`
-    const { data, error } = await supabase.storage
-      .from(BUCKET_NAME)
-      .createSignedUrl(doc.path, 60); // URL válida por 60s
-
-    if (error || !data?.signedUrl) throw error;
-    window.open(data.signedUrl, "_blank");
-  } catch (err: any) {
-    console.error(err);
-    toast({
-      title: "Erro ao baixar",
-      description: "Não foi possível gerar o link de download.",
-      variant: "destructive",
-    });
-  }
-};
-
-  // Pré-visualização (imagem/pdf)
-const [preview, setPreview] = useState<{
-  url: string;
-  name: string;
-  type: "image" | "pdf" | "other";
-} | null>(null);
-
-
-
-// Se você já definiu clientId em outro lugar, mantenha o seu.
-// Aqui só uso para reconstruir o path quando doc.path não existir.
-const clientIdSafe = typeof clientId !== "undefined" ? String(clientId) : "";
-
-// Helpers
-const getExt = (name?: string) =>
-  (name?.split(".").pop() || "").toLowerCase();
-const isImg = (ext: string) => ["jpg", "jpeg", "png", "webp"].includes(ext);
-const isPdf = (ext: string) => ext === "pdf";
-
-// Gera URL assinada e abre modal de preview
-const handlePreview = async (doc: any) => {
-  try {
-    const ext = getExt(doc?.document_name);
-    const path: string =
-      doc?.path ??
-      (clientIdSafe ? `${clientIdSafe}/${doc?.document_name}` : String(doc?.document_name));
-
-    const { data, error } = await supabase.storage
-      .from(BUCKET_NAME)
-      .createSignedUrl(path, 60); // 60s
-
-    if (error || !data?.signedUrl) throw error;
-
-    if (isPdf(ext)) {
-      setPreview({ url: data.signedUrl, name: doc.document_name, type: "pdf" });
-      return;
-    }
-    if (isImg(ext)) {
-      setPreview({ url: data.signedUrl, name: doc.document_name, type: "image" });
-      return;
-    }
-
-    // Outros formatos (DOC/DOCX): sem preview — abre no navegador (download/visualizador)
-    window.open(data.signedUrl, "_blank");
-  } catch (err: any) {
-    console.error(err);
-    toast({
-      title: "Erro na visualização",
-      description: "Não foi possível gerar o link de visualização.",
-      variant: "destructive",
-    });
-  }
-};
-
-  const clientId = String(client?.id ?? "");
-
-  // Pré-visualização (imagem/pdf)
-const [preview, setPreview] = useState<{
-  url: string;
-  name: string;
-  type: "image" | "pdf" | "other";
-} | null>(null);
-
-const getExt = (name?: string) => (name?.split(".").pop() || "").toLowerCase();
-const isImg = (ext: string) => ["jpg", "jpeg", "png", "webp"].includes(ext);
-const isPdf = (ext: string) => ext === "pdf";
-
-// Gera URL assinada e abre modal de preview
-const handlePreview = async (doc: any) => {
-  try {
-    const ext = getExt(doc?.document_name);
-    const path = doc?.path ?? (clientId ? `${clientId}/${doc?.document_name}` : String(doc?.document_name));
-
-    const { data, error } = await supabase.storage
-      .from(BUCKET_NAME)
-      .createSignedUrl(path, 300); // 5 minutos
-
-    if (error || !data?.signedUrl) throw error;
-
-    if (isPdf(ext)) {
-      setPreview({ url: data.signedUrl, name: doc.document_name, type: "pdf" });
-      return;
-    }
-    if (isImg(ext)) {
-      setPreview({ url: data.signedUrl, name: doc.document_name, type: "image" });
-      return;
-    }
-
-    // Outros formatos (DOC/DOCX): abre em nova aba (download/visualizador)
-    window.open(data.signedUrl, "_blank");
-  } catch (err: any) {
-    console.error(err);
-    toast({
-      title: "Erro na visualização",
-      description: "Não foi possível gerar o link de visualização.",
-      variant: "destructive",
-    });
-  }
-};
-
   if (loading) {
     return <div className="space-y-6">
         <div className="text-center py-8">
@@ -815,158 +691,99 @@ const handlePreview = async (doc: any) => {
         </TabsContent>
 
         {/* Aba Documentos */}
-<TabsContent value="documentos" className="space-y-6">
-  <Card className="border-2 border-border/50 bg-gradient-to-br from-background to-background/80">
-    <CardHeader className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-blue-950/20 dark:to-indigo-950/20 border-b border-border/50">
-      <div className="flex flex-row items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
-            <DocIcon className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-          </div>
-          <div>
-            <CardTitle className="text-xl font-bold">Documentos</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              {documents.length} {documents.length === 1 ? 'documento' : 'documentos'} anexado{documents.length === 1 ? '' : 's'}
-            </p>
-          </div>
-        </div>
-        <div className="relative group">
-          <Input
-            type="file"
-            onChange={handleFileUpload}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-          />
-          <Button
-            size="sm"
-            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md hover:shadow-lg transition-all duration-200"
-          >
-            <UploadIcon className="mr-2 h-4 w-4" />
-            Enviar Documento
-          </Button>
-        </div>
-      </div>
-    </CardHeader>
-
-    <CardContent className="p-6">
-      {documents.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {documents.map((doc: any) => (
-            <div
-              key={doc.id}
-              className="group relative border-2 border-border/50 rounded-xl p-4 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-300 hover:shadow-lg bg-gradient-to-br from-card to-muted/20"
-            >
-              {/* Document type indicator */}
-              <div className="absolute top-0 right-0 w-16 h-16 overflow-hidden rounded-tr-xl">
-                <div className="absolute top-2 right-2 w-10 h-10 bg-blue-100 dark:bg-blue-900/40 rounded-full flex items-center justify-center">
-                  <DocIcon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {/* Document name */}
-                <div>
-                  <h4 className="font-semibold text-foreground group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-2 pr-12">
-                    {doc.document_name}
-                  </h4>
-                </div>
-
-                {/* Document info */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground font-medium">
-                      {doc.file_size ? ((doc.file_size / 1024).toFixed(1) + ' KB') : '-'}
-                    </span>
+        <TabsContent value="documentos" className="space-y-6">
+          <Card className="border-2 border-border/50 bg-gradient-to-br from-background to-background/80">
+            <CardHeader className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-blue-950/20 dark:to-indigo-950/20 border-b border-border/50">
+              <div className="flex flex-row items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
+                    <FileText className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                   </div>
-
-                  <div className="text-xs text-muted-foreground flex items-center gap-1">
-                    <CalendarMini className="h-3 w-3" />
-                    {new Date(doc.created_at).toLocaleDateString('pt-BR', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: 'numeric'
-                    })}
-                  </div>
-                  <div className="text-xs text-muted-foreground flex items-center gap-1">
-                    <UserIcon className="h-3 w-3" />
-                    Por: {doc.uploader_name ?? '—'}
+                  <div>
+                    <CardTitle className="text-xl font-bold">Documentos</CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {documents.length} {documents.length === 1 ? 'documento' : 'documentos'} anexado{documents.length === 1 ? '' : 's'}
+                    </p>
                   </div>
                 </div>
-
-                {/* Actions */}
-                <div className="pt-2 border-t border-border/30 grid grid-cols-2 gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handlePreview(doc)}
-                    className="w-full hover:bg-blue-50 dark:hover:bg-blue-950/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-200"
-                  >
-                    Visualizar
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDownload(doc)}
-                    className="w-full hover:bg-blue-50 dark:hover:bg-blue-950/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-200"
-                  >
-                    <DownloadIcon className="h-4 w-4 mr-2" />
-                    Baixar
+                <div className="relative group">
+                  <Input type="file" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                  <Button size="sm" className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md hover:shadow-lg transition-all duration-200">
+                    <Upload className="mr-2 h-4 w-4" />
+                    Enviar Documento
                   </Button>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-16">
-          <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-950 dark:to-indigo-950 rounded-full flex items-center justify-center mx-auto mb-6">
-            <DocIcon className="h-10 w-10 text-blue-600 dark:text-blue-400" />
-          </div>
-          <h3 className="font-semibold text-lg mb-2">Nenhum documento anexado</h3>
-          <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-            Comece enviando o primeiro documento para este cliente. Formatos aceitos: PDF, DOC, DOCX, JPG, PNG.
-          </p>
-          <div className="relative inline-block">
-            <Input
-              type="file"
-              onChange={handleFileUpload}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-            />
-            <Button className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
-              <UploadIcon className="mr-2 h-4 w-4" />
-              Enviar Primeiro Documento
-            </Button>
-          </div>
-        </div>
-      )}
-    </CardContent>
-  </Card>
-
-  {/* Modal de Pré-visualização */}
-  <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
-    <DialogContent className="max-w-4xl w-full">
-      <DialogHeader>
-        <DialogTitle className="truncate">{preview?.name ?? "Visualização"}</DialogTitle>
-      </DialogHeader>
-
-      {preview?.type === "image" && (
-        <img src={preview.url} alt={preview.name} className="w-full h-auto rounded-md" />
-      )}
-
-      {preview?.type === "pdf" && (
-        <iframe src={preview.url} className="w-full h-[70vh] rounded-md" />
-      )}
-
-      {!preview || preview?.type === "other" ? (
-        <div className="text-sm text-muted-foreground">
-          Este formato não possui pré-visualização embutida. Utilize o botão <b>Baixar</b>.
-        </div>
-      ) : null}
-    </DialogContent>
-  </Dialog>
-</TabsContent>
-
-
-
+            </CardHeader>
+            <CardContent className="p-6">
+              {documents.length > 0 ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {documents.map(doc => <div key={doc.id} className="group relative border-2 border-border/50 rounded-xl p-4 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-300 hover:shadow-lg bg-gradient-to-br from-card to-muted/20">
+                      {/* Document type indicator */}
+                      <div className="absolute top-0 right-0 w-16 h-16 overflow-hidden rounded-tr-xl">
+                        <div className="absolute top-2 right-2 w-10 h-10 bg-blue-100 dark:bg-blue-900/40 rounded-full flex items-center justify-center">
+                          <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        {/* Document name */}
+                        <div>
+                          <h4 className="font-semibold text-foreground group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-2 pr-12">
+                            {doc.document_name}
+                          </h4>
+                        </div>
+                        
+                        {/* Document info */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            
+                            <span className="text-xs text-muted-foreground font-medium">
+                              {doc.file_size ? `${(doc.file_size / 1024).toFixed(1)} KB` : '-'}
+                            </span>
+                          </div>
+                          
+                          <div className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(doc.created_at).toLocaleDateString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric'
+                      })}
+                          </div>
+                          <div className="text-xs text-muted-foreground flex items-center gap-1">
+                            <User className="h-3 w-3" />
+                            Por: {doc.uploader_name}
+                          </div>
+                        </div>
+                        
+                        {/* Actions */}
+                        <div className="pt-2 border-t border-border/30">
+                          <Button variant="outline" size="sm" className="w-full hover:bg-blue-50 dark:hover:bg-blue-950/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-200">
+                            <Download className="h-4 w-4 mr-2" />
+                            Baixar
+                          </Button>
+                        </div>
+                      </div>
+                    </div>)}
+                </div> : <div className="text-center py-16">
+                  <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-950 dark:to-indigo-950 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <FileText className="h-10 w-10 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <h3 className="font-semibold text-lg mb-2">Nenhum documento anexado</h3>
+                  <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                    Comece enviando o primeiro documento para este cliente. Formatos aceitos: PDF, DOC, DOCX, JPG, PNG.
+                  </p>
+                  <div className="relative inline-block">
+                    <Input type="file" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                    <Button className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
+                      <Upload className="mr-2 h-4 w-4" />
+                      Enviar Primeiro Documento
+                    </Button>
+                  </div>
+                </div>}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Aba Financeiro */}
         <TabsContent value="financeiro" className="space-y-6">
