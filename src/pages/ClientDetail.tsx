@@ -18,6 +18,8 @@ import { useAuth } from "@/state/auth";
 import { ProjectTimeline } from "@/components/projects/ProjectTimeline";
 import { ClientProjectsTab } from "@/components/projects/ClientProjectsTab";
 import { ClientBudgetsTab } from "@/components/client/ClientBudgetsTab";
+import { FileText, Upload, Calendar, User, Download } from "lucide-react";
+
 interface Client {
   id: string;
   name: string;
@@ -416,6 +418,200 @@ export default function ClientDetail() {
         </Card>
       </div>;
   }
+  // ===== CONFIGURAÇÃO DO STORAGE =====
+const BUCKET_NAME = "client-documents"; // ajuste se seu bucket tiver outro nome
+
+type DocumentItem = {
+  id: string;              // path completo no bucket
+  document_name: string;   // nome do arquivo
+  file_size: number | null;
+  created_at: string;      // ISO
+  uploader_name: string | null;
+  path: string;            // igual ao id
+};
+
+// (opcional) restringir formatos aceitos no input de arquivo
+const acceptAttr = [
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "image/jpeg",
+  "image/png",
+].join(",");
+
+function bytesToKB(bytes?: number | null) {
+  if (bytes === null || bytes === undefined) return "-";
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function slugifyFilename(name: string) {
+  const [base, ...extParts] = name.split(".");
+  const ext = extParts.length ? `.${extParts.pop()}` : "";
+  const safeBase = base
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9-_ ]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .toLowerCase();
+  return `${safeBase}${ext.toLowerCase()}`;
+}
+
+async function getCurrentProfileName(): Promise<string | null> {
+  const { data: auth } = await supabase.auth.getUser();
+  const userId = auth.user?.id;
+  if (!userId) return null;
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("name, user_id")
+    .eq("user_id", userId)
+    .single();
+
+  return profile?.name ?? null;
+}
+
+// ===== CAPTURA DO CLIENTE ATUAL =====
+// A) Se usa Next.js com rota /clientes/[id]:
+const params = useParams();
+const clientId = (params?.id as string) || (params?.clientId as string) || "";
+
+// B) Se você já tem o id do cliente na página (ex.: cliente.id):
+// >>> substitua a linha acima por:
+// const clientId = String(cliente?.id ?? "");
+
+// ===== ESTADO DA ABA =====
+const [documents, setDocuments] = useState<DocumentItem[]>([]);
+const [loadingDocs, setLoadingDocs] = useState(true);
+const [uploading, setUploading] = useState(false);
+
+// ===== CARREGAR LISTA DO STORAGE =====
+const loadDocuments = useCallback(async () => {
+  if (!clientId) {
+    setDocuments([]);
+    setLoadingDocs(false);
+    return;
+  }
+  try {
+    setLoadingDocs(true);
+    const { data, error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .list(clientId, { limit: 1000, sortBy: { column: "created_at", order: "desc" } });
+
+    if (error) throw error;
+
+    const mapped: DocumentItem[] = (data ?? []).map((obj: any) => ({
+      id: `${clientId}/${obj.name}`,
+      document_name: obj.name,
+      file_size: obj?.metadata?.size ?? null,
+      created_at: obj?.created_at ?? obj?.updated_at ?? new Date().toISOString(),
+      uploader_name: null, // p/ arquivos antigos não sabemos o autor
+      path: `${clientId}/${obj.name}`,
+    }));
+
+    setDocuments(mapped);
+  } catch (err: any) {
+    console.error(err);
+    toast({
+      title: "Erro",
+      description: "Não foi possível carregar os documentos.",
+      variant: "destructive",
+    });
+  } finally {
+    setLoadingDocs(false);
+  }
+}, [clientId]);
+
+useEffect(() => {
+  loadDocuments();
+}, [loadDocuments]);
+
+// ===== UPLOAD =====
+const handleFileUpload: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
+  try {
+    const file = e.target.files?.[0];
+    e.currentTarget.value = ""; // permite selecionar o mesmo arquivo novamente
+    if (!file) return;
+
+    if (!clientId) {
+      toast({
+        title: "Cliente não definido",
+        description: "Não foi possível identificar o cliente para anexar o documento.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (acceptAttr && !acceptAttr.split(",").includes(file.type)) {
+      toast({
+        title: "Formato não suportado",
+        description: "Formatos aceitos: PDF, DOC, DOCX, JPG, PNG.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setUploading(true);
+
+    const uploaderName = (await getCurrentProfileName()) ?? null;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const safeName = slugifyFilename(file.name);
+    const path = `${clientId}/${timestamp}--${safeName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(BUCKET_NAME)
+      .upload(path, file, {
+        upsert: false,
+        contentType: file.type || undefined,
+      });
+
+    if (uploadError) throw uploadError;
+
+    // Atualiza a lista imediatamente (sem esperar reload)
+    setDocuments((prev) => [
+      {
+        id: path,
+        document_name: path.split("/").pop() || safeName,
+        file_size: file.size,
+        created_at: new Date().toISOString(),
+        uploader_name: uploaderName,
+        path,
+      },
+      ...prev,
+    ]);
+
+    toast({ title: "Documento enviado", description: "Arquivo anexado com sucesso." });
+  } catch (err: any) {
+    console.error(err);
+    toast({
+      title: "Erro ao enviar",
+      description: err?.message || "Não foi possível anexar o documento.",
+      variant: "destructive",
+    });
+  } finally {
+    setUploading(false);
+  }
+};
+
+// ===== DOWNLOAD =====
+const handleDownload = async (doc: DocumentItem) => {
+  try {
+    const { data, error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .createSignedUrl(doc.path, 60); // link válido por 60s
+    if (error || !data?.signedUrl) throw error;
+    window.open(data.signedUrl, "_blank");
+  } catch (err: any) {
+    console.error(err);
+    toast({
+      title: "Erro ao baixar",
+      description: "Não foi possível gerar o link de download.",
+      variant: "destructive",
+    });
+  }
+};
+
+  
+  
   return <div className="space-y-6">
       <div className="relative">
         <div className="btn-hero-static rounded-lg p-6">
@@ -691,99 +887,137 @@ export default function ClientDetail() {
         </TabsContent>
 
         {/* Aba Documentos */}
-        <TabsContent value="documentos" className="space-y-6">
-          <Card className="border-2 border-border/50 bg-gradient-to-br from-background to-background/80">
-            <CardHeader className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-blue-950/20 dark:to-indigo-950/20 border-b border-border/50">
-              <div className="flex flex-row items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
-                    <FileText className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+<TabsContent value="documentos" className="space-y-6">
+  <Card className="border-2 border-border/50 bg-gradient-to-br from-background to-background/80">
+    <CardHeader className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-blue-950/20 dark:to-indigo-950/20 border-b border-border/50">
+      <div className="flex flex-row items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
+            <FileText className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+          </div>
+          <div>
+            <CardTitle className="text-xl font-bold">Documentos</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              {documents.length} {documents.length === 1 ? 'documento' : 'documentos'} anexado{documents.length === 1 ? '' : 's'}
+            </p>
+          </div>
+        </div>
+
+        <div className="relative group">
+          <Input
+            type="file"
+            accept={acceptAttr}
+            onChange={handleFileUpload}
+            disabled={uploading || !clientId}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+          />
+          <Button
+            size="sm"
+            disabled={uploading || !clientId}
+            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md hover:shadow-lg transition-all duration-200"
+          >
+            <Upload className="mr-2 h-4 w-4" />
+            {uploading ? "Enviando..." : "Enviar Documento"}
+          </Button>
+        </div>
+      </div>
+    </CardHeader>
+
+    <CardContent className="p-6">
+      {loadingDocs ? (
+        <div className="text-center py-16 text-muted-foreground">Carregando documentos...</div>
+      ) : documents.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {documents.map(doc => (
+            <div
+              key={doc.id}
+              className="group relative border-2 border-border/50 rounded-xl p-4 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-300 hover:shadow-lg bg-gradient-to-br from-card to-muted/20"
+            >
+              {/* Document type indicator */}
+              <div className="absolute top-0 right-0 w-16 h-16 overflow-hidden rounded-tr-xl">
+                <div className="absolute top-2 right-2 w-10 h-10 bg-blue-100 dark:bg-blue-900/40 rounded-full flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {/* Document name */}
+                <div>
+                  <h4 className="font-semibold text-foreground group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-2 pr-12">
+                    {doc.document_name}
+                  </h4>
+                </div>
+
+                {/* Document info */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground font-medium">
+                      {bytesToKB(doc.file_size)}
+                    </span>
                   </div>
-                  <div>
-                    <CardTitle className="text-xl font-bold">Documentos</CardTitle>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {documents.length} {documents.length === 1 ? 'documento' : 'documentos'} anexado{documents.length === 1 ? '' : 's'}
-                    </p>
+
+                  <div className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    {new Date(doc.created_at).toLocaleDateString('pt-BR', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric'
+                    })}
+                  </div>
+
+                  <div className="text-xs text-muted-foreground flex items-center gap-1">
+                    <User className="h-3 w-3" />
+                    Por: {doc.uploader_name ?? "—"}
                   </div>
                 </div>
-                <div className="relative group">
-                  <Input type="file" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                  <Button size="sm" className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md hover:shadow-lg transition-all duration-200">
-                    <Upload className="mr-2 h-4 w-4" />
-                    Enviar Documento
+
+                {/* Actions */}
+                <div className="pt-2 border-t border-border/30">
+                  <Button
+                    onClick={() => handleDownload(doc)}
+                    variant="outline"
+                    size="sm"
+                    className="w-full hover:bg-blue-50 dark:hover:bg-blue-950/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-200"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Baixar
                   </Button>
                 </div>
               </div>
-            </CardHeader>
-            <CardContent className="p-6">
-              {documents.length > 0 ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {documents.map(doc => <div key={doc.id} className="group relative border-2 border-border/50 rounded-xl p-4 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-300 hover:shadow-lg bg-gradient-to-br from-card to-muted/20">
-                      {/* Document type indicator */}
-                      <div className="absolute top-0 right-0 w-16 h-16 overflow-hidden rounded-tr-xl">
-                        <div className="absolute top-2 right-2 w-10 h-10 bg-blue-100 dark:bg-blue-900/40 rounded-full flex items-center justify-center">
-                          <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-3">
-                        {/* Document name */}
-                        <div>
-                          <h4 className="font-semibold text-foreground group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-2 pr-12">
-                            {doc.document_name}
-                          </h4>
-                        </div>
-                        
-                        {/* Document info */}
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            
-                            <span className="text-xs text-muted-foreground font-medium">
-                              {doc.file_size ? `${(doc.file_size / 1024).toFixed(1)} KB` : '-'}
-                            </span>
-                          </div>
-                          
-                          <div className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            {new Date(doc.created_at).toLocaleDateString('pt-BR', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric'
-                      })}
-                          </div>
-                          <div className="text-xs text-muted-foreground flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            Por: {doc.uploader_name}
-                          </div>
-                        </div>
-                        
-                        {/* Actions */}
-                        <div className="pt-2 border-t border-border/30">
-                          <Button variant="outline" size="sm" className="w-full hover:bg-blue-50 dark:hover:bg-blue-950/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-200">
-                            <Download className="h-4 w-4 mr-2" />
-                            Baixar
-                          </Button>
-                        </div>
-                      </div>
-                    </div>)}
-                </div> : <div className="text-center py-16">
-                  <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-950 dark:to-indigo-950 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <FileText className="h-10 w-10 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <h3 className="font-semibold text-lg mb-2">Nenhum documento anexado</h3>
-                  <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                    Comece enviando o primeiro documento para este cliente. Formatos aceitos: PDF, DOC, DOCX, JPG, PNG.
-                  </p>
-                  <div className="relative inline-block">
-                    <Input type="file" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                    <Button className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
-                      <Upload className="mr-2 h-4 w-4" />
-                      Enviar Primeiro Documento
-                    </Button>
-                  </div>
-                </div>}
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-16">
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-950 dark:to-indigo-950 rounded-full flex items-center justify-center mx-auto mb-6">
+            <FileText className="h-10 w-10 text-blue-600 dark:text-blue-400" />
+          </div>
+          <h3 className="font-semibold text-lg mb-2">Nenhum documento anexado</h3>
+          <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+            Comece enviando o primeiro documento para este cliente. Formatos aceitos: PDF, DOC, DOCX, JPG, PNG.
+          </p>
+          <div className="relative inline-block">
+            <Input
+              type="file"
+              accept={acceptAttr}
+              onChange={handleFileUpload}
+              disabled={uploading || !clientId}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+            />
+            <Button
+              disabled={uploading || !clientId}
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              {uploading ? "Enviando..." : "Enviar Primeiro Documento"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </CardContent>
+  </Card>
+</TabsContent>
+
 
         {/* Aba Financeiro */}
         <TabsContent value="financeiro" className="space-y-6">
