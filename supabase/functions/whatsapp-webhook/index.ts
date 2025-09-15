@@ -241,28 +241,17 @@ async function routeUserBySelection(selection: string): Promise<any> {
   }
 }
 
-// Função para verificar se mensagem é seleção do menu
-function isMenuSelection(message: string): boolean {
-  const trimmed = message.trim();
-  return ['0', '1', '2', '3', '4'].includes(trimmed);
-}
+// Função para enviar mensagem de aguarde para o cliente
+async function sendWelcomeMessage(phone: string) {
+  const welcomeMessage = `Olá! 👋 Bem-vindo à Olevate! 
 
-// Função para enviar menu de opções para o cliente
-async function sendMenuToClient(phone: string) {
-  const menuMessage = `Olá! 👋 Bem-vindo à Olevate! 
+Obrigado pelo seu contato. Um de nossos atendentes irá falar com você em breve.
 
-Por favor, selecione uma opção para ser direcionado ao setor adequado:
-
-1 - Coordenação
-2 - Supervisão 
-3 - Administrativo
-0 - Não sei o departamento
-
-Digite apenas o número da opção desejada.`;
+Aguarde um momento, por favor! 😊`;
 
   try {
     const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
-    console.log(`📱 Tentando enviar menu usando Phone Number ID: ${phoneNumberId ? 'configurado' : 'NÃO CONFIGURADO'}`);
+    console.log(`📱 Tentando enviar mensagem de boas-vindas usando Phone Number ID: ${phoneNumberId ? 'configurado' : 'NÃO CONFIGURADO'}`);
     
     if (!phoneNumberId) {
       console.error('❌ WHATSAPP_PHONE_NUMBER_ID não está configurado');
@@ -285,21 +274,21 @@ Digite apenas o número da opção desejada.`;
         to: phone,
         type: 'text',
         text: {
-          body: menuMessage
+          body: welcomeMessage
         }
       })
     });
 
     if (response.ok) {
-      console.log(`✅ Menu enviado para ${phone}`);
+      console.log(`✅ Mensagem de boas-vindas enviada para ${phone}`);
       return true;
     } else {
       const errorData = await response.json();
-      console.error('❌ Erro ao enviar menu:', errorData);
+      console.error('❌ Erro ao enviar mensagem de boas-vindas:', errorData);
       return false;
     }
   } catch (error) {
-    console.error('❌ Erro na requisição do menu:', error);
+    console.error('❌ Erro na requisição da mensagem de boas-vindas:', error);
     return false;
   }
 }
@@ -407,82 +396,25 @@ serve(async (req) => {
                 continue;
               }
               
-              let assignedUser = null;
+              // Sempre atribuir ao admin
+              let assignedUser = await findUserByRole('admin');
               
-              // Se estado é awaiting_selection e não é uma seleção do menu, enviar menu
-              console.log(`🔍 Estado da conversa: ${conversation.state}, Mensagem: "${messageText}", É seleção do menu: ${isMenuSelection(messageText)}`);
-              
-              if (conversation.state === 'awaiting_selection' && !isMenuSelection(messageText)) {
-                console.log('📋 Enviando menu de opções para cliente');
-                const menuSent = await sendMenuToClient(senderPhone);
+              // Se é a primeira mensagem (awaiting_selection), enviar mensagem de boas-vindas
+              if (conversation.state === 'awaiting_selection') {
+                console.log('👋 Enviando mensagem de boas-vindas para cliente');
+                const welcomeSent = await sendWelcomeMessage(senderPhone);
                 
-                if (menuSent) {
-                  console.log('✅ Menu enviado com sucesso');
-                } else {
-                  console.error('❌ Falha ao enviar menu');
-                }
-                
-                // Salvar a mensagem do cliente antes de enviar o menu
-                const adminUser = await findUserByRole('admin');
-                if (adminUser) {
-                  await saveWhatsAppMessage(
-                    cliente.id,
-                    messageText,
-                    false, // mensagem recebida
-                    adminUser.user_id
-                  );
-                }
-                continue;
-              }
-              
-              // Verificar se é uma seleção do menu
-              if (conversation.state === 'awaiting_selection' && isMenuSelection(messageText)) {
-                console.log(`🎯 Cliente selecionou opção: ${messageText}`);
-                
-                // Rotear para usuário baseado na seleção
-                assignedUser = await routeUserBySelection(messageText);
-                
-                if (assignedUser) {
-                  // Atualizar conversa com usuário atribuído
-                  await updateConversationState(senderPhone, {
-                    state: 'routed',
-                    selected_option: messageText,
-                    assigned_to: assignedUser.id
-                  });
+                if (welcomeSent) {
+                  console.log('✅ Mensagem de boas-vindas enviada com sucesso');
                   
-                  console.log(`✅ Conversa roteada para: ${assignedUser.name} (${assignedUser.role})`);
+                  // Atualizar conversa para estado "contacted"
+                  await updateConversationState(senderPhone, {
+                    state: 'contacted',
+                    assigned_to: assignedUser?.id
+                  });
                 } else {
-                  // Fallback para admin se não encontrar usuário específico
-                  assignedUser = await findUserByRole('admin');
-                  if (assignedUser) {
-                    await updateConversationState(senderPhone, {
-                      state: 'routed',
-                      selected_option: messageText,
-                      assigned_to: assignedUser.id
-                    });
-                    console.log(`⚠️ Roteamento fallback para admin: ${assignedUser.name}`);
-                  }
+                  console.error('❌ Falha ao enviar mensagem de boas-vindas');
                 }
-              } else if (conversation.state === 'routed' && conversation.assigned_to) {
-                // Conversa já roteada - usar usuário atribuído
-                const { data: userData } = await supabase
-                  .from('profiles')
-                  .select('*')
-                  .eq('id', conversation.assigned_to)
-                  .single();
-                
-                if (userData) {
-                  assignedUser = userData;
-                  console.log(`📨 Mensagem para usuário atribuído: ${assignedUser.name}`);
-                } else {
-                  // Fallback se usuário atribuído não for encontrado
-                  assignedUser = await findUserByRole('admin');
-                  console.log(`⚠️ Usuário atribuído não encontrado, usando admin fallback`);
-                }
-              } else {
-                // Estado inicial ou não definido - usar admin
-                assignedUser = await findUserByRole('admin');
-                console.log(`📨 Usando admin padrão para mensagem`);
               }
               
               // Salvar mensagem
