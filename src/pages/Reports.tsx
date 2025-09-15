@@ -345,6 +345,7 @@ export default function Reports() {
       );
       const satisfacaoAgg: Record<string, { total: number; count: number }> = {};
       for (const f of feedbackQuery.data) {
+        if (!inRange(f, dateRange)) continue;
         const s = getSector(f);
         const val = getSatisfactionValue(f);
         if (val !== null) {
@@ -364,6 +365,7 @@ export default function Reports() {
       );
       const eficienciaAgg: Record<string, { total: number; count: number }> = {};
       for (const e of efficiencyQuery.data) {
+        if (!inRange(e, dateRange)) continue;
         const s = getSector(e);
         const val = getEfficiencyValue(e);
         if (val !== null) {
