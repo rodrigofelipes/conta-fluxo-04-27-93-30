@@ -261,7 +261,20 @@ Por favor, selecione uma opção para ser direcionado ao setor adequado:
 Digite apenas o número da opção desejada.`;
 
   try {
-    const response = await fetch(`https://graph.facebook.com/v17.0/${Deno.env.get('WHATSAPP_PHONE_NUMBER_ID')}/messages`, {
+    const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
+    console.log(`📱 Tentando enviar menu usando Phone Number ID: ${phoneNumberId ? 'configurado' : 'NÃO CONFIGURADO'}`);
+    
+    if (!phoneNumberId) {
+      console.error('❌ WHATSAPP_PHONE_NUMBER_ID não está configurado');
+      return false;
+    }
+    
+    if (!WHATSAPP_ACCESS_TOKEN) {
+      console.error('❌ WHATSAPP_ACCESS_TOKEN não está configurado');
+      return false;
+    }
+    
+    const response = await fetch(`https://graph.facebook.com/v17.0/${phoneNumberId}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
@@ -397,9 +410,17 @@ serve(async (req) => {
               let assignedUser = null;
               
               // Se estado é awaiting_selection e não é uma seleção do menu, enviar menu
+              console.log(`🔍 Estado da conversa: ${conversation.state}, Mensagem: "${messageText}", É seleção do menu: ${isMenuSelection(messageText)}`);
+              
               if (conversation.state === 'awaiting_selection' && !isMenuSelection(messageText)) {
                 console.log('📋 Enviando menu de opções para cliente');
-                await sendMenuToClient(senderPhone);
+                const menuSent = await sendMenuToClient(senderPhone);
+                
+                if (menuSent) {
+                  console.log('✅ Menu enviado com sucesso');
+                } else {
+                  console.error('❌ Falha ao enviar menu');
+                }
                 
                 // Salvar a mensagem do cliente antes de enviar o menu
                 const adminUser = await findUserByRole('admin');
