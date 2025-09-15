@@ -51,8 +51,8 @@ interface DashboardMetrics {
     count: number;
     percentage: number;
     performance: number; // % de tarefas DONE no setor (ou proxy)
-    satisfacao: number;  // proxy de satisfação quando indisponível
-    eficiencia: number;  // proxy de eficiência quando indisponível
+    satisfacao?: number;  // média real de satisfação, se disponível
+    eficiencia?: number;  // média real de eficiência, se disponível
   }>;
   clientesPorSituacao: Array<{ situacao: string; count: number }>;
   novosClientesMensal: Array<{ mes: string; clientes: number }>;
@@ -133,6 +133,30 @@ function getStatus(row: any): string {
     row?.stage ??
     "DESCONHECIDO"
   )?.toString()?.toUpperCase();
+}
+
+/**
+ * Extrai valor de satisfação de registros de feedback.
+ */
+function getSatisfactionValue(row: any): number | null {
+  const v =
+    row?.satisfaction ??
+    row?.satisfacao ??
+    row?.rating ??
+    row?.score;
+  return typeof v === "number" ? v : null;
+}
+
+/**
+ * Extrai valor de eficiência de registros de eficiência de fases.
+ */
+function getEfficiencyValue(row: any): number | null {
+  const v =
+    row?.efficiency ??
+    row?.eficiencia ??
+    row?.score ??
+    row?.value;
+  return typeof v === "number" ? v : null;
 }
 
 /**
@@ -314,6 +338,45 @@ export default function Reports() {
         if (st === "DONE" || st === "CONCLUIDO") bySetorTasks[s].done += 1;
       }
 
+      // ---------- Satisfação (client_feedback) e Eficiência (phase_efficiency) ----------
+      const feedbackQuery = await trySelectTables(
+        ["client_feedback", "feedback"],
+        "*"
+      );
+      const satisfacaoAgg: Record<string, { total: number; count: number }> = {};
+      for (const f of feedbackQuery.data) {
+        const s = getSector(f);
+        const val = getSatisfactionValue(f);
+        if (val !== null) {
+          satisfacaoAgg[s] = satisfacaoAgg[s] || { total: 0, count: 0 };
+          satisfacaoAgg[s].total += val;
+          satisfacaoAgg[s].count += 1;
+        }
+      }
+      const satisfacaoBySetor: Record<string, number> = {};
+      for (const [s, v] of Object.entries(satisfacaoAgg)) {
+        if (v.count > 0) satisfacaoBySetor[s] = clampPct(v.total / v.count);
+      }
+
+      const efficiencyQuery = await trySelectTables(
+        ["phase_efficiency", "efficiency_metrics"],
+        "*"
+      );
+      const eficienciaAgg: Record<string, { total: number; count: number }> = {};
+      for (const e of efficiencyQuery.data) {
+        const s = getSector(e);
+        const val = getEfficiencyValue(e);
+        if (val !== null) {
+          eficienciaAgg[s] = eficienciaAgg[s] || { total: 0, count: 0 };
+          eficienciaAgg[s].total += val;
+          eficienciaAgg[s].count += 1;
+        }
+      }
+      const eficienciaBySetor: Record<string, number> = {};
+      for (const [s, v] of Object.entries(eficienciaAgg)) {
+        if (v.count > 0) eficienciaBySetor[s] = clampPct(v.total / v.count);
+      }
+
       const clientesPorSetor = clientesPorSetorBase.map((row) => {
         const perf =
           bySetorTasks[row.setor]?.total
@@ -321,16 +384,22 @@ export default function Reports() {
             : // se não houver tarefas com setor, usa média geral de done
               (isFinite(tarefasDonePct) ? tarefasDonePct : 0);
 
-        // Proxies simples para "satisfação" e "eficiência" quando não há colunas específicas
-        const satisfacao = clampPct(perf + 3); // levemente acima da performance
-        const eficiencia = clampPct(perf + 1); // quase igual à performance
-
-        return {
+        const result: {
+          setor: string;
+          count: number;
+          percentage: number;
+          performance: number;
+          satisfacao?: number;
+          eficiencia?: number;
+        } = {
           ...row,
-          performance: perf,
-          satisfacao,
-          eficiencia
+          performance: perf
         };
+        if (satisfacaoBySetor[row.setor] !== undefined)
+          result.satisfacao = satisfacaoBySetor[row.setor];
+        if (eficienciaBySetor[row.setor] !== undefined)
+          result.eficiencia = eficienciaBySetor[row.setor];
+        return result;
       });
 
       // ---------- Novos clientes por mês (últimos 12 meses) ----------
@@ -372,9 +441,26 @@ export default function Reports() {
    */
   const csv = useMemo(() => {
     const sep = "\n\n";
-    const b1Header = "Clientes por Setor\nSetor,Clientes,Percentual,Performance(%),Satisfacao(%),Eficiencia(%)\n";
+    const hasSatisfacao = metrics.clientesPorSetor.some((d) => d.satisfacao !== undefined);
+    const hasEficiencia = metrics.clientesPorSetor.some((d) => d.eficiencia !== undefined);
+
+    let b1Header = "Clientes por Setor\nSetor,Clientes,Percentual,Performance(%)";
+    if (hasSatisfacao) b1Header += ",Satisfacao(%)";
+    if (hasEficiencia) b1Header += ",Eficiencia(%)";
+    b1Header += "\n";
+
     const b1Rows = metrics.clientesPorSetor
-      .map((d) => `${d.setor},${d.count},${d.percentage}%,${d.performance},${d.satisfacao},${d.eficiencia}`)
+      .map((d) => {
+        const cols = [
+          d.setor,
+          String(d.count),
+          `${d.percentage}%`,
+          String(d.performance)
+        ];
+        if (hasSatisfacao) cols.push(d.satisfacao !== undefined ? String(d.satisfacao) : "");
+        if (hasEficiencia) cols.push(d.eficiencia !== undefined ? String(d.eficiencia) : "");
+        return cols.join(",");
+      })
       .join("\n");
 
     const b2Header = "Clientes por Situacao\nSituacao,Quantidade\n";
@@ -880,45 +966,60 @@ export default function Reports() {
                     <CardTitle>Performance por Setor</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    {metrics.clientesPorSetor.map((setor, index) => (
-                      <div key={setor.setor} className="p-4 rounded-lg bg-muted/20 border space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-4 h-4 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                            <span className="font-semibold text-lg">{setor.setor}</span>
+                    {metrics.clientesPorSetor.map((setor, index) => {
+                      const cols =
+                        1 +
+                        (setor.satisfacao !== undefined ? 1 : 0) +
+                        (setor.eficiencia !== undefined ? 1 : 0);
+                      const gridCols =
+                        cols === 3 ? "grid-cols-3" : cols === 2 ? "grid-cols-2" : "grid-cols-1";
+                      return (
+                        <div key={setor.setor} className="p-4 rounded-lg bg-muted/20 border space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div
+                                className="w-4 h-4 rounded-full"
+                                style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                              />
+                              <span className="font-semibold text-lg">{setor.setor}</span>
+                            </div>
+                            <Badge variant="secondary" className="font-medium">
+                              {setor.count} clientes ({setor.percentage}%)
+                            </Badge>
                           </div>
-                          <Badge variant="secondary" className="font-medium">
-                            {setor.count} clientes ({setor.percentage}%)
-                          </Badge>
+
+                          <div className={`grid ${gridCols} gap-4 text-sm`}>
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-muted-foreground">Performance</span>
+                                <span className="font-medium">{setor.performance}%</span>
+                              </div>
+                              <Progress value={setor.performance} className="h-2" />
+                            </div>
+
+                            {setor.satisfacao !== undefined && (
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-muted-foreground">Satisfação</span>
+                                  <span className="font-medium">{setor.satisfacao}%</span>
+                                </div>
+                                <Progress value={setor.satisfacao} className="h-2" />
+                              </div>
+                            )}
+
+                            {setor.eficiencia !== undefined && (
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-muted-foreground">Eficiência</span>
+                                  <span className="font-medium">{setor.eficiencia}%</span>
+                                </div>
+                                <Progress value={setor.eficiencia} className="h-2" />
+                              </div>
+                            )}
+                          </div>
                         </div>
-
-                        <div className="grid grid-cols-3 gap-4 text-sm">
-                          <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-muted-foreground">Performance</span>
-                              <span className="font-medium">{setor.performance}%</span>
-                            </div>
-                            <Progress value={setor.performance} className="h-2" />
-                          </div>
-
-                          <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-muted-foreground">Satisfação</span>
-                              <span className="font-medium">{setor.satisfacao}%</span>
-                            </div>
-                            <Progress value={setor.satisfacao} className="h-2" />
-                          </div>
-
-                          <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-muted-foreground">Eficiência</span>
-                              <span className="font-medium">{setor.eficiencia}%</span>
-                            </div>
-                            <Progress value={setor.eficiencia} className="h-2" />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </CardContent>
                 </Card>
               </div>
