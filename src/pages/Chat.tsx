@@ -272,22 +272,15 @@ export default function Chat() {
   );
 
   return (
-    <div className="h-screen flex flex-col">
-      {/* Header com título e notificações */}
-      <div className="flex items-center justify-between p-4 border-b bg-background">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">WhatsApp Business</h1>
-          <p className="text-sm text-muted-foreground">Gerencie conversas do WhatsApp Business</p>
-        </div>
-        <NotificationCenter />
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="WhatsApp Business" />
 
-      {/* Container principal do chat */}
-      <div className="flex-1 flex gap-4 p-4 overflow-hidden">
+      <div className="flex gap-4 h-[calc(100vh-200px)] overflow-hidden">
         {/* Lista de Contatos */}
         <Card className="w-80 flex flex-col">
           <CardHeader className="pb-3 flex-shrink-0">
             <CardTitle className="flex items-center gap-2">
+              <NotificationCenter />
               <MessageSquare className="h-5 w-5" />
               Conversas
               {unreadMessagesCount > 0 && (
