@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MessageSquare, Phone, Search, Send, XCircle } from "lucide-react";
+import { MessageSquare, Phone, Search, Send } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
 import { toast } from "@/hooks/use-toast";
@@ -34,42 +34,6 @@ interface ChatMessage {
   status: MsgStatus;
 }
 
-type SectorKey = "coordenador" | "supervisor" | "admin" | "colaborador" | "triagem";
-
-type RoutingState = {
-  isAssigned: boolean;
-  assignedUserId?: string;
-  assignedUserName?: string;
-  assignedSector?: SectorKey;
-  lastAssignedAt?: string;
-  lastClosedAt?: string;
-  lastMenuSentAt?: string;
-};
-
-const SECTOR_BY_OPTION: Record<string, SectorKey> = {
-  "1": "coordenador",
-  "2": "supervisor",
-  "3": "admin",
-  "0": "triagem", // "Não sei" -> Admin
-};
-
-// usar crase (template string) para evitar erro de quebra de linha
-const AUTO_MENU_TEXT = `Olá! 👋
-Por gentileza, informe o número do setor para o qual você deseja atendimento:
-
-1 - Coordenador
-2 - Supervisor
-3 - Admin
-0 - Não sei o departamento (encaminharemos para Admin)`;
-
-// Função para validar a escolha do menu
-const isValidMenuChoice = (choice: string) => {
-  return /^[0-3]$/.test(choice);
-};
-
-// no aviso da UI
-// ... responder com <strong>0, 1, 2 ou 3</strong>
-
 export default function Chat() {
   const { user } = useAuth();
   const { showNotification } = useCustomNotifications();
@@ -81,31 +45,8 @@ export default function Chat() {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
-  const [routingState, setRoutingState] = useState<RoutingState | null>(null);
-
-  // Perfil/logado
-  const [myRole, setMyRole] = useState<string>("");
-  const [mySector, setMySector] = useState<string>("");
-  const [myName, setMyName] = useState<string>("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // -------- Helpers --------
-  const isPrivileged = useMemo(() => {
-    const r = (myRole || "").toLowerCase();
-    return r === "admin" || r === "supervisor";
-  }, [myRole]);
-
-  const canReply = useMemo(() => {
-    if (!routingState?.isAssigned) return false;
-    return routingState.assignedUserId === user?.id;
-  }, [routingState?.isAssigned, routingState?.assignedUserId, user?.id]);
-
-  const canCloseChat = useMemo(() => {
-    if (!routingState) return isPrivileged; // se não sabemos, deixa só privilegiado
-    if (!routingState.isAssigned) return isPrivileged; // somente admin/supervisor encerra sem dono
-    return routingState.assignedUserId === user?.id || isPrivileged;
-  }, [routingState, user?.id, isPrivileged]);
 
   const notifyNewMessage = (message: string, contactName: string) => {
     showNotification(`📱 Nova mensagem de ${contactName}`, message);
@@ -140,244 +81,6 @@ export default function Chat() {
     }
   };
 
-  const getClientById = async (clientId: string) => {
-    const { data: client, error } = await supabase
-      .from("clients")
-      .select("id, name, phone")
-      .eq("id", clientId)
-      .single();
-    if (error || !client) throw error || new Error("Cliente não encontrado");
-    return client as { id: string; name: string; phone: string };
-  };
-
-  // Perfil do usuário logado (para checar permissões e mostrar nome)
-  const loadMyProfile = async () => {
-    if (!user?.id) return;
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, full_name, name, email, sector, role")
-      .eq("id", user.id)
-      .limit(1)
-      .single();
-    if (!error && data) {
-      setMyRole((data as any).role || "");
-      setMySector((data as any).sector || "");
-      setMyName((data as any).full_name || (data as any).name || (data as any).email || "");
-    }
-  };
-
-  // Tenta buscar usuários por setor em 'profiles' e depois 'users'
-  const findUsersBySector = async (sector: SectorKey) => {
-    // Mapeia sinônimos para bater com valores variados no banco (maiúsculas/minúsculas, PT/EN)
-    const synonyms: Record<SectorKey, string[]> = {
-      coordenador: ["coordenador", "coordinator"],
-      supervisor: ["supervisor", "supervisão", "supervisor(a)"],
-      admin: ["admin", "administrator", "administrador", "administração"],
-      colaborador: ["colaborador", "colaborador(a)", "staff", "employee"],
-      triagem: ["admin"], // triagem cai em admin no pickUserBySector
-    };
-
-    const variants = synonyms[sector] || [sector];
-    const orExpr = variants
-      .map((v) => [`sector.ilike.*${v}*`, `role.ilike.*${v}*`])
-      .flat()
-      .join(",");
-
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, full_name, name, email, sector, role")
-      .or(orExpr)
-      .limit(50);
-
-    if (!error && data && data.length > 0) {
-      return data.map((u: any) => ({
-        id: u.id,
-        name: u.full_name || u.name || u.email || "Usuário",
-        sector: (u.sector || u.role || "").toLowerCase(),
-      })) as Array<{ id: string; name: string; sector: string }>;
-    }
-
-    return [] as Array<{ id: string; name: string; sector: string }>;
-  };
-
-  // Escolhe o atendente (random simples). Para "triagem", cai para "admin".
-  const pickUserBySector = async (sector: SectorKey) => {
-    const effectiveSector: SectorKey = sector === "triagem" ? "admin" : sector;
-
-    // Preferência por nomes específicos (assinatura direta)
-    const PREFERRED_BY_SECTOR: Record<SectorKey, string | undefined> = {
-      coordenador: "Leticia",
-      supervisor: "Thuany",
-      admin: "Mara",
-      colaborador: undefined,
-      triagem: "Mara",
-    };
-
-    const preferredName = PREFERRED_BY_SECTOR[effectiveSector];
-    if (preferredName) {
-      const { data: pref } = await supabase
-        .from("profiles")
-        .select("id, full_name, name, sector, role")
-        .ilike("name", `%${preferredName}%`)
-        .limit(1)
-        .maybeSingle();
-      if (pref) {
-        return {
-          id: (pref as any).id,
-          name: (pref as any).full_name || (pref as any).name || preferredName,
-          sector: (((pref as any).sector || (pref as any).role || "") as string).toLowerCase(),
-        } as any;
-      }
-    }
-
-    // Fallback por role/sector (determinístico: primeiro da lista)
-    const users = await findUsersBySector(effectiveSector);
-    if (!users.length) return null;
-    return users[0];
-  };
-
-  // Lê eventos ROUTING:* e devolve o estado de roteamento
-  const readRoutingState = async (clientId: string): Promise<RoutingState> => {
-    const { data, error } = await supabase
-      .from("client_contacts")
-      .select("id, subject, description, contact_date")
-      .eq("client_id", clientId)
-      .order("contact_date", { ascending: false })
-      .limit(100);
-    if (error) throw error;
-
-    let state: RoutingState = { isAssigned: false };
-
-    if (data && data.length) {
-      const lastMenu = data.find((c: any) => (c.subject || "").startsWith("ROUTING:MENU_SENT"));
-      if (lastMenu) state.lastMenuSentAt = lastMenu.contact_date;
-
-      const lastAssigned = data.find((c: any) => (c.subject || "").startsWith("ROUTING:ASSIGNED"));
-      const lastClosed = data.find((c: any) => (c.subject || "").startsWith("ROUTING:CLOSED"));
-
-      if (lastAssigned) {
-        state.lastAssignedAt = lastAssigned.contact_date;
-        const parts = (lastAssigned.subject || "").split(":"); // ROUTING:ASSIGNED:<setor>:<userId>
-        state.assignedSector = (parts[2] as SectorKey) || undefined;
-        state.assignedUserId = parts[3] || undefined;
-        if (lastAssigned.description) {
-          const m = lastAssigned.description.match(/para\s+(.+?)\s*\(ID:/i);
-          if (m) state.assignedUserName = m[1];
-        }
-      }
-      if (lastClosed) state.lastClosedAt = lastClosed.contact_date;
-
-      state.isAssigned =
-        !!state.lastAssignedAt && (!state.lastClosedAt || new Date(state.lastAssignedAt) > new Date(state.lastClosedAt));
-    }
-
-    return state;
-  };
-
-  // Envia o menu automático (anti-spam 10min)
-  const ensureMenuSent = async (clientId: string, phone: string) => {
-    const routing = await readRoutingState(clientId);
-    if (routing.isAssigned) return;
-
-    const sentRecently =
-      routing.lastMenuSentAt && Date.now() - new Date(routing.lastMenuSentAt).getTime() < 10 * 60 * 1000;
-
-    if (!sentRecently) {
-      await sendWhatsApp(phone, AUTO_MENU_TEXT);
-      await supabase.from("client_contacts").insert({
-        client_id: clientId,
-        contact_type: "whatsapp",
-        subject: "ROUTING:MENU_SENT",
-        description: AUTO_MENU_TEXT,
-        contact_date: new Date().toISOString(),
-        created_by: user?.id ?? null,
-      });
-    }
-  };
-
-  // Trata a escolha "0-4" e atribui a um atendente do setor
-  const handleRoutingSelection = async (clientId: string, selectionText: string) => {
-    const choice = (selectionText || "").trim();
-    if (!/^[0-3]$/.test(choice)) return false;
-
-    const sector = SECTOR_BY_OPTION[choice];
-    const client = await getClientById(clientId);
-    const assignee = await pickUserBySector(sector);
-
-    let finalAssignee = assignee || (await pickUserBySector("admin")) || (await pickUserBySector("supervisor")) || null;
-    if (!finalAssignee) {
-      const wantSelf =
-        (sector === "admin" && ((myRole || "").toLowerCase() === "admin" || (mySector || "").toLowerCase() === "admin")) ||
-        (sector === "supervisor" && ((myRole || "").toLowerCase() === "supervisor" || (mySector || "").toLowerCase() === "supervisor"));
-      if (wantSelf && user?.id) {
-        finalAssignee = { id: user.id, name: myName || "Você", sector: (mySector || myRole || sector).toLowerCase() } as any;
-      }
-    }
-
-    const assignedUserId = finalAssignee?.id || "sem-user";
-    const assignedUserName = finalAssignee?.name || "Equipe";
-
-    await supabase.from("client_contacts").insert({
-      client_id: clientId,
-      contact_type: "whatsapp",
-      subject: `ROUTING:ASSIGNED:${sector}:${assignedUserId}`,
-      description: `Cliente direcionado para ${assignedUserName} (ID: ${assignedUserId}) no setor ${sector}.`,
-      contact_date: new Date().toISOString(),
-      created_by: user?.id ?? null,
-    });
-
-    const setorLabel =
-      sector === "coordenador"
-        ? "Coordenador"
-        : sector === "supervisor"
-        ? "Supervisor"
-        : sector === "admin"
-        ? "Admin"
-        : sector === "colaborador"
-        ? "Colaborador"
-        : "Atendimento";
-
-    await sendWhatsApp(
-      client.phone,
-      `Perfeito! ✅ Você selecionou ${setorLabel}.
-Um atendente irá responder em instantes.`
-    );
-
-    // Cria uma mensagem visível para o atendente após o ASSIGNED
-    await supabase.from("client_contacts").insert({
-      client_id: clientId,
-      contact_type: "whatsapp",
-      subject: "Mensagem recebida via WhatsApp",
-      description: `Novo atendimento iniciado — setor ${setorLabel}.`,
-      contact_date: new Date().toISOString(),
-      created_by: assignedUserId,
-    });
-
-    return true;
-  };
-
-  // Encerrar chat: volta à triagem para o próximo contato
-  const closeChatForClient = async (clientId: string) => {
-    await supabase.from("client_contacts").insert({
-      client_id: clientId,
-      contact_type: "whatsapp",
-      subject: "ROUTING:CLOSED",
-      description:
-        "Chat encerrado pelo operador. Na próxima mensagem do cliente, o menu automático de setores será reenviado.",
-      contact_date: new Date().toISOString(),
-      created_by: user?.id ?? null,
-    });
-    toast({
-      title: "Chat encerrado",
-      description: "O próximo contato do cliente receberá o menu automático novamente.",
-    });
-    if (selectedContact?.id === clientId) {
-      const state = await readRoutingState(clientId);
-      setRoutingState(state);
-      await loadMessages(clientId, state);
-    }
-  };
-
   // -------- Carregar Contatos --------
   const loadWhatsAppContacts = async () => {
     setLoading(true);
@@ -395,7 +98,7 @@ Um atendente irá responder em instantes.`
       }
 
       const contactsPromises = clients.map(async (client: any) => {
-        const [lastContactResult, unreadCountResult, routing] = await Promise.all([
+        const [lastContactResult, unreadCountResult] = await Promise.all([
           supabase
             .from("client_contacts")
             .select("*")
@@ -410,7 +113,6 @@ Um atendente irá responder em instantes.`
             .eq("client_id", client.id)
             .eq("contact_type", "whatsapp")
             .neq("created_by", user?.id),
-          readRoutingState(client.id),
         ]);
 
         const lastContact = lastContactResult.data;
@@ -420,16 +122,7 @@ Um atendente irá responder em instantes.`
         const readMessages = JSON.parse(localStorage.getItem(readMessagesKey) || "[]");
         const unreadCount = unreadMessages.filter((msg: any) => !readMessages.includes(msg.id)).length;
 
-        const notMyAssignment =
-          routing.isAssigned && routing.assignedUserId !== user?.id;
-
-        const lastMessage = routing.isAssigned
-          ? notMyAssignment
-            ? `🔒 Atribuído a ${routing.assignedUserName || "outro atendente"}`
-            : lastContact?.description || lastContact?.subject || "Nenhuma conversa ainda"
-          : "🟡 Em triagem — aguardando seleção do setor";
-
-        if (notMyAssignment) return null as any;
+        const lastMessage = lastContact?.description || lastContact?.subject || "Nenhuma conversa ainda";
 
         return {
           id: client.id,
@@ -443,7 +136,7 @@ Um atendente irá responder em instantes.`
         } as WhatsAppContact;
       });
 
-      const contactsWithLastMessage = (await Promise.all(contactsPromises)).filter(Boolean) as WhatsAppContact[];
+      const contactsWithLastMessage = await Promise.all(contactsPromises);
       setContacts(contactsWithLastMessage);
     } catch (error) {
       console.error("Erro ao carregar contatos WhatsApp:", error);
@@ -457,12 +150,9 @@ Um atendente irá responder em instantes.`
     }
   };
 
-  // -------- Carregar Mensagens (respeitando triagem e propriedade) --------
-  const loadMessages = async (contactId: string, state?: RoutingState) => {
+  // -------- Carregar Mensagens --------
+  const loadMessages = async (contactId: string) => {
     try {
-      const routing = state || (await readRoutingState(contactId));
-      setRoutingState(routing);
-
       const { data: contactHistory, error } = await supabase
         .from("client_contacts")
         .select("*")
@@ -472,489 +162,293 @@ Um atendente irá responder em instantes.`
 
       if (error) throw error;
 
-      // Se não estiver atribuído, escondemos o histórico (UI mostra aviso de triagem)
-      let showFromIndex = 0;
-      if (!routing.isAssigned) {
-        showFromIndex = contactHistory?.length || 0; // ocultar tudo
-      } else {
-        // Exibir a partir do último ASSIGNED (para ficar claro o contexto)
-        let assignPos = -1;
-        for (let i = (contactHistory?.length || 0) - 1; i >= 0; i--) {
-          const subj = (contactHistory![i].subject || "") as string;
-          if (subj.startsWith("ROUTING:ASSIGNED")) {
-            assignPos = i;
-            break;
-          }
-        }
-        showFromIndex = assignPos >= 0 ? assignPos + 1 : 0;
+      if (!contactHistory || contactHistory.length === 0) {
+        setMessages([]);
+        return;
       }
 
-      const visible = (contactHistory || [])
-        .slice(showFromIndex)
-        .filter((c: any) => !(c.subject || "").startsWith("ROUTING:"))
-        .map((contact: any) => {
-          const subjectLower = (contact.subject || "").toLowerCase();
-          const isIncomingBySubject = subjectLower.includes("recebida");
-          const isOutgoingBySubject = subjectLower.includes("enviada");
-          const isOutgoing = isOutgoingBySubject || (!isIncomingBySubject && contact.created_by === user?.id);
-          return {
-            id: contact.id,
-            content: contact.description || contact.subject,
-            timestamp: contact.contact_date,
-            isOutgoing,
-            status: "read" as MsgStatus,
-          } as ChatMessage;
-        });
+      const chatMessages: ChatMessage[] = contactHistory
+        .filter((contact: any) => !contact.subject?.startsWith("ROUTING:"))
+        .map((contact: any) => ({
+          id: contact.id,
+          content: contact.description || contact.subject || "Mensagem sem conteúdo",
+          timestamp: contact.contact_date,
+          isOutgoing: contact.created_by === user?.id,
+          status: "delivered" as MsgStatus,
+        }));
 
-      setMessages(visible);
+      setMessages(chatMessages);
+
+      // Marcar como lidas
+      const readMessagesKey = `read_messages_${contactId}`;
+      const messageIds = chatMessages.map(msg => msg.id);
+      localStorage.setItem(readMessagesKey, JSON.stringify(messageIds));
     } catch (error) {
       console.error("Erro ao carregar mensagens:", error);
-    }
-  };
-
-  // -------- Efeitos --------
-  useEffect(() => {
-    loadMyProfile();
-  }, [user?.id]);
-
-  useEffect(() => {
-    loadWhatsAppContacts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myRole]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // Realtime: novas mensagens WhatsApp
-  useEffect(() => {
-    const channel = supabase
-      .channel("chat-messages")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "client_contacts", filter: "contact_type=eq.whatsapp" },
-        async (payload: any) => {
-          try {
-            const subjectRaw = (payload.new.subject || "") as string;
-            const isIncomingMessage = payload.new.created_by !== user?.id;
-            const clientId = payload.new.client_id as string;
-
-            // Se for ASSIGNMENT, notifica imediatamente o atendente dono
-            if (subjectRaw.startsWith("ROUTING:ASSIGNED:")) {
-              try {
-                const parts = subjectRaw.split(":");
-                const assignedUserId = parts[3];
-                // Atualiza lista e estado
-                loadWhatsAppContacts();
-                if (assignedUserId === user?.id) {
-                  const { data: cli } = await supabase
-                    .from("clients")
-                    .select("name")
-                    .eq("id", clientId)
-                    .single();
-                  if (cli) {
-                    notifyNewMessage("Novo atendimento encaminhado para você.", cli.name);
-                  }
-                }
-                if (selectedContact?.id === clientId) {
-                  const st = await readRoutingState(clientId);
-                  setRoutingState(st);
-                  await loadMessages(clientId, st);
-                }
-              } catch (e) {
-                console.error("Erro ao processar ROUTING:ASSIGNED:", e);
-              }
-              return;
-            }
-
-            // Atualiza a lista de contatos
-            loadWhatsAppContacts();
-
-            if (isIncomingMessage) {
-              // Verifica estado de roteamento
-              const state = await readRoutingState(clientId);
-              const client = await getClientById(clientId);
-              const text = (payload.new.description || payload.new.subject || "").trim();
-
-              if (!state.isAssigned) {
-                // Se cliente enviou "0-4", tenta atribuir
-                if (/^[0-4]$/.test(text)) {
-                  const ok = await handleRoutingSelection(clientId, text);
-                  if (ok && selectedContact && selectedContact.id === clientId) {
-                    const st = await readRoutingState(clientId);
-                    setRoutingState(st);
-                    await loadMessages(clientId, st);
-                  }
-                } else {
-                  // Ainda não escolheu: envia/garante o menu
-                  await ensureMenuSent(clientId, client.phone);
-                }
-                // Enquanto em triagem, não notifica a equipe fora da conversa ativa
-                return;
-              }
-
-              // Já atribuído — somente notifica quem é o dono (ou quem é admin/supervisor)
-              const mineOrPrivileged = state.assignedUserId === user?.id;
-              const isCurrent = selectedContact && clientId === selectedContact.id;
-
-              if (!mineOrPrivileged) {
-                // Não é meu chat: não notifica
-                if (isCurrent) {
-                  // Mas se por algum motivo eu estiver vendo, apenas recarrega para refletir bloqueio
-                  await loadMessages(clientId, state);
-                }
-                return;
-              }
-
-              // Dono/privilegiado
-              if (!isCurrent) {
-                const { data: cli } = await supabase
-                  .from("clients")
-                  .select("name")
-                  .eq("id", clientId)
-                  .single();
-                if (cli) {
-                  notifyNewMessage(text || "Mensagem recebida", cli.name);
-                }
-              } else {
-                await loadMessages(clientId, state);
-                setUnreadMessagesCount((prev) => Math.max(0, prev - 1));
-              }
-            } else {
-              // Mensagem enviada por mim
-              if (selectedContact && payload.new.client_id === selectedContact.id) {
-                await loadMessages(selectedContact.id);
-              }
-            }
-          } catch (err) {
-            console.error("Erro no listener realtime:", err);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [selectedContact, user?.id]);
-
-  // -------- Ações UI --------
-  const handleContactSelect = async (contact: WhatsAppContact) => {
-    setSelectedContact(contact);
-
-    // Marca mensagens como lidas (somente para o badge da lista)
-    const readMessagesKey = `read_messages_${contact.id}`;
-    const { data: unreadMessages } = await supabase
-      .from("client_contacts")
-      .select("id")
-      .eq("client_id", contact.id)
-      .eq("contact_type", "whatsapp")
-      .neq("created_by", user?.id);
-
-    if (unreadMessages) {
-      const messageIds = unreadMessages.map((msg: any) => msg.id);
-      const existingReadMessages = JSON.parse(localStorage.getItem(readMessagesKey) || "[]");
-      const allReadMessages = [...new Set([...existingReadMessages, ...messageIds])];
-      localStorage.setItem(readMessagesKey, JSON.stringify(allReadMessages));
-      loadWhatsAppContacts();
-    }
-
-    const st = await readRoutingState(contact.id);
-    setRoutingState(st);
-    await loadMessages(contact.id, st);
-
-    // Se estiver em triagem, garante menu enviado
-    if (!st.isAssigned) {
-      await ensureMenuSent(contact.id, contact.phone);
-    }
-  };
-
-  const handleSendMessage = async () => {
-    if (!newMessage.trim() || !selectedContact || !user) return;
-
-    // Bloqueia envio se ainda estiver em triagem ou se não for meu chat
-    if (!canReply) {
-      toast({
-        title: routingState?.isAssigned ? "Este chat não está atribuído a você" : "Aguardando seleção do setor",
-        description: routingState?.isAssigned
-          ? "Apenas o atendente responsável (ou Admin/Supervisor) pode responder."
-          : "O cliente ainda não escolheu o setor. Assim que ele responder ao menu automático, você poderá enviar mensagens.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Envia localmente para resposta instantânea
-    const newMsg: ChatMessage = {
-      id: Date.now().toString(),
-      content: newMessage,
-      timestamp: new Date().toISOString(),
-      isOutgoing: true,
-      status: "sent",
-    };
-    setMessages((prev) => [...prev, newMsg]);
-    const messageToSend = newMessage;
-    setNewMessage("");
-
-    try {
-      const [sendResult] = await Promise.all([
-        supabase.functions.invoke("whatsapp-send", {
-          body: { to: selectedContact.phone, message: messageToSend },
-        }),
-        supabase.from("client_contacts").insert({
-          client_id: selectedContact.id,
-          contact_type: "whatsapp",
-          subject: "Mensagem enviada via WhatsApp",
-          description: messageToSend,
-          contact_date: new Date().toISOString(),
-          created_by: user.id,
-        }),
-      ]);
-
-      if (sendResult.error) throw new Error(`Erro na chamada da função: ${(sendResult.error as any).message}`);
-      if (!sendResult.data?.ok)
-        throw new Error(sendResult.data?.error?.message || "Erro ao enviar mensagem via WhatsApp");
-    } catch (error: any) {
-      console.error("Erro ao enviar mensagem:", error);
       toast({
         title: "Erro",
-        description: error instanceof Error ? error.message : "Não foi possível enviar a mensagem.",
+        description: "Não foi possível carregar as mensagens.",
         variant: "destructive",
       });
     }
   };
 
-  const filteredContacts = contacts.filter(
-    (contact) => contact.name.toLowerCase().includes(searchTerm.toLowerCase()) || contact.phone.includes(searchTerm)
+  // -------- Enviar Mensagem --------
+  const sendMessage = async () => {
+    if (!newMessage.trim() || !selectedContact) return;
+
+    try {
+      await sendWhatsApp(selectedContact.phone, newMessage);
+
+      await supabase.from("client_contacts").insert({
+        client_id: selectedContact.id,
+        contact_type: "whatsapp",
+        subject: "Mensagem enviada via WhatsApp",
+        description: newMessage,
+        contact_date: new Date().toISOString(),
+        created_by: user?.id,
+      });
+
+      const newMsg: ChatMessage = {
+        id: `temp-${Date.now()}`,
+        content: newMessage,
+        timestamp: new Date().toISOString(),
+        isOutgoing: true,
+        status: "sent",
+      };
+
+      setMessages((prev) => [...prev, newMsg]);
+      setNewMessage("");
+
+      toast({
+        title: "Mensagem enviada",
+        description: "Sua mensagem foi enviada via WhatsApp.",
+      });
+
+      await loadWhatsAppContacts();
+    } catch (error) {
+      console.error("Erro ao enviar mensagem:", error);
+      toast({
+        title: "Erro ao enviar",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Scroll automático para última mensagem
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
+
+  // Carregar contatos inicialmente
+  useEffect(() => {
+    loadWhatsAppContacts();
+  }, [user?.id]);
+
+  // Polling para novas mensagens
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadWhatsAppContacts();
+      if (selectedContact) {
+        loadMessages(selectedContact.id);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [selectedContact]);
+
+  const handleContactSelect = async (contact: WhatsAppContact) => {
+    setSelectedContact(contact);
+    await loadMessages(contact.id);
+    setUnreadMessagesCount(0);
+  };
+
+  const filteredContacts = contacts.filter((contact) =>
+    contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    contact.phone.includes(searchTerm)
   );
 
-  // -------- Render --------
   return (
     <div className="space-y-6">
-      <PageHeader title="Chat" subtitle="Conversas e comunicação com clientes via WhatsApp" />
+      <PageHeader title="WhatsApp Business" />
+      
+      <NotificationCenter />
 
-      <div className="h-[calc(100vh-180px)] flex gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-200px)]">
         {/* Lista de Contatos */}
-        <Card className="w-80 flex flex-col">
+        <Card className="col-span-1">
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5 text-primary" />
-                WhatsApp
-                {unreadMessagesCount > 0 && (
-                  <Badge className="ml-2" variant="destructive">
-                    {unreadMessagesCount}
-                  </Badge>
-                )}
-              </CardTitle>
-              <div className="flex items-center gap-2">
-                <NotificationCenter />
-                <Badge variant="secondary">{contacts.length}</Badge>
-              </div>
-            </div>
-
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />
+              Conversas
+              {unreadMessagesCount > 0 && (
+                <Badge variant="destructive" className="ml-auto">
+                  {unreadMessagesCount}
+                </Badge>
+              )}
+            </CardTitle>
             <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Buscar contatos..."
-                className="pl-9"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-8"
               />
             </div>
           </CardHeader>
-
-          <CardContent className="flex-1 p-0">
-            <ScrollArea className="h-[calc(100vh-300px)]">
+          <CardContent className="p-0">
+            <ScrollArea className="h-[calc(100vh-320px)]">
               {loading ? (
-                <div className="p-4 text-center text-muted-foreground">Carregando contatos...</div>
-              ) : filteredContacts.length > 0 ? (
-                <div className="space-y-1">
-                  {filteredContacts.map((contact) => (
-                    <div
-                      key={contact.id}
-                      className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-muted/50 transition-colors ${
-                        selectedContact?.id === contact.id ? "bg-primary/10 border-r-2 border-primary" : ""
-                      }`}
-                      onClick={() => handleContactSelect(contact)}
-                    >
-                      <div className="relative">
-                        <Avatar className="h-12 w-12">
-                          <AvatarImage src={contact.avatar} />
-                          <AvatarFallback className="bg-primary/10 text-primary">
-                            {contact.name.charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        {contact.isOnline && (
-                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background" />
-                        )}
-                        {contact.unreadCount > 0 && (
-                          <div className="absolute -top-1 -right-1 h-6 w-6 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center text-xs font-medium border-2 border-background">
-                            {contact.unreadCount}
-                          </div>
-                        )}
-                      </div>
-
+                <div className="p-4 text-center text-muted-foreground">
+                  Carregando contatos...
+                </div>
+              ) : filteredContacts.length === 0 ? (
+                <div className="p-4 text-center text-muted-foreground">
+                  Nenhum contato encontrado
+                </div>
+              ) : (
+                filteredContacts.map((contact) => (
+                  <div
+                    key={contact.id}
+                    className={`p-4 border-b cursor-pointer hover:bg-muted/50 transition-colors ${
+                      selectedContact?.id === contact.id ? "bg-muted" : ""
+                    }`}
+                    onClick={() => handleContactSelect(contact)}
+                  >
+                    <div className="flex items-start gap-3">
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage src={contact.avatar} />
+                        <AvatarFallback>
+                          {contact.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                        </AvatarFallback>
+                      </Avatar>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
                           <h4 className="font-medium truncate">{contact.name}</h4>
-                          {contact.lastMessageTime && (
-                            <span className="text-xs text-muted-foreground">{formatTime(contact.lastMessageTime)}</span>
-                          )}
+                          <div className="flex items-center gap-1">
+                            {contact.unreadCount > 0 && (
+                              <Badge variant="destructive" className="text-xs">
+                                {contact.unreadCount}
+                              </Badge>
+                            )}
+                            {contact.isOnline && (
+                              <div className="w-2 h-2 bg-green-500 rounded-full" />
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm text-muted-foreground truncate">
-                            {contact.lastMessage || "Nenhuma mensagem"}
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <Phone className="h-3 w-3" />
+                          {contact.phone}
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate mt-1">
+                          {contact.lastMessage}
+                        </p>
+                        {contact.lastMessageTime && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {formatTime(contact.lastMessageTime)}
                           </p>
-                        </div>
+                        )}
                       </div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-4 text-center text-muted-foreground">
-                  {searchTerm ? "Nenhum contato encontrado" : "Nenhum contato WhatsApp ainda"}
-                </div>
+                  </div>
+                ))
               )}
             </ScrollArea>
           </CardContent>
         </Card>
 
         {/* Área de Chat */}
-        <Card className="flex-1 flex flex-col">
+        <Card className="col-span-2">
           {selectedContact ? (
             <>
-              {/* Header do Chat */}
-              <CardHeader className="border-b">
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage src={selectedContact.avatar} />
-                    <AvatarFallback className="bg-primary/10 text-primary">
-                      {selectedContact.name.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3">
+              <CardHeader className="pb-3 border-b">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage src={selectedContact.avatar} />
+                      <AvatarFallback>
+                        {selectedContact.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
                       <h3 className="font-semibold">{selectedContact.name}</h3>
-                      {!routingState?.isAssigned ? (
-                        <Badge variant="secondary">Em triagem</Badge>
-                      ) : canReply ? (
-                        <Badge variant="default">
-                          Ativo {routingState.assignedUserName ? `• ${routingState.assignedUserName}` : ""}
-                        </Badge>
-                      ) : (
-                        <Badge variant="destructive">
-                          Atribuído a {routingState?.assignedUserName || "outro atendente"}
-                        </Badge>
-                      )}
+                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                        <Phone className="h-3 w-3" />
+                        {selectedContact.phone}
+                        {selectedContact.isOnline && (
+                          <>
+                            <span className="mx-1">•</span>
+                            <div className="w-2 h-2 bg-green-500 rounded-full" />
+                            <span>Online</span>
+                          </>
+                        )}
+                      </div>
                     </div>
-
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Phone className="h-3 w-3" />
-                      {selectedContact.phone}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => closeChatForClient(selectedContact.id)}
-                      title="Encerrar chat"
-                      disabled={!canCloseChat}
-                    >
-                      <XCircle className="h-4 w-4 mr-2" />
-                      Encerrar chat
-                    </Button>
                   </div>
                 </div>
               </CardHeader>
-
-              {/* Mensagens */}
-              <CardContent className="flex-1 p-0 overflow-hidden">
-                <ScrollArea className="h-full p-4">
-                  {!routingState?.isAssigned && (
-                    <div className="mb-4 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-                      <div className="font-medium mb-1">Em triagem</div>
-                      O cliente ainda não escolheu o setor. O menu automático foi enviado e,
-                      assim que ele responder com <strong>0, 1, 2 ou 3</strong>, o chat será liberado aqui.
-                    </div>
-                  )}
-
-                  {routingState?.isAssigned && !canReply && (
-                    <div className="mb-4 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-                      <div className="font-medium mb-1">Chat atribuído a {routingState?.assignedUserName || "outro atendente"}</div>
-                      Apenas o atendente responsável pode responder. Caso necessário, clique em <em>Encerrar chat</em>
-                      para voltar a triagem e reenviar o menu automático ao cliente.
-                    </div>
-                  )}
-
-                  <div className="space-y-4 pb-4">
+              
+              <CardContent className="p-0 flex flex-col h-[calc(100vh-360px)]">
+                <ScrollArea className="flex-1 p-4">
+                  <div className="space-y-4">
                     {messages.map((message) => (
-                      <div key={message.id} className={`flex mb-4 ${message.isOutgoing ? "justify-end" : "justify-start"}`}>
+                      <div
+                        key={message.id}
+                        className={`flex ${message.isOutgoing ? "justify-end" : "justify-start"}`}
+                      >
                         <div
-                          className={`max-w-[70%] rounded-2xl p-3 ${
+                          className={`max-w-[70%] rounded-lg px-3 py-2 ${
                             message.isOutgoing
-                              ? "bg-primary text-primary-foreground rounded-br-md"
-                              : "bg-muted text-foreground rounded-bl-md"
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted"
                           }`}
                         >
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
-                          <div className={`flex items-center gap-1 mt-2 ${message.isOutgoing ? "justify-end" : "justify-start"}`}>
-                            <span
-                              className={`text-xs ${
-                                message.isOutgoing ? "text-primary-foreground/70" : "text-muted-foreground"
-                              }`}
-                            >
-                              {formatTime(message.timestamp)}
-                            </span>
-                            {message.isOutgoing && <div className="text-xs text-primary-foreground/70">✓✓</div>}
-                          </div>
+                          <p className="text-sm">{message.content}</p>
+                          <p className="text-xs opacity-70 mt-1">
+                            {formatTime(message.timestamp)}
+                            {message.isOutgoing && (
+                              <span className="ml-1">
+                                {message.status === "sent" && "✓"}
+                                {message.status === "delivered" && "✓✓"}
+                                {message.status === "read" && "✓✓"}
+                              </span>
+                            )}
+                          </p>
                         </div>
                       </div>
                     ))}
-
-                    {messages.length === 0 && routingState?.isAssigned && (
-                      <div className="flex items-center justify-center h-full min-h-[200px]">
-                        <p className="text-muted-foreground">Nenhuma mensagem ainda</p>
-                      </div>
-                    )}
-
                     <div ref={messagesEndRef} />
                   </div>
                 </ScrollArea>
-              </CardContent>
 
-              {/* Input de Mensagem */}
-              <div className="p-4 border-t">
-                <div className="flex gap-2">
-                  <Input
-                    placeholder={!routingState?.isAssigned
-                      ? "Aguardando o cliente escolher o setor…"
-                      : canReply
-                      ? "Digite sua mensagem..."
-                      : "Este chat está atribuído a outro atendente"}
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-                    className="flex-1"
-                    disabled={!canReply}
-                  />
-                  <Button onClick={handleSendMessage} size="sm" disabled={!canReply}>
-                    <Send className="h-4 w-4" />
-                  </Button>
+                <div className="p-4 border-t">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Digite sua mensagem..."
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+                      className="flex-1"
+                    />
+                    <Button onClick={sendMessage} size="icon">
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              </CardContent>
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <MessageSquare className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-medium mb-2">Selecione um contato</h3>
-                <p className="text-muted-foreground">Escolha um contato para iniciar a conversa</p>
+            <CardContent className="flex items-center justify-center h-full">
+              <div className="text-center text-muted-foreground">
+                <MessageSquare className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                <h3 className="text-lg font-medium mb-2">Selecione uma conversa</h3>
+                <p>Escolha um contato à esquerda para iniciar a conversa</p>
               </div>
-            </div>
+            </CardContent>
           )}
         </Card>
       </div>
