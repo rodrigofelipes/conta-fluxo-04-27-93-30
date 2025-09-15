@@ -272,15 +272,21 @@ export default function Chat() {
   );
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="WhatsApp Business" />
-      
-      <NotificationCenter />
+    <div className="h-screen flex flex-col">
+      {/* Header com título e notificações */}
+      <div className="flex items-center justify-between p-4 border-b bg-background">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">WhatsApp Business</h1>
+          <p className="text-sm text-muted-foreground">Gerencie conversas do WhatsApp Business</p>
+        </div>
+        <NotificationCenter />
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-200px)]">
+      {/* Container principal do chat */}
+      <div className="flex-1 flex gap-4 p-4 overflow-hidden">
         {/* Lista de Contatos */}
-        <Card className="col-span-1">
-          <CardHeader className="pb-3">
+        <Card className="w-80 flex flex-col">
+          <CardHeader className="pb-3 flex-shrink-0">
             <CardTitle className="flex items-center gap-2">
               <MessageSquare className="h-5 w-5" />
               Conversas
@@ -300,8 +306,8 @@ export default function Chat() {
               />
             </div>
           </CardHeader>
-          <CardContent className="p-0">
-            <ScrollArea className="h-[calc(100vh-320px)]">
+          <CardContent className="p-0 flex-1 overflow-hidden">
+            <ScrollArea className="h-full">
               {loading ? (
                 <div className="p-4 text-center text-muted-foreground">
                   Carregando contatos...
@@ -320,7 +326,7 @@ export default function Chat() {
                     onClick={() => handleContactSelect(contact)}
                   >
                     <div className="flex items-start gap-3">
-                      <Avatar className="h-10 w-10">
+                      <Avatar className="h-10 w-10 flex-shrink-0">
                         <AvatarImage src={contact.avatar} />
                         <AvatarFallback>
                           {contact.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
@@ -329,7 +335,7 @@ export default function Chat() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
                           <h4 className="font-medium truncate">{contact.name}</h4>
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 flex-shrink-0">
                             {contact.unreadCount > 0 && (
                               <Badge variant="destructive" className="text-xs">
                                 {contact.unreadCount}
@@ -342,7 +348,7 @@ export default function Chat() {
                         </div>
                         <div className="flex items-center gap-1 text-sm text-muted-foreground">
                           <Phone className="h-3 w-3" />
-                          {contact.phone}
+                          <span className="truncate">{contact.phone}</span>
                         </div>
                         <p className="text-sm text-muted-foreground truncate mt-1">
                           {contact.lastMessage}
@@ -362,37 +368,37 @@ export default function Chat() {
         </Card>
 
         {/* Área de Chat */}
-        <Card className="col-span-2">
+        <Card className="flex-1 flex flex-col">
           {selectedContact ? (
             <>
-              <CardHeader className="pb-3 border-b">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-10 w-10">
-                      <AvatarImage src={selectedContact.avatar} />
-                      <AvatarFallback>
-                        {selectedContact.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <h3 className="font-semibold">{selectedContact.name}</h3>
-                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                        <Phone className="h-3 w-3" />
-                        {selectedContact.phone}
-                        {selectedContact.isOnline && (
-                          <>
-                            <span className="mx-1">•</span>
-                            <div className="w-2 h-2 bg-green-500 rounded-full" />
-                            <span>Online</span>
-                          </>
-                        )}
-                      </div>
+              {/* Header do Chat */}
+              <CardHeader className="pb-3 border-b flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-10 w-10">
+                    <AvatarImage src={selectedContact.avatar} />
+                    <AvatarFallback>
+                      {selectedContact.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold truncate">{selectedContact.name}</h3>
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <Phone className="h-3 w-3" />
+                      <span>{selectedContact.phone}</span>
+                      {selectedContact.isOnline && (
+                        <>
+                          <span className="mx-1">•</span>
+                          <div className="w-2 h-2 bg-green-500 rounded-full" />
+                          <span>Online</span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
               </CardHeader>
               
-              <CardContent className="p-0 flex flex-col h-[calc(100vh-360px)]">
+              {/* Área de Mensagens */}
+              <div className="flex-1 flex flex-col overflow-hidden">
                 <ScrollArea className="flex-1 p-4">
                   <div className="space-y-4">
                     {messages.map((message) => (
@@ -425,7 +431,8 @@ export default function Chat() {
                   </div>
                 </ScrollArea>
 
-                <div className="p-4 border-t">
+                {/* Input de Mensagem */}
+                <div className="p-4 border-t bg-background flex-shrink-0">
                   <div className="flex gap-2">
                     <Input
                       placeholder="Digite sua mensagem..."
@@ -434,12 +441,12 @@ export default function Chat() {
                       onKeyPress={(e) => e.key === "Enter" && sendMessage()}
                       className="flex-1"
                     />
-                    <Button onClick={sendMessage} size="icon">
+                    <Button onClick={sendMessage} size="icon" disabled={!newMessage.trim()}>
                       <Send className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
-              </CardContent>
+              </div>
             </>
           ) : (
             <CardContent className="flex items-center justify-center h-full">
