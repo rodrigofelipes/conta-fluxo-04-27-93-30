@@ -247,6 +247,50 @@ function isMenuSelection(message: string): boolean {
   return ['0', '1', '2', '3', '4'].includes(trimmed);
 }
 
+// Função para enviar menu de opções para o cliente
+async function sendMenuToClient(phone: string) {
+  const menuMessage = `Olá! 👋 Bem-vindo à Olevate! 
+
+Por favor, selecione uma opção para ser direcionado ao setor adequado:
+
+1 - Coordenação
+2 - Supervisão 
+3 - Administrativo
+0 - Não sei o departamento
+
+Digite apenas o número da opção desejada.`;
+
+  try {
+    const response = await fetch(`https://graph.facebook.com/v17.0/${Deno.env.get('WHATSAPP_PHONE_NUMBER_ID')}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'text',
+        text: {
+          body: menuMessage
+        }
+      })
+    });
+
+    if (response.ok) {
+      console.log(`✅ Menu enviado para ${phone}`);
+      return true;
+    } else {
+      const errorData = await response.json();
+      console.error('❌ Erro ao enviar menu:', errorData);
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Erro na requisição do menu:', error);
+    return false;
+  }
+}
+
 async function saveWhatsAppMessage(clientId: string, messageText: string, isOutgoing: boolean, adminId?: string) {
   console.log(`💾 Salvando mensagem WhatsApp - Cliente: ${clientId}, Admin: ${adminId}, Outgoing: ${isOutgoing}`);
   
@@ -351,6 +395,24 @@ serve(async (req) => {
               }
               
               let assignedUser = null;
+              
+              // Se estado é awaiting_selection e não é uma seleção do menu, enviar menu
+              if (conversation.state === 'awaiting_selection' && !isMenuSelection(messageText)) {
+                console.log('📋 Enviando menu de opções para cliente');
+                await sendMenuToClient(senderPhone);
+                
+                // Salvar a mensagem do cliente antes de enviar o menu
+                const adminUser = await findUserByRole('admin');
+                if (adminUser) {
+                  await saveWhatsAppMessage(
+                    cliente.id,
+                    messageText,
+                    false, // mensagem recebida
+                    adminUser.user_id
+                  );
+                }
+                continue;
+              }
               
               // Verificar se é uma seleção do menu
               if (conversation.state === 'awaiting_selection' && isMenuSelection(messageText)) {
