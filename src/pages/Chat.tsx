@@ -5,7 +5,18 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MessageSquare, Phone, Search, Send, Download, Eye, X } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { MessageSquare, Phone, Search, Send, Trash2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
 import { toast } from "@/hooks/use-toast";
@@ -76,6 +87,7 @@ export default function Chat() {
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [pendingAttachments, setPendingAttachments] = useState<UploadedFileInfo[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [isClearingConversation, setIsClearingConversation] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const contactsRef = useRef<WhatsAppContact[]>([]);
@@ -437,6 +449,66 @@ export default function Chat() {
     },
     [mapAttachmentRowToChatAttachment, toast],
   );
+
+  const handleClearConversation = useCallback(async () => {
+    if (!selectedContact) return;
+
+    const contactId = selectedContact.id;
+    setIsClearingConversation(true);
+
+    try {
+      const { data: messageRows, error: messageError } = await supabase
+        .from("client_contacts")
+        .select("id")
+        .eq("client_id", contactId)
+        .eq("contact_type", "whatsapp");
+
+      if (messageError) throw messageError;
+
+      const messageIds = (messageRows ?? []).map((row) => row.id);
+
+      if (messageIds.length > 0) {
+        const { error: attachmentsError } = await supabase
+          .from("message_attachments")
+          .delete()
+          .in("message_id", messageIds);
+
+        if (attachmentsError) throw attachmentsError;
+      }
+
+      const { error: deleteMessagesError } = await supabase
+        .from("client_contacts")
+        .delete()
+        .eq("client_id", contactId)
+        .eq("contact_type", "whatsapp");
+
+      if (deleteMessagesError) throw deleteMessagesError;
+
+      setMessages([]);
+      const readMessagesKey = `read_messages_${contactId}`;
+      localStorage.removeItem(readMessagesKey);
+
+      toast({
+        title: "Conversas apagadas",
+        description: `O histórico com ${selectedContact.name} foi removido.`,
+      });
+
+      await loadWhatsAppContacts({ silent: true });
+      await loadMessages(contactId);
+    } catch (error) {
+      console.error("Erro ao apagar conversas:", error);
+      toast({
+        title: "Erro ao apagar conversas",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Não foi possível remover o histórico deste contato.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsClearingConversation(false);
+    }
+  }, [selectedContact, toast, loadWhatsAppContacts, loadMessages]);
 
   // -------- Enviar Mensagem --------
   const removePendingAttachment = (attachmentId: string) => {
@@ -887,30 +959,64 @@ export default function Chat() {
               <>
               {/* Header do Chat */}
               <CardHeader className="pb-3 border-b flex-shrink-0">
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage src={selectedContact.avatar} />
-                    <AvatarFallback>
-                      {selectedContact.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold leading-tight break-words">
-                      {selectedContact.name}
-                    </h3>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground mt-1">
-                      <div className="flex items-center gap-1 min-w-0">
-                        <Phone className="h-3 w-3 flex-shrink-0" />
-                        <span className="break-all">{selectedContact.phone}</span>
-                      </div>
-                      {selectedContact.isOnline && (
-                        <div className="flex items-center gap-1 whitespace-nowrap">
-                          <div className="w-2 h-2 bg-green-500 rounded-full" />
-                          <span>Online</span>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage src={selectedContact.avatar} />
+                      <AvatarFallback>
+                        {selectedContact.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold leading-tight break-words">
+                        {selectedContact.name}
+                      </h3>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground mt-1">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <Phone className="h-3 w-3 flex-shrink-0" />
+                          <span className="break-all">{selectedContact.phone}</span>
                         </div>
-                      )}
+                        {selectedContact.isOnline && (
+                          <div className="flex items-center gap-1 whitespace-nowrap">
+                            <div className="w-2 h-2 bg-green-500 rounded-full" />
+                            <span>Online</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9"
+                        disabled={isClearingConversation}
+                        aria-label="Apagar conversas"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Apagar histórico de mensagens</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Essa ação removerá todas as mensagens trocadas com {selectedContact.name}.
+                          O contato permanecerá disponível na lista para futuras conversas.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={handleClearConversation}
+                          disabled={isClearingConversation}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Apagar conversas
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               </CardHeader>
               
