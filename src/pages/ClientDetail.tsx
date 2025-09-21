@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, Phone, Mail, MessageSquare, Calendar, FileText, DollarSign, Building, Upload, Download, X, MapPin, User, Eye, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Phone, Mail, MessageSquare, Calendar, FileText, DollarSign, Building, Upload, Download, X, MapPin, User, Eye, Trash2, CreditCard } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
@@ -66,6 +66,7 @@ interface Financial {
   transaction_date: string;
   status: string;
   reference_document: string;
+  payment_method?: string;
 }
 
 interface Project {
@@ -137,7 +138,8 @@ export default function ClientDetail() {
     amount: '',
     date: new Date().toISOString().split('T')[0],
     status: 'pending',
-    reference: ''
+    reference: '',
+    payment_method: ''
   });
 
   useEffect(() => {
@@ -302,11 +304,12 @@ export default function ClientDetail() {
         transaction_date: formattedDate,
         status: newFinancial.status,
         reference_document: newFinancial.reference,
+        payment_method: newFinancial.payment_method,
         created_by: user.id,
       });
       if (error) throw error;
       toast({ title: 'Sucesso', description: 'Transação adicionada com sucesso!' });
-      setNewFinancial({ type: '', description: '', amount: '', date: new Date().toISOString().split('T')[0], status: 'pending', reference: '' });
+      setNewFinancial({ type: '', description: '', amount: '', date: new Date().toISOString().split('T')[0], status: 'pending', reference: '', payment_method: '' });
       loadClientData();
     } catch (error) {
       console.error('Erro ao adicionar transação:', error);
@@ -433,6 +436,21 @@ export default function ClientDetail() {
       cancelled: 'bg-destructive text-destructive-foreground',
     } as const;
     return (variants as any)[status] || 'bg-muted text-muted-foreground';
+  };
+
+  const getPaymentMethodLabel = (method: string) => {
+    const labels = {
+      pix: 'PIX',
+      ted: 'TED',
+      doc: 'DOC',
+      dinheiro: 'Dinheiro',
+      cartao_credito: 'Cartão de Crédito',
+      cartao_debito: 'Cartão de Débito',
+      boleto: 'Boleto',
+      cheque: 'Cheque',
+      outros: 'Outros'
+    } as const;
+    return (labels as any)[method] || method;
   };
 
   const formatMoney = (amount: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
@@ -856,6 +874,25 @@ export default function ClientDetail() {
                         </Select>
                       </div>
                       <div className="space-y-2">
+                        <Label>Forma de Pagamento</Label>
+                        <Select value={newFinancial.payment_method} onValueChange={(value) => setNewFinancial({ ...newFinancial, payment_method: value })}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione a forma de pagamento" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pix">PIX</SelectItem>
+                            <SelectItem value="ted">TED</SelectItem>
+                            <SelectItem value="doc">DOC</SelectItem>
+                            <SelectItem value="dinheiro">Dinheiro</SelectItem>
+                            <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
+                            <SelectItem value="cartao_debito">Cartão de Débito</SelectItem>
+                            <SelectItem value="boleto">Boleto</SelectItem>
+                            <SelectItem value="cheque">Cheque</SelectItem>
+                            <SelectItem value="outros">Outros</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
                         <Label>Referência</Label>
                         <Input value={newFinancial.reference} onChange={(e) => setNewFinancial({ ...newFinancial, reference: e.target.value })} placeholder="Ex: PIX-001, TED-002" />
                       </div>
@@ -933,6 +970,12 @@ export default function ClientDetail() {
                                   <Calendar className="h-3 w-3" />
                                   {new Date(financial.transaction_date).toLocaleDateString('pt-BR')}
                                 </div>
+                                {financial.payment_method && (
+                                  <div className="flex items-center gap-1">
+                                    <CreditCard className="h-3 w-3" />
+                                    {getPaymentMethodLabel(financial.payment_method)}
+                                  </div>
+                                )}
                                 {financial.reference_document && (
                                   <div className="flex items-center gap-1">
                                     <FileText className="h-3 w-3" />

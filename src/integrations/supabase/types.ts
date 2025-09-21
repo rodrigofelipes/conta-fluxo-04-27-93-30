@@ -231,6 +231,7 @@ export type Database = {
           description: string
           id: string
           parent_transaction_id: string | null
+          payment_method: string | null
           project_id: string | null
           recurrence_end_date: string | null
           recurrence_type: string | null
@@ -250,6 +251,7 @@ export type Database = {
           description: string
           id?: string
           parent_transaction_id?: string | null
+          payment_method?: string | null
           project_id?: string | null
           recurrence_end_date?: string | null
           recurrence_type?: string | null
@@ -269,6 +271,7 @@ export type Database = {
           description?: string
           id?: string
           parent_transaction_id?: string | null
+          payment_method?: string | null
           project_id?: string | null
           recurrence_end_date?: string | null
           recurrence_type?: string | null
