@@ -90,6 +90,29 @@ export default function Chat() {
     return `${size.toFixed(size > 100 ? 0 : 1)} ${units[i]}`;
   };
 
+  const renderAttachmentActions = (
+    attachment: ChatAttachment,
+    viewLabel = "Visualizar"
+  ) => (
+    <div className="mt-2 flex flex-wrap gap-2">
+      <Button variant="secondary" size="sm" asChild>
+        <a href={attachment.url} target="_blank" rel="noopener noreferrer">
+          <Eye className="mr-1 h-4 w-4" /> {viewLabel}
+        </a>
+      </Button>
+      <Button variant="outline" size="sm" asChild>
+        <a
+          href={attachment.url}
+          download={attachment.fileName}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Download className="mr-1 h-4 w-4" /> Baixar
+        </a>
+      </Button>
+    </div>
+  );
+
   const getSignedUrlForPath = async (storagePath: string) => {
     try {
       const { data, error } = await supabase.storage
@@ -732,19 +755,27 @@ export default function Chat() {
                                   const key = `${message.id}-${attachment.id}`;
                                   if (attachment.fileType.startsWith('image/')) {
                                     return (
-                                      <a
+                                      <div
                                         key={key}
-                                        href={attachment.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="block overflow-hidden rounded-md border border-border"
+                                        className="overflow-hidden rounded-md border border-border bg-background/80 text-foreground"
                                       >
                                         <img
                                           src={attachment.url}
                                           alt={attachment.fileName}
                                           className="max-h-60 w-full object-cover"
                                         />
-                                      </a>
+                                        <div className="space-y-2 p-2">
+                                          <div>
+                                            <p className="text-sm font-medium break-words">
+                                              {attachment.fileName}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">
+                                              {formatFileSize(attachment.fileSize)}
+                                            </p>
+                                          </div>
+                                          {renderAttachmentActions(attachment)}
+                                        </div>
+                                      </div>
                                     );
                                   }
 
@@ -767,6 +798,7 @@ export default function Chat() {
                                         <p className="mt-1 text-xs text-muted-foreground">
                                           {formatFileSize(attachment.fileSize)}
                                         </p>
+                                        {renderAttachmentActions(attachment, "Assistir")}
                                       </div>
                                     );
                                   }
@@ -787,6 +819,7 @@ export default function Chat() {
                                         <p className="mt-1 text-xs text-muted-foreground">
                                           {formatFileSize(attachment.fileSize)}
                                         </p>
+                                        {renderAttachmentActions(attachment, "Ouvir")}
                                       </div>
                                     );
                                   }
@@ -800,27 +833,7 @@ export default function Chat() {
                                       <p className="text-xs text-muted-foreground">
                                         {attachment.fileType} • {formatFileSize(attachment.fileSize)}
                                       </p>
-                                      <div className="mt-2 flex flex-wrap gap-2">
-                                        <Button variant="secondary" size="sm" asChild>
-                                          <a
-                                            href={attachment.url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                          >
-                                            <Eye className="mr-1 h-4 w-4" /> Visualizar
-                                          </a>
-                                        </Button>
-                                        <Button variant="outline" size="sm" asChild>
-                                          <a
-                                            href={attachment.url}
-                                            download={attachment.fileName}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                          >
-                                            <Download className="mr-1 h-4 w-4" /> Baixar
-                                          </a>
-                                        </Button>
-                                      </div>
+                                      {renderAttachmentActions(attachment)}
                                     </div>
                                   );
                                 })}
