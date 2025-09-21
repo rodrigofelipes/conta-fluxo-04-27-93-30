@@ -92,6 +92,9 @@ export default function Clients() {
   const [editingCliente, setEditingCliente] = useState<Cliente | null>(null);
   const [activeTab, setActiveTab] = useState("todos");
 
+  // Debug logs
+  console.log('Clients component render - user:', user?.name, 'clientes count:', clientes.length, 'loading:', loading);
+
   const form = useForm<ClienteFormData>({
     resolver: zodResolver(clienteSchema),
     defaultValues: {
@@ -109,14 +112,21 @@ export default function Clients() {
 
   // Buscar clientes do Supabase
   const fetchClientes = useCallback(async () => {
-    if (!user) return;
+    console.log('fetchClientes called, user:', user);
+    if (!user) {
+      console.log('No user, returning early');
+      return;
+    }
     
     try {
       setLoading(true);
+      console.log('Fazendo query para buscar clientes...');
       const { data, error } = await supabase
         .from('clients')
         .select('*')
         .order('name');
+      
+      console.log('Resultado da query:', { data, error });
       
       if (error) {
         console.error('Erro ao buscar clientes:', error);
@@ -128,6 +138,7 @@ export default function Clients() {
         return;
       }
       
+      console.log('Definindo clientes:', data?.length || 0, 'clientes encontrados');
       setClientes(data || []);
     } catch (error) {
       console.error('Erro inesperado:', error);
