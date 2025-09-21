@@ -3,12 +3,15 @@ import { useAuth } from '@/state/auth';
 import { supabase } from '@/integrations/supabase/client';
 
 export function useAuthSession() {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, isAuthReady } = useAuth();
 
   const verifySession = useCallback(async () => {
+    if (!isAuthReady) {
+      return true;
+    }
     try {
       const { data: { session }, error } = await supabase.auth.getSession();
-      
+
       if (error) {
         console.error('Erro ao verificar sessão:', error);
         return false;
@@ -31,7 +34,7 @@ export function useAuthSession() {
       console.error('Erro inesperado ao verificar sessão:', error);
       return false;
     }
-  }, [user, refreshUser]);
+  }, [user, refreshUser, isAuthReady]);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -57,6 +60,9 @@ export function useAuthSession() {
 
   // Monitora mudanças na sessão a cada navegação
   useEffect(() => {
+    if (!isAuthReady) {
+      return;
+    }
     const checkSession = async () => {
       const isValid = await verifySession();
       if (!isValid && user) {
@@ -66,7 +72,7 @@ export function useAuthSession() {
     };
 
     checkSession();
-  }, [verifySession, refreshSession, user]);
+  }, [verifySession, refreshSession, user, isAuthReady]);
 
   return {
     verifySession,

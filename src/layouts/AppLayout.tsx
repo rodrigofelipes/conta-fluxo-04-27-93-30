@@ -67,7 +67,8 @@ const nav: NavItem[] = [{
 export default function AppLayout() {
   const {
     user,
-    logout
+    logout,
+    isAuthReady
   } = useAuth();
   
   // Initialize gradient system
@@ -81,6 +82,9 @@ export default function AppLayout() {
 
   // Verify session on navigation changes
   useEffect(() => {
+    if (!isAuthReady) {
+      return;
+    }
     console.log('Navigation changed to:', location.pathname);
     const checkSessionOnNavigation = async () => {
       if (user) {
@@ -90,9 +94,9 @@ export default function AppLayout() {
         }
       }
     };
-    
+
     checkSessionOnNavigation();
-  }, [location.pathname, user, verifySession]);
+  }, [location.pathname, user, verifySession, isAuthReady]);
   const items = useMemo(() => {
     let filteredNav = nav;
 

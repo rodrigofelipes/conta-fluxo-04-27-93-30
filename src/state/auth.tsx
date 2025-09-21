@@ -19,6 +19,7 @@ export interface User {
 
 interface AuthContextProps {
   user: User | null;
+  isAuthReady: boolean;
   login: (emailOrUsername: string, password: string) => Promise<{ ok: boolean; error?: string }>
   signup: (email: string, password: string, username: string, telefone?: string) => Promise<{ ok: boolean; error?: string }>
   logout: () => Promise<void>;
@@ -30,6 +31,7 @@ const AuthContext = createContext<AuthContextProps | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
 
   const fetchUserRole = async (userId: string): Promise<Role> => {
     try {
@@ -114,63 +116,89 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize auth listener first, then get existing session
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      const sUser = session?.user;
+    const sessionCheckCompleted = { current: false };
+    const initialAuthHandled = { current: false };
+
+    const trySetAuthReady = () => {
+      if (sessionCheckCompleted.current && initialAuthHandled.current) {
+        setIsAuthReady(true);
+      }
+    };
+
+    const handleSessionUser = (sUser: any | null | undefined) => {
       if (sUser) {
         // CRITICAL: Never use async functions directly in onAuthStateChange
         // Defer role fetching to avoid blocking auth state change
-        setTimeout(async () => {
-          try {
-            const mappedUser = await createUserFromSupabaseUser(sUser);
-            setUser(mappedUser);
-            localStorage.setItem("cc_auth_user", JSON.stringify(mappedUser));
-          } catch (error) {
-            console.error('Error creating user from Supabase user:', error);
-            // Set basic user info even if role fetching fails
-            // Try to get name from profiles even in error case
-            let fallbackName = sUser.user_metadata?.name || sUser.user_metadata?.full_name || sUser.email || "Usuário";
+        return new Promise<void>((resolve) => {
+          setTimeout(async () => {
             try {
-              const { data: profileData } = await supabase
-                .from('profiles')
-                .select('name')
-                .eq('user_id', sUser.id)
-                .single();
-              
-              if (profileData) {
-                fallbackName = profileData.name;
+              const mappedUser = await createUserFromSupabaseUser(sUser);
+              setUser(mappedUser);
+              localStorage.setItem("cc_auth_user", JSON.stringify(mappedUser));
+            } catch (error) {
+              console.error('Error creating user from Supabase user:', error);
+              // Set basic user info even if role fetching fails
+              // Try to get name from profiles even in error case
+              let fallbackName = sUser.user_metadata?.name || sUser.user_metadata?.full_name || sUser.email || "Usuário";
+              try {
+                const { data: profileData } = await supabase
+                  .from('profiles')
+                  .select('name')
+                  .eq('user_id', sUser.id)
+                  .single();
+
+                if (profileData) {
+                  fallbackName = profileData.name;
+                }
+              } catch (profileError) {
+                console.warn('Error fetching profile name in fallback:', profileError);
               }
-            } catch (profileError) {
-              console.warn('Error fetching profile name in fallback:', profileError);
+
+              setUser({
+                id: sUser.id,
+                email: sUser.email || "",
+                name: fallbackName as string,
+                username: (sUser.user_metadata?.username || fallbackName || sUser.email?.split('@')[0] || "usuario") as string,
+                role: 'user' as Role
+              });
+            } finally {
+              resolve();
             }
-            
-            setUser({
-              id: sUser.id,
-              email: sUser.email || "",
-              name: fallbackName as string,
-              username: (sUser.user_metadata?.username || fallbackName || sUser.email?.split('@')[0] || "usuario") as string,
-              role: 'user' as Role
-            });
-          }
-        }, 0);
+          }, 0);
+        });
       } else {
         setUser(null);
         localStorage.removeItem("cc_auth_user");
+        return Promise.resolve();
       }
+    };
+
+    const markInitialAuthHandled = () => {
+      if (!initialAuthHandled.current) {
+        initialAuthHandled.current = true;
+        trySetAuthReady();
+      }
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleSessionUser(session?.user).then(() => {
+        markInitialAuthHandled();
+      });
     });
 
-    // Get existing session
-    supabase.auth.getSession().then(async ({ data }) => {
-      const sUser = data.session?.user;
-      if (sUser) {
-        try {
-          const mappedUser = await createUserFromSupabaseUser(sUser);
-          setUser(mappedUser);
-          localStorage.setItem("cc_auth_user", JSON.stringify(mappedUser));
-        } catch (error) {
-          console.error('Error creating user from existing session:', error);
-        }
-      }
-    });
+    supabase.auth.getSession()
+      .then(async ({ data }) => {
+        await handleSessionUser(data.session?.user);
+        markInitialAuthHandled();
+      })
+      .catch((error) => {
+        console.error('Error fetching initial session:', error);
+        markInitialAuthHandled();
+      })
+      .finally(() => {
+        sessionCheckCompleted.current = true;
+        trySetAuthReady();
+      });
 
     return () => subscription.unsubscribe();
   }, []);
@@ -325,7 +353,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const value = useMemo(() => ({ user, login, signup, logout, refreshUser, verifyUserCredentials }), [user]);
+  const value = useMemo(() => ({ user, isAuthReady, login, signup, logout, refreshUser, verifyUserCredentials }), [user, isAuthReady]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
@@ -337,13 +365,15 @@ export function useAuth() {
 }
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, isAuthReady } = useAuth();
+  if (!isAuthReady) return <div className="flex items-center justify-center h-full w-full">Carregando sessão...</div>;
   if (!user) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
 export function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, isAuthReady } = useAuth();
+  if (!isAuthReady) return <div className="flex items-center justify-center h-full w-full">Carregando sessão...</div>;
   if (!user) return <Navigate to="/login" replace />;
   if (user.role !== "admin") return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
