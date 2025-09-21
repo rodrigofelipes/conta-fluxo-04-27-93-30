@@ -185,42 +185,17 @@ export default function Clients() {
 
     try {
       let profileId: string | null = null;
-      if (!editingCliente) {
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
+      // Tenta obter o perfil do usuário (opcional). Se não existir, seguimos sem created_by
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-        if (profileError) {
-          throw profileError;
-        }
-
-        if (profileData?.id) {
-          profileId = profileData.id;
-        } else {
-          const fallbackName = user.name || user.username || user.email || 'Usuário';
-          const { data: newProfile, error: createProfileError } = await supabase
-            .from('profiles')
-            .insert({
-              user_id: user.id,
-              name: fallbackName,
-              email: user.email || '',
-              role: user.role,
-            })
-            .select('id')
-            .single();
-
-          if (createProfileError) {
-            throw createProfileError;
-          }
-
-          profileId = newProfile?.id ?? null;
-        }
-
-        if (!profileId) {
-          throw new Error('Não foi possível encontrar o perfil do usuário para criar o cliente.');
-        }
+      if (profileError) {
+        console.warn('Não foi possível carregar perfil, continuando sem created_by', profileError);
+      } else if (profileData?.id) {
+        profileId = profileData.id;
       }
 
       const clienteData = {
@@ -244,15 +219,11 @@ export default function Clients() {
           .eq('id', editingCliente.id);
       } else {
         // Criar novo cliente
-        if (!profileId) {
-          throw new Error('Perfil do usuário não encontrado para criação do cliente.');
-        }
-
         result = await supabase
           .from('clients')
           .insert({
             ...clienteData,
-            created_by: profileId,
+            created_by: profileId ?? null,
           });
       }
 
