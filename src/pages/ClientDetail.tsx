@@ -108,6 +108,10 @@ export default function ClientDetail() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
 
+  // Verificar se o usuário atual é "Mara" para acesso à aba financeiro
+  const [currentUserProfile, setCurrentUserProfile] = useState<any>(null);
+  const canAccessFinancial = currentUserProfile?.name === 'Mara';
+
   const [client, setClient] = useState<Client | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -139,7 +143,25 @@ export default function ClientDetail() {
   useEffect(() => {
     if (!id) return;
     loadClientData();
-  }, [id]);
+    loadUserProfile();
+  }, [id, user?.id]);
+
+  const loadUserProfile = async () => {
+    if (!user?.id) return;
+    
+    try {
+      const { data: profileData, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (error) throw error;
+      setCurrentUserProfile(profileData);
+    } catch (error) {
+      console.error('Erro ao carregar perfil do usuário:', error);
+    }
+  };
 
   const loadClientData = async () => {
     if (!id) return;
@@ -503,10 +525,13 @@ export default function ClientDetail() {
 
       {/* Abas */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className={`grid w-full ${user?.role === 'supervisor' ? 'grid-cols-4' : 'grid-cols-5'}`}>
+        <TabsList className={`grid w-full ${
+          !canAccessFinancial ? 'grid-cols-4' : 
+          user?.role === 'supervisor' ? 'grid-cols-4' : 'grid-cols-5'
+        }`}>
           <TabsTrigger value="contatos">Contatos</TabsTrigger>
           <TabsTrigger value="documentos">Documentos</TabsTrigger>
-          {user?.role !== 'supervisor' && <TabsTrigger value="financeiro">Financeiro</TabsTrigger>}
+          {canAccessFinancial && <TabsTrigger value="financeiro">Financeiro</TabsTrigger>}
           <TabsTrigger value="projetos">Projetos</TabsTrigger>
           <TabsTrigger value="orcamentos">Orçamentos</TabsTrigger>
         </TabsList>
