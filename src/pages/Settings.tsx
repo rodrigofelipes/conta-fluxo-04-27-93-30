@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useThemeWithDatabase } from "@/hooks/useThemeWithDatabase";
 import { useGradientDatabase } from "@/hooks/useGradientDatabase";
 import { supabase } from "@/integrations/supabase/client";
+import UnifiedUserManagement from "@/pages/UnifiedUserManagement";
 import { 
   Monitor, 
   Sun, 
@@ -208,6 +209,9 @@ export default function Settings() {
 
   // Check if user is admin or Débora to show WhatsApp tab
   const showWhatsAppTab = user?.role === 'admin' || user?.name === 'Débora';
+  const isAdmin = user?.role === 'admin';
+  const totalTabs = 3 + (showWhatsAppTab ? 1 : 0) + (isAdmin ? 1 : 0);
+  const gridColsClass = totalTabs === 5 ? 'grid-cols-5' : totalTabs === 4 ? 'grid-cols-4' : 'grid-cols-3';
 
   return (
     <div className="space-y-6">
@@ -217,7 +221,7 @@ export default function Settings() {
       />
       
       <Tabs defaultValue="profile" className="space-y-4">
-        <TabsList className={`grid w-full ${showWhatsAppTab ? 'grid-cols-4' : 'grid-cols-3'}`}>
+        <TabsList className={`grid w-full ${gridColsClass}`}>
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <User className="size-4" />
             Perfil
@@ -234,6 +238,12 @@ export default function Settings() {
             <TabsTrigger value="whatsapp" className="flex items-center gap-2">
               <MessageSquare className="size-4" />
               WhatsApp
+            </TabsTrigger>
+          )}
+          {isAdmin && (
+            <TabsTrigger value="users" className="flex items-center gap-2">
+              <Shield className="size-4" />
+              Usuários
             </TabsTrigger>
           )}
         </TabsList>
@@ -544,6 +554,12 @@ export default function Settings() {
           <TabsContent value="whatsapp" className="space-y-4">
             <WhatsAppScheduleConfig />
             <WhatsAppAgendaManager />
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="users" className="space-y-4">
+            <UnifiedUserManagement showHeader={false} />
           </TabsContent>
         )}
       </Tabs>

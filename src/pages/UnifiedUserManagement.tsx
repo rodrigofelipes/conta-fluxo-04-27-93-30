@@ -44,6 +44,10 @@ interface UnifiedClient {
 
 type UnifiedEntity = UnifiedUser | UnifiedClient;
 
+interface UnifiedUserManagementProps {
+  showHeader?: boolean;
+}
+
 interface EntityStats {
   totalUsers: number;
   totalAdmins: number;
@@ -51,7 +55,7 @@ interface EntityStats {
   clientsBySetor: Record<string, number>;
 }
 
-export default function UnifiedUserManagement() {
+export default function UnifiedUserManagement({ showHeader = true }: UnifiedUserManagementProps) {
   const { user, login, refreshUser } = useAuth();
   const { toast } = useToast();
   
@@ -651,11 +655,13 @@ export default function UnifiedUserManagement() {
   };
 
   return (
-    <div className="space-y-6">
-      <PageHeader 
-        title="Gestão de Usuários e Clientes" 
-        subtitle="Gerencie usuários do sistema e clientes de forma centralizada" 
-      />
+    <div className={cn("space-y-6", !showHeader && "pt-2")}>
+      {showHeader && (
+        <PageHeader
+          title="Gestão de Usuários e Clientes"
+          subtitle="Gerencie usuários do sistema e clientes de forma centralizada"
+        />
+      )}
 
       {/* Cards de estatísticas */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
