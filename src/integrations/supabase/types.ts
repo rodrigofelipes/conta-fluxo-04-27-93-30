@@ -674,6 +674,42 @@ export type Database = {
         }
         Relationships: []
       }
+      messages: {
+        Row: {
+          created_at: string
+          from_user_id: string
+          from_user_name: string
+          id: string
+          message: string
+          message_type: string
+          to_user_id: string
+          to_user_name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          from_user_id: string
+          from_user_name?: string
+          id?: string
+          message: string
+          message_type?: string
+          to_user_id: string
+          to_user_name?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          from_user_id?: string
+          from_user_name?: string
+          id?: string
+          message?: string
+          message_type?: string
+          to_user_id?: string
+          to_user_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       payment_installments: {
         Row: {
           amount: number
