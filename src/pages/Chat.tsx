@@ -841,9 +841,11 @@ export default function Chat() {
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <h4 className="font-medium truncate">{contact.name}</h4>
-                            <div className="flex items-center gap-1 flex-shrink-0">
+                          <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
+                            <h4 className="font-medium leading-tight break-words flex-1 min-w-0">
+                              {contact.name}
+                            </h4>
+                            <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
                               {contact.unreadCount > 0 && (
                                 <Badge variant="destructive" className="text-xs">
                                   {contact.unreadCount}
@@ -854,9 +856,9 @@ export default function Chat() {
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <Phone className="h-3 w-3" />
-                            <span className="truncate">{contact.phone}</span>
+                          <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground mt-1 min-w-0">
+                            <Phone className="h-3 w-3 flex-shrink-0" />
+                            <span className="truncate min-w-0">{contact.phone}</span>
                           </div>
                           <p className="text-sm text-muted-foreground truncate mt-1">
                             {contact.lastMessage}
@@ -879,8 +881,8 @@ export default function Chat() {
         {/* Área de Chat */}
         <div className="flex-1 min-w-0">
           <Card className="h-full flex flex-col">
-          {selectedContact ? (
-            <>
+            {selectedContact ? (
+              <>
               {/* Header do Chat */}
               <CardHeader className="pb-3 border-b flex-shrink-0">
                 <div className="flex items-center gap-3">
@@ -891,16 +893,19 @@ export default function Chat() {
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold truncate">{selectedContact.name}</h3>
-                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                      <Phone className="h-3 w-3" />
-                      <span>{selectedContact.phone}</span>
+                    <h3 className="font-semibold leading-tight break-words">
+                      {selectedContact.name}
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground mt-1">
+                      <div className="flex items-center gap-1 min-w-0">
+                        <Phone className="h-3 w-3 flex-shrink-0" />
+                        <span className="break-all">{selectedContact.phone}</span>
+                      </div>
                       {selectedContact.isOnline && (
-                        <>
-                          <span className="mx-1">•</span>
+                        <div className="flex items-center gap-1 whitespace-nowrap">
                           <div className="w-2 h-2 bg-green-500 rounded-full" />
                           <span>Online</span>
-                        </>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -918,46 +923,52 @@ export default function Chat() {
                           className={`flex ${message.isOutgoing ? "justify-end" : "justify-start"}`}
                         >
                           <div
-                            className={`max-w-[70%] rounded-lg px-3 py-2 ${
+                            className={`flex max-w-[92%] min-w-0 flex-col gap-2 rounded-2xl px-3 py-2 shadow-sm ${
                               message.isOutgoing
                                 ? "bg-primary text-primary-foreground"
                                 : "bg-muted"
-                            }`}
+                            } sm:max-w-[75%] lg:max-w-[60%]`}
                           >
                             <div className="space-y-2">
                               {message.attachments && message.attachments.length > 0 && (
                                 <div className="space-y-2">
-                                   {message.attachments.map((attachment) => (
-                                     <MediaMessage
-                                       key={`${message.id}-${attachment.id}`}
-                                       attachment={{
-                                         id: attachment.id,
-                                         fileName: attachment.fileName,
-                                         fileType: attachment.fileType,
-                                         fileSize: attachment.fileSize,
-                                         downloadUrl: attachment.url,
-                                         storagePath: attachment.storagePath
-                                       }}
-                                     />
-                                   ))}
+                                  {message.attachments.map((attachment) => (
+                                    <MediaMessage
+                                      key={`${message.id}-${attachment.id}`}
+                                      attachment={{
+                                        id: attachment.id,
+                                        fileName: attachment.fileName,
+                                        fileType: attachment.fileType,
+                                        fileSize: attachment.fileSize,
+                                        downloadUrl: attachment.url,
+                                        storagePath: attachment.storagePath
+                                      }}
+                                    />
+                                  ))}
                                 </div>
                               )}
 
                               {message.content && (
-                                <p className="text-sm break-words">{message.content}</p>
+                                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                                  {message.content}
+                                </p>
                               )}
                             </div>
 
-                            <p className="mt-2 text-xs opacity-70">
-                              {formatTime(message.timestamp)}
+                            <div
+                              className={`flex flex-wrap items-center gap-1 text-xs opacity-70 ${
+                                message.isOutgoing ? "justify-end" : "justify-start"
+                              }`}
+                            >
+                              <span>{formatTime(message.timestamp)}</span>
                               {message.isOutgoing && (
-                                <span className="ml-1">
+                                <span className="ml-1 flex items-center gap-0.5">
                                   {message.status === "sent" && "✓"}
                                   {message.status === "delivered" && "✓✓"}
                                   {message.status === "read" && "✓✓"}
                                 </span>
                               )}
-                            </p>
+                            </div>
                           </div>
                         </div>
                       ))}

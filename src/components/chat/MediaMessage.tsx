@@ -110,7 +110,7 @@ export function MediaMessage({ attachment }: MediaMessageProps) {
   const isAudio = attachment.fileType.startsWith('audio/');
 
   return (
-    <div className="max-w-sm bg-card border rounded-lg overflow-hidden">
+    <div className="w-full max-w-sm bg-card border rounded-lg overflow-hidden">
       {isImage && (
         <div className="relative group">
           {!imageError ? (
