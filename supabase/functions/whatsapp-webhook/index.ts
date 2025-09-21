@@ -293,10 +293,24 @@ Aguarde um momento, por favor! 😊`;
   }
 }
 
-async function saveWhatsAppMessage(clientId: string, messageText: string, isOutgoing: boolean, adminId?: string) {
+interface StoredAttachment {
+  file_name: string;
+  file_path: string;
+  file_type: string;
+  file_size: number;
+  uploaded_by: string;
+}
+
+async function saveWhatsAppMessage(
+  clientId: string,
+  messageText: string,
+  isOutgoing: boolean,
+  adminId?: string,
+  attachments?: StoredAttachment[]
+) {
   console.log(`💾 Salvando mensagem WhatsApp - Cliente: ${clientId}, Admin: ${adminId}, Outgoing: ${isOutgoing}`);
-  
-  const { error } = await supabase
+
+  const { data: messageRecord, error } = await supabase
     .from('client_contacts')
     .insert({
       client_id: clientId,
@@ -305,15 +319,142 @@ async function saveWhatsAppMessage(clientId: string, messageText: string, isOutg
       description: messageText,
       contact_date: new Date().toISOString(),
       created_by: adminId || null
-    });
-    
-  if (error) {
+    })
+    .select()
+    .single();
+
+  if (error || !messageRecord) {
     console.error('❌ Erro ao salvar mensagem WhatsApp:', error);
-    return false;
+    return null;
   }
-  
+
+  if (attachments && attachments.length > 0) {
+    const attachmentsWithMessageId = attachments.map((attachment) => ({
+      ...attachment,
+      message_id: messageRecord.id,
+    }));
+
+    const { error: attachmentError } = await supabase
+      .from('message_attachments')
+      .insert(attachmentsWithMessageId);
+
+    if (attachmentError) {
+      console.error('❌ Erro ao salvar anexos da mensagem:', attachmentError);
+    } else {
+      console.log(`📎 ${attachments.length} anexo(s) vinculados à mensagem ${messageRecord.id}`);
+    }
+  }
+
   console.log('✅ Mensagem WhatsApp salva com sucesso');
-  return true;
+  return messageRecord;
+}
+
+const getExtensionFromMime = (mimeType?: string) => {
+  if (!mimeType) return undefined;
+  if (mimeType.includes('jpeg')) return 'jpg';
+  if (mimeType.includes('png')) return 'png';
+  if (mimeType.includes('gif')) return 'gif';
+  if (mimeType.includes('webp')) return 'webp';
+  if (mimeType.includes('heic')) return 'heic';
+  if (mimeType.includes('heif')) return 'heif';
+  if (mimeType.includes('pdf')) return 'pdf';
+  if (mimeType.includes('msword')) return 'doc';
+  if (mimeType.includes('presentation')) return 'ppt';
+  if (mimeType.includes('sheet') || mimeType.includes('excel')) return 'xls';
+  if (mimeType.includes('plain')) return 'txt';
+  if (mimeType.includes('mp4')) return 'mp4';
+  if (mimeType.includes('quicktime')) return 'mov';
+  if (mimeType.includes('webm')) return 'webm';
+  if (mimeType.includes('audio/mpeg')) return 'mp3';
+  if (mimeType.includes('audio/aac')) return 'aac';
+  if (mimeType.includes('audio/ogg')) return 'ogg';
+  if (mimeType.includes('audio/wav')) return 'wav';
+  return undefined;
+};
+
+async function downloadAndStoreMedia(
+  mediaId: string,
+  uploadedBy: string,
+  options: { mimeType?: string; fileName?: string }
+): Promise<StoredAttachment | null> {
+  try {
+    if (!WHATSAPP_ACCESS_TOKEN) {
+      console.error('❌ WHATSAPP_ACCESS_TOKEN não configurado para baixar mídia');
+      return null;
+    }
+
+    console.log(`⬇️ Baixando mídia ${mediaId}`);
+
+    const metadataResponse = await fetch(`https://graph.facebook.com/v20.0/${mediaId}`, {
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+      },
+    });
+
+    if (!metadataResponse.ok) {
+      const errorData = await metadataResponse.text();
+      console.error(`❌ Falha ao obter metadados da mídia ${mediaId}:`, errorData);
+      return null;
+    }
+
+    const metadata = await metadataResponse.json();
+    const downloadUrl = metadata.url;
+    const mimeType = options.mimeType || metadata.mime_type || 'application/octet-stream';
+    const fileSizeFromMeta = metadata.file_size as number | undefined;
+    const metaFileName = metadata.file_name || metadata.filename;
+
+    if (!downloadUrl) {
+      console.error(`❌ URL de download não disponível para mídia ${mediaId}`);
+      return null;
+    }
+
+    const mediaResponse = await fetch(downloadUrl, {
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+      },
+    });
+
+    if (!mediaResponse.ok) {
+      const errorData = await mediaResponse.text();
+      console.error(`❌ Falha ao baixar a mídia ${mediaId}:`, errorData);
+      return null;
+    }
+
+    const arrayBuffer = await mediaResponse.arrayBuffer();
+    const fileBuffer = new Uint8Array(arrayBuffer);
+    const fileSize = fileSizeFromMeta ?? fileBuffer.byteLength;
+    const inferredExtension = getExtensionFromMime(mimeType);
+
+    const baseName = options.fileName || metaFileName || `whatsapp-${mediaId}`;
+    const hasExtension = baseName.includes('.');
+    const finalFileName = hasExtension || !inferredExtension ? baseName : `${baseName}.${inferredExtension}`;
+
+    const storageFileName = `${Date.now()}-${mediaId}-${finalFileName.replace(/\s+/g, '_')}`;
+    const storagePath = `${uploadedBy}/${storageFileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('chat-files')
+      .upload(storagePath, fileBuffer, {
+        contentType: mimeType,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error('❌ Erro ao salvar mídia no storage:', uploadError);
+      return null;
+    }
+
+    return {
+      file_name: finalFileName,
+      file_path: storagePath,
+      file_type: mimeType,
+      file_size: fileSize,
+      uploaded_by: uploadedBy,
+    };
+  } catch (error) {
+    console.error(`❌ Erro inesperado ao processar mídia ${mediaId}:`, error);
+    return null;
+  }
 }
 
 async function createUnknownClient(phone: string, firstMessage: string) {
@@ -374,8 +515,10 @@ serve(async (req) => {
               console.log(`📱 Nova mensagem WhatsApp: ${message.text?.body || 'Mídia'}`);
               
               const senderPhone = message.from;
-              const messageText = message.text?.body || 'Mensagem de mídia';
-              
+              const messageType = message.type;
+              let messageText = message.text?.body || 'Mensagem de mídia';
+              const attachmentsToStore: StoredAttachment[] = [];
+
               // Buscar cliente pelo telefone
               let cliente = await findClientByPhone(senderPhone);
               
@@ -395,9 +538,68 @@ serve(async (req) => {
                 console.error('❌ Não foi possível gerenciar conversa');
                 continue;
               }
-              
+
               // Sempre atribuir ao admin
               let assignedUser = await findUserByRole('admin');
+
+              if (messageType === 'image') {
+                messageText = message.image?.caption || 'Imagem recebida';
+              } else if (messageType === 'video') {
+                messageText = message.video?.caption || 'Vídeo recebido';
+              } else if (messageType === 'audio') {
+                messageText = 'Áudio recebido';
+              } else if (messageType === 'document') {
+                messageText = message.document?.caption || `Documento recebido${message.document?.filename ? `: ${message.document.filename}` : ''}`;
+              } else if (messageType === 'sticker') {
+                messageText = 'Figurinha recebida';
+              }
+
+              if (assignedUser && messageType && messageType !== 'text') {
+                console.log(`📎 Mensagem contém mídia do tipo ${messageType}`);
+                try {
+                  if (messageType === 'image' && message.image?.id) {
+                    const stored = await downloadAndStoreMedia(message.image.id, assignedUser.user_id, {
+                      mimeType: message.image.mime_type,
+                      fileName: message.image.filename,
+                    });
+                    if (stored) {
+                      attachmentsToStore.push(stored);
+                    }
+                  } else if (messageType === 'video' && message.video?.id) {
+                    const stored = await downloadAndStoreMedia(message.video.id, assignedUser.user_id, {
+                      mimeType: message.video.mime_type,
+                      fileName: message.video.filename,
+                    });
+                    if (stored) {
+                      attachmentsToStore.push(stored);
+                    }
+                  } else if (messageType === 'audio' && message.audio?.id) {
+                    const stored = await downloadAndStoreMedia(message.audio.id, assignedUser.user_id, {
+                      mimeType: message.audio.mime_type,
+                    });
+                    if (stored) {
+                      attachmentsToStore.push(stored);
+                    }
+                  } else if (messageType === 'document' && message.document?.id) {
+                    const stored = await downloadAndStoreMedia(message.document.id, assignedUser.user_id, {
+                      mimeType: message.document.mime_type,
+                      fileName: message.document.filename,
+                    });
+                    if (stored) {
+                      attachmentsToStore.push(stored);
+                    }
+                  } else if (messageType === 'sticker' && message.sticker?.id) {
+                    const stored = await downloadAndStoreMedia(message.sticker.id, assignedUser.user_id, {
+                      mimeType: message.sticker.mime_type,
+                    });
+                    if (stored) {
+                      attachmentsToStore.push(stored);
+                    }
+                  }
+                } catch (error) {
+                  console.error('❌ Erro ao processar mídia recebida:', error);
+                }
+              }
               
               // Se é a primeira mensagem (awaiting_selection), enviar mensagem de boas-vindas
               if (conversation.state === 'awaiting_selection') {
@@ -424,7 +626,8 @@ serve(async (req) => {
                   cliente.id,
                   messageText,
                   false, // não é mensagem enviada, é recebida
-                  assignedUser.user_id
+                  assignedUser.user_id,
+                  attachmentsToStore.length > 0 ? attachmentsToStore : undefined
                 );
               } else {
                 console.error('❌ Nenhum usuário disponível para receber a mensagem');
