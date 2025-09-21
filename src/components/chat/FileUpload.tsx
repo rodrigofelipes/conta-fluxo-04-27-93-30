@@ -153,7 +153,7 @@ export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
         fileType: file.type,
         fileSize: file.size,
         storagePath: data.path,
-        downloadUrl: signedUrl || data.path
+        downloadUrl: signedUrl || ""
       });
 
       // Remove from uploading list after short delay
