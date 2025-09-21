@@ -91,11 +91,14 @@ export default function AppLayout() {
       // Remove user-specific projects tab for admins
       filteredNav = filteredNav.filter(n => n.to !== "/user-projects");
     } else if (user?.role === "coordenador") {
-      // Coordenadores: access to projects, reports, chat, coordinator-phases, but not clients, financeiro, users, user-projects
+      // Coordenadores: only access to agenda, dashboard, coordinator-phases, and settings
       filteredNav = filteredNav.filter(n => 
         n.to !== "/user-projects" && 
         n.to !== "/financeiro" && 
-        n.to !== "/clients"
+        n.to !== "/clients" &&
+        n.to !== "/projects" &&
+        n.to !== "/reports" &&
+        n.to !== "/chat"
       );
     } else if (user?.role === "supervisor") {
       // Supervisores: access to projects, reports, chat, clients but not financeiro, users, coordinator-phases
@@ -112,8 +115,8 @@ export default function AppLayout() {
         return user?.role === "admin";
       }
       if (n.to === "/chat" || n.to === "/reports") {
-        // Chat and Reports are accessible to admin, supervisor, and coordenador
-        return user?.role === "admin" || user?.role === "supervisor" || user?.role === "coordenador";
+        // Chat and Reports are accessible to admin and supervisor only
+        return user?.role === "admin" || user?.role === "supervisor";
       }
       if (n.to === "/coordinator-phases") {
         // Coordinator phases are only accessible to coordenador
