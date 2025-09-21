@@ -75,9 +75,9 @@ export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
       // Validate file type
       const allowedTypes = [
         'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-        'video/mp4', 'video/webm', 'video/mov',
-        'audio/mp3', 'audio/wav', 'audio/m4a', 'audio/ogg',
-        'application/pdf', 'application/msword', 
+        'video/mp4', 'video/webm', 'video/quicktime',
+        'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/ogg', 'audio/m4a', 'audio/x-m4a', 'audio/mp4', 'audio/aac',
+        'application/pdf', 'application/msword',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'text/plain'
       ];

@@ -1,6 +1,6 @@
 import { Download, File, Image, Video, Volume2, Play, Pause } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 
 interface MediaMessageProps {
@@ -31,6 +31,28 @@ export function MediaMessage({ attachment }: MediaMessageProps) {
 
   const proxyUrl = getProxyUrl(attachment);
 
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        try {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+        } catch (error) {
+          console.warn("Erro ao finalizar áudio:", error);
+        }
+      }
+
+      if (videoRef.current) {
+        try {
+          videoRef.current.pause();
+          videoRef.current.currentTime = 0;
+        } catch (error) {
+          console.warn("Erro ao finalizar vídeo:", error);
+        }
+      }
+    };
+  }, []);
+
   const handleDownload = async () => {
     try {
       const response = await fetch(proxyUrl);
@@ -54,14 +76,25 @@ export function MediaMessage({ attachment }: MediaMessageProps) {
   };
 
   const toggleAudio = () => {
-    if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.pause();
-      } else {
-        audioRef.current.play();
-      }
-      setIsPlaying(!isPlaying);
+    const element = audioRef.current;
+    if (!element) return;
+
+    if (isPlaying) {
+      element.pause();
+      setIsPlaying(false);
+      return;
     }
+
+    element
+      .play()
+      .then(() => {
+        setIsPlaying(true);
+      })
+      .catch((error) => {
+        console.error("Erro ao reproduzir áudio:", error);
+        toast.error("Não foi possível reproduzir o áudio");
+        setIsPlaying(false);
+      });
   };
 
   const formatFileSize = (bytes: number) => {
@@ -139,9 +172,14 @@ export function MediaMessage({ attachment }: MediaMessageProps) {
           <audio
             ref={audioRef}
             src={proxyUrl}
+            preload="metadata"
             onEnded={() => setIsPlaying(false)}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
+            onError={() => {
+              toast.error("Erro ao carregar o áudio");
+              setIsPlaying(false);
+            }}
           />
         </div>
       )}

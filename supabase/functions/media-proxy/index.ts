@@ -96,6 +96,18 @@ serve(async (req) => {
       case 'ogg':
         contentType = 'audio/ogg';
         break;
+      case 'oga':
+        contentType = 'audio/ogg';
+        break;
+      case 'opus':
+        contentType = 'audio/ogg';
+        break;
+      case 'm4a':
+        contentType = 'audio/mp4';
+        break;
+      case 'aac':
+        contentType = 'audio/aac';
+        break;
       case 'pdf':
         contentType = 'application/pdf';
         break;
@@ -110,14 +122,66 @@ serve(async (req) => {
         break;
     }
 
+    const fileBlob = data as Blob;
+    const arrayBuffer = await fileBlob.arrayBuffer();
+    const fileBuffer = new Uint8Array(arrayBuffer);
+    const fileSize = fileBuffer.byteLength;
+
+    const rangeHeader = req.headers.get('range');
+    if (rangeHeader) {
+      const matches = /bytes=(\d+)-(\d+)?/i.exec(rangeHeader);
+      if (matches) {
+        const start = Number(matches[1]);
+        let end = matches[2] ? Number(matches[2]) : fileSize - 1;
+
+        if (Number.isNaN(start) || start < 0 || start >= fileSize) {
+          return new Response('Requested Range Not Satisfiable', {
+            status: 416,
+            headers: {
+              ...corsHeaders,
+              'Content-Range': `bytes */${fileSize}`,
+            },
+          });
+        }
+
+        end = Number.isNaN(end) ? fileSize - 1 : Math.min(end, fileSize - 1);
+
+        if (start > end) {
+          return new Response('Requested Range Not Satisfiable', {
+            status: 416,
+            headers: {
+              ...corsHeaders,
+              'Content-Range': `bytes */${fileSize}`,
+            },
+          });
+        }
+
+        const chunk = fileBuffer.slice(start, end + 1);
+        return new Response(chunk, {
+          status: 206,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': contentType,
+            'Content-Length': String(chunk.byteLength),
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'public, max-age=3600',
+            'Content-Disposition': `inline; filename="${filePath.split('/').pop() ?? 'file'}"`,
+          },
+        });
+      }
+    }
+
     // Return file with appropriate headers
-    return new Response(data, {
+    return new Response(fileBuffer, {
       status: 200,
       headers: {
         ...corsHeaders,
         'Content-Type': contentType,
+        'Content-Length': String(fileSize),
+        'Accept-Ranges': 'bytes',
         'Cache-Control': 'public, max-age=3600',
-        'Content-Disposition': `inline; filename="${filePath.split('/').pop()}"`,
+        'Content-Disposition': `inline; filename="${filePath.split('/').pop() ?? 'file'}"`,
       },
     });
 
