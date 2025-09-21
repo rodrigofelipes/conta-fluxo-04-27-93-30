@@ -91,9 +91,8 @@ export default function AppLayout() {
       // Remove user-specific projects tab for admins
       filteredNav = filteredNav.filter(n => n.to !== "/user-projects");
     } else if (user?.role === "coordenador") {
-      // Coordenadores: only access to agenda, dashboard, coordinator-phases, and settings
+      // Coordenadores: access to agenda, dashboard, coordinator-phases, user-projects, and settings
       filteredNav = filteredNav.filter(n => 
-        n.to !== "/user-projects" && 
         n.to !== "/financeiro" && 
         n.to !== "/clients" &&
         n.to !== "/projects" &&
