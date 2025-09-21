@@ -94,7 +94,7 @@ export default function Chat() {
     try {
       const { data, error } = await supabase.storage
         .from("chat-files")
-        .createSignedUrl(storagePath, 3600);
+        .createSignedUrl(storagePath, 86400);
       if (error || !data) {
         console.error("Erro ao gerar URL assinada:", error);
         return storagePath;
@@ -246,7 +246,7 @@ export default function Chat() {
             try {
               const { data: signedUrls, error: signedError } = await supabase.storage
                 .from('chat-files')
-                .createSignedUrls(uniquePaths, 3600);
+                .createSignedUrls(uniquePaths, 86400);
               if (signedError) {
                 console.error('Erro ao gerar URLs assinadas:', signedError);
               } else if (signedUrls) {
