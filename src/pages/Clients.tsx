@@ -142,6 +142,8 @@ export default function Clients() {
   }, [user]);
 
   useEffect(() => {
+    // Clear localStorage to reset any cached data
+    localStorage.clear();
     fetchClientes();
   }, [fetchClientes]);
 
