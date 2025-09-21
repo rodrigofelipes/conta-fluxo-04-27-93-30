@@ -789,93 +789,96 @@ export default function Chat() {
     <div className="space-y-6">
       <PageHeader title="WhatsApp Business" />
 
-      <div className="flex gap-4 h-[calc(100vh-200px)] overflow-hidden">
+      <div className="flex gap-4 h-[calc(100vh-200px)] min-h-0">
         {/* Lista de Contatos */}
-        <Card className="w-80 flex flex-col">
-          <CardHeader className="pb-3 flex-shrink-0">
-            <CardTitle className="flex items-center gap-2">
-              <NotificationCenter />
-              <MessageSquare className="h-5 w-5" />
-              Conversas
-              {unreadMessagesCount > 0 && (
-                <Badge variant="destructive" className="ml-auto">
-                  {unreadMessagesCount}
-                </Badge>
-              )}
-            </CardTitle>
-            <div className="relative">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar contatos..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-8"
-              />
-            </div>
-          </CardHeader>
-          <CardContent className="p-0 flex-1 overflow-hidden">
-            <ScrollArea className="h-full">
-              {loading ? (
-                <div className="p-4 text-center text-muted-foreground">
-                  Carregando contatos...
-                </div>
-              ) : filteredContacts.length === 0 ? (
-                <div className="p-4 text-center text-muted-foreground">
-                  Nenhum contato encontrado
-                </div>
-              ) : (
-                filteredContacts.map((contact) => (
-                  <div
-                    key={contact.id}
-                    className={`p-4 border-b cursor-pointer hover:bg-muted/50 transition-colors ${
-                      selectedContact?.id === contact.id ? "bg-muted" : ""
-                    }`}
-                    onClick={() => handleContactSelect(contact)}
-                  >
-                    <div className="flex items-start gap-3">
-                      <Avatar className="h-10 w-10 flex-shrink-0">
-                        <AvatarImage src={contact.avatar} />
-                        <AvatarFallback>
-                          {contact.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-medium truncate">{contact.name}</h4>
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            {contact.unreadCount > 0 && (
-                              <Badge variant="destructive" className="text-xs">
-                                {contact.unreadCount}
-                              </Badge>
-                            )}
-                            {contact.isOnline && (
-                              <div className="w-2 h-2 bg-green-500 rounded-full" />
-                            )}
+        <div className="w-80 flex-shrink-0 flex flex-col">
+          <Card className="h-full flex flex-col">
+            <CardHeader className="pb-3 flex-shrink-0">
+              <CardTitle className="flex items-center gap-2">
+                <NotificationCenter />
+                <MessageSquare className="h-5 w-5" />
+                Conversas
+                {unreadMessagesCount > 0 && (
+                  <Badge variant="destructive" className="ml-auto">
+                    {unreadMessagesCount}
+                  </Badge>
+                )}
+              </CardTitle>
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar contatos..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 flex-1 min-h-0">
+              <ScrollArea className="h-full">
+                {loading ? (
+                  <div className="p-4 text-center text-muted-foreground">
+                    Carregando contatos...
+                  </div>
+                ) : filteredContacts.length === 0 ? (
+                  <div className="p-4 text-center text-muted-foreground">
+                    Nenhum contato encontrado
+                  </div>
+                ) : (
+                  filteredContacts.map((contact) => (
+                    <div
+                      key={contact.id}
+                      className={`p-4 border-b cursor-pointer hover:bg-muted/50 transition-colors ${
+                        selectedContact?.id === contact.id ? "bg-muted" : ""
+                      }`}
+                      onClick={() => handleContactSelect(contact)}
+                    >
+                      <div className="flex items-start gap-3">
+                        <Avatar className="h-10 w-10 flex-shrink-0">
+                          <AvatarImage src={contact.avatar} />
+                          <AvatarFallback>
+                            {contact.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-medium truncate">{contact.name}</h4>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {contact.unreadCount > 0 && (
+                                <Badge variant="destructive" className="text-xs">
+                                  {contact.unreadCount}
+                                </Badge>
+                              )}
+                              {contact.isOnline && (
+                                <div className="w-2 h-2 bg-green-500 rounded-full" />
+                              )}
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                          <Phone className="h-3 w-3" />
-                          <span className="truncate">{contact.phone}</span>
-                        </div>
-                        <p className="text-sm text-muted-foreground truncate mt-1">
-                          {contact.lastMessage}
-                        </p>
-                        {contact.lastMessageTime && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {formatTime(contact.lastMessageTime)}
+                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                            <Phone className="h-3 w-3" />
+                            <span className="truncate">{contact.phone}</span>
+                          </div>
+                          <p className="text-sm text-muted-foreground truncate mt-1">
+                            {contact.lastMessage}
                           </p>
-                        )}
+                          {contact.lastMessageTime && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {formatTime(contact.lastMessageTime)}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
-              )}
-            </ScrollArea>
-          </CardContent>
-        </Card>
+                  ))
+                )}
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Área de Chat */}
-        <Card className="flex-1 flex flex-col">
+        <div className="flex-1 min-w-0">
+          <Card className="h-full flex flex-col">
           {selectedContact ? (
             <>
               {/* Header do Chat */}
@@ -905,61 +908,63 @@ export default function Chat() {
               </CardHeader>
               
               {/* Área de Mensagens */}
-              <div className="flex-1 flex flex-col overflow-hidden">
-                <ScrollArea className="flex-1 p-4">
-                  <div className="space-y-4">
-                    {messages.map((message) => (
-                      <div
-                        key={message.id}
-                        className={`flex ${message.isOutgoing ? "justify-end" : "justify-start"}`}
-                      >
+              <div className="flex-1 flex flex-col min-h-0">
+                <div className="flex-1 min-h-0">
+                  <ScrollArea className="h-full p-4">
+                    <div className="space-y-4">
+                      {messages.map((message) => (
                         <div
-                          className={`max-w-[70%] rounded-lg px-3 py-2 ${
-                            message.isOutgoing
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-muted"
-                          }`}
+                          key={message.id}
+                          className={`flex ${message.isOutgoing ? "justify-end" : "justify-start"}`}
                         >
-                          <div className="space-y-2">
-                            {message.attachments && message.attachments.length > 0 && (
-                              <div className="space-y-2">
-                                 {message.attachments.map((attachment) => (
-                                   <MediaMessage
-                                     key={`${message.id}-${attachment.id}`}
-                                     attachment={{
-                                       id: attachment.id,
-                                       fileName: attachment.fileName,
-                                       fileType: attachment.fileType,
-                                       fileSize: attachment.fileSize,
-                                       downloadUrl: attachment.url,
-                                       storagePath: attachment.storagePath
-                                     }}
-                                   />
-                                 ))}
-                              </div>
-                            )}
+                          <div
+                            className={`max-w-[70%] rounded-lg px-3 py-2 ${
+                              message.isOutgoing
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted"
+                            }`}
+                          >
+                            <div className="space-y-2">
+                              {message.attachments && message.attachments.length > 0 && (
+                                <div className="space-y-2">
+                                   {message.attachments.map((attachment) => (
+                                     <MediaMessage
+                                       key={`${message.id}-${attachment.id}`}
+                                       attachment={{
+                                         id: attachment.id,
+                                         fileName: attachment.fileName,
+                                         fileType: attachment.fileType,
+                                         fileSize: attachment.fileSize,
+                                         downloadUrl: attachment.url,
+                                         storagePath: attachment.storagePath
+                                       }}
+                                     />
+                                   ))}
+                                </div>
+                              )}
 
-                            {message.content && (
-                              <p className="text-sm break-words">{message.content}</p>
-                            )}
+                              {message.content && (
+                                <p className="text-sm break-words">{message.content}</p>
+                              )}
+                            </div>
+
+                            <p className="mt-2 text-xs opacity-70">
+                              {formatTime(message.timestamp)}
+                              {message.isOutgoing && (
+                                <span className="ml-1">
+                                  {message.status === "sent" && "✓"}
+                                  {message.status === "delivered" && "✓✓"}
+                                  {message.status === "read" && "✓✓"}
+                                </span>
+                              )}
+                            </p>
                           </div>
-
-                          <p className="mt-2 text-xs opacity-70">
-                            {formatTime(message.timestamp)}
-                            {message.isOutgoing && (
-                              <span className="ml-1">
-                                {message.status === "sent" && "✓"}
-                                {message.status === "delivered" && "✓✓"}
-                                {message.status === "read" && "✓✓"}
-                              </span>
-                            )}
-                          </p>
                         </div>
-                      </div>
-                    ))}
-                    <div ref={messagesEndRef} />
-                  </div>
-                </ScrollArea>
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  </ScrollArea>
+                </div>
 
                 {/* Input de Mensagem */}
                 <div className="p-4 border-t bg-background flex-shrink-0 space-y-3">
@@ -1037,7 +1042,8 @@ export default function Chat() {
               </div>
             </CardContent>
           )}
-        </Card>
+          </Card>
+        </div>
       </div>
     </div>
   );
