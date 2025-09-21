@@ -231,6 +231,7 @@ export type Database = {
           description: string
           id: string
           parent_transaction_id: string | null
+          payment_date: string | null
           payment_method: string | null
           project_id: string | null
           recurrence_end_date: string | null
@@ -251,6 +252,7 @@ export type Database = {
           description: string
           id?: string
           parent_transaction_id?: string | null
+          payment_date?: string | null
           payment_method?: string | null
           project_id?: string | null
           recurrence_end_date?: string | null
@@ -271,6 +273,7 @@ export type Database = {
           description?: string
           id?: string
           parent_transaction_id?: string | null
+          payment_date?: string | null
           payment_method?: string | null
           project_id?: string | null
           recurrence_end_date?: string | null
@@ -442,6 +445,94 @@ export type Database = {
         }
         Relationships: []
       }
+      expenses: {
+        Row: {
+          amount: number
+          category_id: string | null
+          created_at: string
+          created_by: string
+          description: string
+          expense_date: string
+          id: string
+          payment_method: string | null
+          recurrence_type: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          category_id?: string | null
+          created_at?: string
+          created_by: string
+          description: string
+          expense_date?: string
+          id?: string
+          payment_method?: string | null
+          recurrence_type?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          category_id?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string
+          expense_date?: string
+          id?: string
+          payment_method?: string | null
+          recurrence_type?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "financial_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_categories: {
+        Row: {
+          category_type: string
+          created_at: string
+          created_by: string
+          id: string
+          name: string
+          parent_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          category_type: string
+          created_at?: string
+          created_by: string
+          id?: string
+          name: string
+          parent_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          category_type?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          name?: string
+          parent_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_categories_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "financial_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       holidays: {
         Row: {
           created_at: string
@@ -550,6 +641,39 @@ export type Database = {
           },
         ]
       }
+      message_attachments: {
+        Row: {
+          created_at: string
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          id: string
+          message_id: string
+          uploaded_by: string
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          id?: string
+          message_id: string
+          uploaded_by: string
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          file_type?: string
+          id?: string
+          message_id?: string
+          uploaded_by?: string
+        }
+        Relationships: []
+      }
       payment_installments: {
         Row: {
           amount: number
@@ -600,6 +724,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          active: boolean
           created_at: string
           email: string
           gradient: string | null
@@ -612,6 +737,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          active?: boolean
           created_at?: string
           email: string
           gradient?: string | null
@@ -624,6 +750,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          active?: boolean
           created_at?: string
           email?: string
           gradient?: string | null

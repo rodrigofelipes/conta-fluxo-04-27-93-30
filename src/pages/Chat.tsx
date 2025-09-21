@@ -12,6 +12,7 @@ import { toast } from "@/hooks/use-toast";
 import { PageHeader } from "@/components/ui/page-header";
 import { useCustomNotifications } from "@/hooks/useCustomNotifications";
 import { NotificationCenter } from "@/components/NotificationCenter";
+import { FileUpload } from "@/components/chat/FileUpload";
 
 interface WhatsAppContact {
   id: string;
@@ -425,7 +426,14 @@ export default function Chat() {
                 </ScrollArea>
 
                 {/* Input de Mensagem */}
-                <div className="p-4 border-t bg-background flex-shrink-0">
+                <div className="p-4 border-t bg-background flex-shrink-0 space-y-3">
+                  <FileUpload 
+                    onFileUploaded={(fileUrl, fileName, fileType) => {
+                      // Handle file uploaded - you can add this to message or show preview
+                      console.log('Arquivo enviado:', { fileUrl, fileName, fileType });
+                    }}
+                    disabled={!selectedContact}
+                  />
                   <div className="flex gap-2">
                     <Input
                       placeholder="Digite sua mensagem..."

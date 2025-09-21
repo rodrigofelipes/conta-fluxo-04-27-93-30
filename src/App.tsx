@@ -19,6 +19,7 @@ import UnifiedUserManagement from "./pages/UnifiedUserManagement";
 import WhatsAppTestPage from "./pages/WhatsAppTest";
 import Reports from "./pages/Reports";
 import CoordinatorPhases from "./pages/CoordinatorPhases";
+import RulesAndFeatures from "./pages/RulesAndFeatures";
 
 import Login from "./pages/auth/Login";
 import AdminLogin from "./pages/auth/AdminLogin";
@@ -75,6 +76,7 @@ const App = () => (
                 <Route path="coordinator-phases" element={<CoordinatorPhases />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="reports" element={<Reports />} />
+                <Route path="rules-features" element={<RulesAndFeatures />} />
                 <Route path="whatsapp-test" element={<WhatsAppTestPage />} />
                 <Route path="users" element={<AdminRoute><UnifiedUserManagement /></AdminRoute>} />
                 

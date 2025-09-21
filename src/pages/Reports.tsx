@@ -318,16 +318,13 @@ export default function Reports() {
       </div>
 
       {/* Charts Section */}
-      <Tabs defaultValue="team" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="team">Colaboradores</TabsTrigger>
-          <TabsTrigger value="overview">Visão Geral</TabsTrigger>
+      <Tabs defaultValue="collaborators" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="collaborators">Colaboradores</TabsTrigger>
           <TabsTrigger value="clients">Clientes</TabsTrigger>
-          <TabsTrigger value="documents">Documentos</TabsTrigger>
-          <TabsTrigger value="performance">Performance</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="team" className="space-y-6">
+        <TabsContent value="collaborators" className="space-y-6">
           {teamLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[...Array(6)].map((_, i) => (
@@ -670,51 +667,6 @@ export default function Reports() {
           </div>
         </TabsContent>
 
-        <TabsContent value="documents" className="space-y-6">
-          <Card className="card-elevated">
-            <CardHeader>
-              <CardTitle>Status dos Documentos</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={metrics.documentosPorStatus}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="status" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="count" fill="hsl(var(--accent))" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="performance" className="space-y-6">
-          <Card className="card-elevated">
-            <CardHeader>
-              <CardTitle>Performance de Tarefas</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={400}>
-                <LineChart data={metrics.novosClientesMensal}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="mes" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="clientes" 
-                    stroke="hsl(var(--primary))" 
-                    strokeWidth={3}
-                    dot={{ fill: "hsl(var(--primary))" }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
       </Tabs>
     </div>
   );

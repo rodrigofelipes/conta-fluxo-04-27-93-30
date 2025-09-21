@@ -13,14 +13,21 @@ interface Project {
   title: string;
 }
 
+interface Collaborator {
+  id: string;
+  name: string;
+}
+
 interface QuickTimerWidgetProps {
   projects: Project[];
+  collaborators?: Collaborator[];
   onHoursUpdate?: () => void;
 }
 
-export function QuickTimerWidget({ projects, onHoursUpdate }: QuickTimerWidgetProps) {
+export function QuickTimerWidget({ projects, collaborators = [], onHoursUpdate }: QuickTimerWidgetProps) {
   const { user } = useAuth();
   const [selectedProject, setSelectedProject] = useState<string>("");
+  const [selectedCollaborator, setSelectedCollaborator] = useState<string>("");
   const [isRunning, setIsRunning] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [startTime, setStartTime] = useState<Date | null>(null);
@@ -174,18 +181,35 @@ export function QuickTimerWidget({ projects, onHoursUpdate }: QuickTimerWidgetPr
       </CardHeader>
       <CardContent className="space-y-4">
         {!isRunning && (
-          <Select value={selectedProject} onValueChange={setSelectedProject}>
-            <SelectTrigger>
-              <SelectValue placeholder="Selecione um projeto" />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="space-y-3">
+            <Select value={selectedProject} onValueChange={setSelectedProject}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione um projeto" />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((project) => (
+                  <SelectItem key={project.id} value={project.id}>
+                    {project.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            {collaborators.length > 0 && (
+              <Select value={selectedCollaborator} onValueChange={setSelectedCollaborator}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Atribuir a colaborador (opcional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {collaborators.map((collaborator) => (
+                    <SelectItem key={collaborator.id} value={collaborator.id}>
+                      {collaborator.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         )}
 
         {isRunning && (

@@ -53,7 +53,7 @@ export function UserPhasesView() {
       // Buscar o profile do usuário atual
       const { data: currentProfile, error: profileError } = await supabase
         .from('profiles')
-        .select('id')
+        .select('id, role')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -65,8 +65,8 @@ export function UserPhasesView() {
         return;
       }
 
-      // Buscar fases atribuídas ao usuário
-      const { data, error } = await supabase
+      // Construir query baseada no role
+      let query = supabase
         .from('project_phases')
         .select(`
           id,
@@ -81,8 +81,18 @@ export function UserPhasesView() {
           supervisor_profile:profiles!supervised_by(name),
           project:projects(id, title, status)
         `)
-        .eq('assigned_to', currentProfile.id)
         .order('created_at', { ascending: false });
+
+      // Filtrar baseado no role
+      if (currentProfile.role === 'coordenador') {
+        // Coordenadores veem apenas fases em andamento
+        query = query.eq('status', 'in_progress');
+      } else {
+        // Usuários regulares veem apenas suas fases atribuídas
+        query = query.eq('assigned_to', currentProfile.id);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 

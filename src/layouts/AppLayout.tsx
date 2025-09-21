@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Home, Calendar, Users, Building2, DollarSign, Settings, LogOut, Shield, UserCog, MessageSquare, FolderOpen, BarChart3 } from "lucide-react";
+import { Home, Calendar, Users, Building2, DollarSign, Settings, LogOut, Shield, UserCog, MessageSquare, FolderOpen, BarChart3, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -54,10 +54,9 @@ const nav: NavItem[] = [{
   icon: DollarSign,
   adminOnly: true
 }, {
-  to: "/users",
-  label: "Usuários",
-  icon: Shield,
-  adminOnly: true
+  to: "/rules-features",
+  label: "Regras e Funcionalidades",
+  icon: BookOpen
 }, {
   to: "/settings",
   label: "Configurações",
