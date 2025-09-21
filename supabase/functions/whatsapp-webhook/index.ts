@@ -339,7 +339,7 @@ async function saveWhatsAppMessage(
   }
 
   // Also save to client_contacts for record keeping
-  await supabase
+  const { data: contactRecord, error: contactError } = await supabase
     .from('client_contacts')
     .insert({
       client_id: clientId,
@@ -348,12 +348,20 @@ async function saveWhatsAppMessage(
       description: messageText,
       contact_date: new Date().toISOString(),
       created_by: adminId || null
-    });
+    })
+    .select()
+    .single();
+
+  if (contactError || !contactRecord) {
+    console.error('❌ Erro ao salvar contato do cliente para mensagem WhatsApp:', contactError);
+  }
+
+  const attachmentMessageId = contactRecord?.id ?? messageRecord.id;
 
   if (attachments && attachments.length > 0) {
     const attachmentsWithMessageId = attachments.map((attachment) => ({
       ...attachment,
-      message_id: messageRecord.id,
+      message_id: attachmentMessageId,
     }));
 
     const { error: attachmentError } = await supabase

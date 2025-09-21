@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import { useCustomNotifications } from "@/hooks/useCustomNotifications";
 import { NotificationCenter } from "@/components/NotificationCenter";
 import { FileUpload, UploadedFileInfo } from "@/components/chat/FileUpload";
 import { MediaMessage } from "@/components/chat/MediaMessage";
+import type { Database } from "@/integrations/supabase/types";
 
 interface WhatsAppContact {
   id: string;
@@ -46,6 +47,22 @@ interface ChatAttachment {
   storagePath?: string;
 }
 
+type ClientRow = Database["public"]["Tables"]["clients"]["Row"];
+type ClientContactRow = Database["public"]["Tables"]["client_contacts"]["Row"];
+type MessageAttachmentRow = Database["public"]["Tables"]["message_attachments"]["Row"];
+
+const SUPABASE_MEDIA_PROXY_URL =
+  "https://wcdyxxthaqzchjpharwh.supabase.co/functions/v1/media-proxy";
+
+const buildMediaProxyUrl = (path: string, bucket = "chat-files") =>
+  `${SUPABASE_MEDIA_PROXY_URL}?path=${encodeURIComponent(path)}&bucket=${encodeURIComponent(bucket)}`;
+
+const isIncomingSubject = (subject?: string | null) =>
+  typeof subject === "string" && subject.toLowerCase().includes("recebida");
+
+const isOutgoingSubject = (subject?: string | null) =>
+  typeof subject === "string" && subject.toLowerCase().includes("enviada");
+
 export default function Chat() {
   const { user } = useAuth();
   const { showNotification } = useCustomNotifications();
@@ -61,16 +78,28 @@ export default function Chat() {
   const [isSending, setIsSending] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const contactsRef = useRef<WhatsAppContact[]>([]);
 
-  const notifyNewMessage = (message: string, contactName: string) => {
-    showNotification(`📱 Nova mensagem de ${contactName}`, message);
-    try {
-      const audio = new Audio("/sounds/gentle-bell.mp3");
-      audio.volume = 0.3;
-      audio.play().catch(() => {});
-    } catch {}
-    setUnreadMessagesCount((prev) => prev + 1);
-  };
+  useEffect(() => {
+    contactsRef.current = contacts;
+  }, [contacts]);
+
+  const notifyNewMessage = useCallback(
+    (message: string, contactName: string) => {
+      showNotification(`📱 Nova mensagem de ${contactName}`, message);
+      try {
+        const audio = new Audio("/sounds/gentle-bell.mp3");
+        audio.volume = 0.3;
+        audio.play().catch(() => {
+          /* ignore autoplay restrictions */
+        });
+      } catch (error) {
+        console.error("Erro ao tocar som de notificação:", error);
+      }
+      setUnreadMessagesCount((prev) => prev + 1);
+    },
+    [showNotification],
+  );
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -91,7 +120,7 @@ export default function Chat() {
     return `${size.toFixed(size > 100 ? 0 : 1)} ${units[i]}`;
   };
 
-  const getSignedUrlForPath = async (storagePath: string) => {
+  const getSignedUrlForPath = useCallback(async (storagePath: string) => {
     try {
       const { data, error } = await supabase.storage
         .from("chat-files")
@@ -111,10 +140,28 @@ export default function Chat() {
         "Não foi possível gerar um link temporário para o arquivo anexado. Atualize a página e tente novamente."
       );
     }
-  };
+  }, []);
 
-  const isValidHttpUrl = (value?: string | null) =>
-    typeof value === "string" && /^https?:\/\//i.test(value);
+  const isValidHttpUrl = useCallback(
+    (value?: string | null) => typeof value === "string" && /^https?:\/\//i.test(value),
+    [],
+  );
+
+  const mapAttachmentRowToChatAttachment = useCallback(
+    (attachment: MessageAttachmentRow): ChatAttachment => {
+      const storagePath = attachment.file_path;
+      const isExternal = isValidHttpUrl(storagePath);
+      return {
+        id: attachment.id,
+        fileName: attachment.file_name,
+        fileType: attachment.file_type,
+        fileSize: attachment.file_size,
+        url: isExternal ? storagePath : buildMediaProxyUrl(storagePath),
+        storagePath: isExternal ? undefined : storagePath,
+      };
+    },
+    [isValidHttpUrl],
+  );
 
   const extractEdgeFunctionError = (edgeError: unknown): string | null => {
     const pickMessage = (payload: unknown): string | null => {
@@ -220,8 +267,12 @@ export default function Chat() {
   };
 
   // -------- Carregar Contatos --------
-  const loadWhatsAppContacts = async () => {
-    setLoading(true);
+  const loadWhatsAppContacts = useCallback(async (options: { silent?: boolean } = {}) => {
+    const { silent } = options;
+
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const { data: clients, error } = await supabase
         .from("clients")
@@ -229,53 +280,67 @@ export default function Chat() {
         .not("phone", "is", null)
         .neq("phone", "")
         .order("name");
+
       if (error) throw error;
+
       if (!clients || clients.length === 0) {
         setContacts([]);
+        setUnreadMessagesCount(0);
         return;
       }
 
-      const contactsPromises = clients.map(async (client: any) => {
-        const [lastContactResult, unreadCountResult] = await Promise.all([
-          supabase
-            .from("client_contacts")
-            .select("*")
-            .eq("client_id", client.id)
-            .eq("contact_type", "whatsapp")
-            .order("contact_date", { ascending: false })
-            .limit(1)
-            .single(),
-          supabase
-            .from("client_contacts")
-            .select("id")
-            .eq("client_id", client.id)
-            .eq("contact_type", "whatsapp")
-            .neq("created_by", user?.id),
-        ]);
+      let totalUnread = 0;
 
-        const lastContact = lastContactResult.data;
-        const unreadMessages = unreadCountResult.data || [];
+      const contactsWithLastMessage = await Promise.all(
+        clients.map(async (client: Pick<ClientRow, "id" | "name" | "phone" | "created_at">) => {
+          const [lastContactResult, unreadCountResult] = await Promise.all([
+            supabase
+              .from("client_contacts")
+              .select("*")
+              .eq("client_id", client.id)
+              .eq("contact_type", "whatsapp")
+              .not("subject", "ilike", "ROUTING:%")
+              .order("contact_date", { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+            supabase
+              .from("client_contacts")
+              .select("id")
+              .eq("client_id", client.id)
+              .eq("contact_type", "whatsapp")
+              .eq("subject", "Mensagem recebida via WhatsApp"),
+          ]);
 
-        const readMessagesKey = `read_messages_${client.id}`;
-        const readMessages = JSON.parse(localStorage.getItem(readMessagesKey) || "[]");
-        const unreadCount = unreadMessages.filter((msg: any) => !readMessages.includes(msg.id)).length;
+          const lastContact = (lastContactResult.data as ClientContactRow | null) ?? null;
+          const unreadCandidates = (unreadCountResult.data as { id: string }[] | null) ?? [];
 
-        const lastMessage = lastContact?.description || lastContact?.subject || "Nenhuma conversa ainda";
+          const readMessagesKey = `read_messages_${client.id}`;
+          const readMessages = new Set<string>(
+            JSON.parse(localStorage.getItem(readMessagesKey) || "[]"),
+          );
 
-        return {
-          id: client.id,
-          name: client.name,
-          phone: client.phone,
-          lastMessage,
-          lastMessageTime: lastContact?.contact_date || client.created_at,
-          unreadCount,
-          avatar: "",
-          isOnline: Math.random() > 0.5, // simulado
-        } as WhatsAppContact;
-      });
+          const unreadMessages = unreadCandidates.filter((msg) => !readMessages.has(msg.id));
+          const unreadCount = unreadMessages.length;
+          totalUnread += unreadCount;
 
-      const contactsWithLastMessage = await Promise.all(contactsPromises);
+          const lastMessage =
+            lastContact?.description || lastContact?.subject || "Nenhuma conversa ainda";
+
+          return {
+            id: client.id,
+            name: client.name,
+            phone: client.phone ?? "",
+            lastMessage,
+            lastMessageTime: lastContact?.contact_date || client.created_at,
+            unreadCount,
+            avatar: "",
+            isOnline: Math.random() > 0.5,
+          } as WhatsAppContact;
+        }),
+      );
+
       setContacts(contactsWithLastMessage);
+      setUnreadMessagesCount(totalUnread);
     } catch (error) {
       console.error("Erro ao carregar contatos WhatsApp:", error);
       toast({
@@ -284,117 +349,94 @@ export default function Chat() {
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
-  };
+  }, [toast]);
 
   // -------- Carregar Mensagens --------
-  const loadMessages = async (contactId: string) => {
-    try {
-      const { data: contactHistory, error } = await supabase
-        .from("client_contacts")
-        .select("*")
-        .eq("client_id", contactId)
-        .eq("contact_type", "whatsapp")
-        .order("contact_date", { ascending: true });
+  const loadMessages = useCallback(
+    async (contactId: string) => {
+      try {
+        const { data: contactHistory, error } = await supabase
+          .from("client_contacts")
+          .select("*")
+          .eq("client_id", contactId)
+          .eq("contact_type", "whatsapp")
+          .not("subject", "ilike", "ROUTING:%")
+          .order("contact_date", { ascending: true });
 
-      if (error) throw error;
+        if (error) throw error;
 
-      if (!contactHistory || contactHistory.length === 0) {
-        setMessages([]);
-        return;
-      }
-
-      let chatMessages: ChatMessage[] = contactHistory
-        .filter((contact: any) => !contact.subject?.startsWith("ROUTING:"))
-        .map((contact: any) => ({
-          id: contact.id,
-          content: contact.description || contact.subject || "Mensagem sem conteúdo",
-          timestamp: contact.contact_date,
-          isOutgoing: contact.created_by === user?.id,
-          status: "delivered" as MsgStatus,
-        }));
-
-      const messageIds = chatMessages.map(msg => msg.id);
-
-      if (messageIds.length > 0) {
-        const { data: attachmentData, error: attachmentError } = await supabase
-          .from('message_attachments')
-          .select('*')
-          .in('message_id', messageIds);
-
-        if (attachmentError) {
-          console.error('Erro ao carregar anexos:', attachmentError);
-        } else if (attachmentData && attachmentData.length > 0) {
-          const storagePaths = attachmentData
-            .filter((attachment) => attachment.file_path && !attachment.file_path.startsWith('http'))
-            .map((attachment) => attachment.file_path);
-
-          const uniquePaths = Array.from(new Set(storagePaths));
-          const signedUrlMap = new Map<string, string>();
-
-          if (uniquePaths.length > 0) {
-            try {
-              const { data: signedUrls, error: signedError } = await supabase.storage
-                .from('chat-files')
-                .createSignedUrls(uniquePaths, 86400);
-              if (signedError) {
-                console.error('Erro ao gerar URLs assinadas:', signedError);
-              } else if (signedUrls) {
-                signedUrls.forEach((item) => {
-                  if (item.signedUrl) {
-                    signedUrlMap.set(item.path, item.signedUrl);
-                  }
-                });
-              }
-            } catch (error) {
-              console.error('Erro inesperado ao gerar URLs assinadas:', error);
-            }
-          }
-
-          const attachmentsByMessage: Record<string, ChatAttachment[]> = {};
-
-          attachmentData.forEach((attachment) => {
-            // Use proxy URL for all media files
-            const proxyUrl = `https://wcdyxxthaqzchjpharwh.supabase.co/functions/v1/media-proxy?path=${encodeURIComponent(attachment.file_path)}&bucket=chat-files`;
-            
-            const chatAttachment: ChatAttachment = {
-              id: attachment.id,
-              fileName: attachment.file_name,
-              fileType: attachment.file_type,
-              fileSize: attachment.file_size,
-              url: proxyUrl,
-              storagePath: attachment.file_path,
-            };
-
-            if (!attachmentsByMessage[attachment.message_id]) {
-              attachmentsByMessage[attachment.message_id] = [];
-            }
-
-            attachmentsByMessage[attachment.message_id].push(chatAttachment);
-          });
-
-          chatMessages = chatMessages.map((message) => ({
-            ...message,
-            attachments: attachmentsByMessage[message.id] || [],
-          }));
+        if (!contactHistory || contactHistory.length === 0) {
+          setMessages([]);
+          const readMessagesKey = `read_messages_${contactId}`;
+          localStorage.setItem(readMessagesKey, JSON.stringify([]));
+          return;
         }
+
+        const contactRows = contactHistory as ClientContactRow[];
+
+        const chatMessages: ChatMessage[] = contactRows.map((contact) => {
+          const outgoing = isOutgoingSubject(contact.subject);
+          return {
+            id: contact.id,
+            content: contact.description || contact.subject || "Mensagem sem conteúdo",
+            timestamp: contact.contact_date,
+            isOutgoing: outgoing,
+            status: outgoing ? ("sent" as MsgStatus) : ("delivered" as MsgStatus),
+          };
+        });
+
+        const messageIds = chatMessages.map((msg) => msg.id);
+
+        if (messageIds.length > 0) {
+          const { data: attachmentData, error: attachmentError } = await supabase
+            .from("message_attachments")
+            .select("*")
+            .in("message_id", messageIds);
+
+          if (attachmentError) {
+            console.error("Erro ao carregar anexos:", attachmentError);
+          } else if (attachmentData && attachmentData.length > 0) {
+            const attachmentsByMessage: Record<string, ChatAttachment[]> = {};
+
+            (attachmentData as MessageAttachmentRow[]).forEach((attachment) => {
+              const chatAttachment = mapAttachmentRowToChatAttachment(attachment);
+              if (!attachmentsByMessage[attachment.message_id]) {
+                attachmentsByMessage[attachment.message_id] = [];
+              }
+              attachmentsByMessage[attachment.message_id].push(chatAttachment);
+            });
+
+            chatMessages.forEach((message, index) => {
+              const attachments = attachmentsByMessage[message.id];
+              if (attachments && attachments.length > 0) {
+                chatMessages[index] = {
+                  ...message,
+                  attachments,
+                };
+              }
+            });
+          }
+        }
+
+        setMessages(chatMessages);
+
+        const readMessagesKey = `read_messages_${contactId}`;
+        localStorage.setItem(readMessagesKey, JSON.stringify(messageIds));
+      } catch (error) {
+        console.error("Erro ao carregar mensagens:", error);
+        toast({
+          title: "Erro",
+          description: "Não foi possível carregar as mensagens.",
+          variant: "destructive",
+        });
       }
-
-      setMessages(chatMessages);
-
-      // Marcar como lidas
-      const readMessagesKey = `read_messages_${contactId}`;
-      localStorage.setItem(readMessagesKey, JSON.stringify(messageIds));
-    } catch (error) {
-      console.error("Erro ao carregar mensagens:", error);
-      toast({
-        title: "Erro",
-        description: "Não foi possível carregar as mensagens.",
-        variant: "destructive",
-      });
-    }
-  };
+    },
+    [mapAttachmentRowToChatAttachment, toast],
+  );
 
   // -------- Enviar Mensagem --------
   const removePendingAttachment = (attachmentId: string) => {
@@ -485,7 +527,7 @@ export default function Chat() {
             fileName: attachment.fileName,
             fileType: attachment.fileType,
             fileSize: attachment.fileSize,
-            url: signedUrl,
+            url: attachment.storagePath ? buildMediaProxyUrl(attachment.storagePath) : signedUrl,
             storagePath: attachment.storagePath,
           };
 
@@ -539,7 +581,7 @@ export default function Chat() {
         description: 'Sua mensagem foi enviada via WhatsApp.',
       });
 
-      await loadWhatsAppContacts();
+      await loadWhatsAppContacts({ silent: true });
       await loadMessages(contactId);
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
@@ -553,6 +595,183 @@ export default function Chat() {
     }
   };
 
+  useEffect(() => {
+    const activeContactId = selectedContact?.id;
+
+    const channel = supabase
+      .channel("whatsapp-chat-messages")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "client_contacts",
+          filter: "contact_type=eq.whatsapp",
+        },
+        async (payload) => {
+          const newContact = payload.new as ClientContactRow | undefined;
+          if (!newContact) return;
+          if (newContact.subject?.startsWith("ROUTING:")) return;
+
+          try {
+            const contactId = newContact.client_id;
+            const outgoing = isOutgoingSubject(newContact.subject);
+
+            const isCurrentUserMessage = newContact.created_by === user?.id;
+
+            if (activeContactId && contactId === activeContactId) {
+              let attachments: ChatAttachment[] | undefined;
+
+              try {
+                const { data: attachmentRows } = await supabase
+                  .from("message_attachments")
+                  .select("*")
+                  .eq("message_id", newContact.id);
+
+                if (attachmentRows && attachmentRows.length > 0) {
+                  attachments = (attachmentRows as MessageAttachmentRow[]).map(
+                    mapAttachmentRowToChatAttachment,
+                  );
+                }
+              } catch (attachmentError) {
+                console.error("Erro ao carregar anexos em tempo real:", attachmentError);
+              }
+
+              setMessages((prev) => {
+                const existingIndex = prev.findIndex((msg) => msg.id === newContact.id);
+                if (existingIndex >= 0) {
+                  if (!attachments || attachments.length === 0) {
+                    return prev;
+                  }
+
+                  const existingAttachments = prev[existingIndex].attachments ?? [];
+                  const existingAttachmentIds = new Set(existingAttachments.map((att) => att.id));
+                  const mergedAttachments = [
+                    ...existingAttachments,
+                    ...attachments.filter((att) => !existingAttachmentIds.has(att.id)),
+                  ];
+
+                  const updated = [...prev];
+                  updated[existingIndex] = {
+                    ...prev[existingIndex],
+                    attachments: mergedAttachments,
+                  };
+                  return updated;
+                }
+
+                const newMessage: ChatMessage = {
+                  id: newContact.id,
+                  content:
+                    newContact.description ||
+                    newContact.subject ||
+                    "Mensagem sem conteúdo",
+                  timestamp: newContact.contact_date,
+                  isOutgoing: outgoing,
+                  status: outgoing ? "sent" : "delivered",
+                  ...(attachments && attachments.length > 0 ? { attachments } : {}),
+                };
+
+                return [...prev, newMessage];
+              });
+
+              if (!outgoing) {
+                const readMessagesKey = `read_messages_${contactId}`;
+                const stored = new Set<string>(
+                  JSON.parse(localStorage.getItem(readMessagesKey) || "[]"),
+                );
+                stored.add(newContact.id);
+                localStorage.setItem(readMessagesKey, JSON.stringify(Array.from(stored)));
+              }
+
+              await loadWhatsAppContacts({ silent: true });
+              return;
+            }
+
+            if (!outgoing) {
+              const contactsSnapshot = contactsRef.current;
+              const contactName =
+                contactsSnapshot.find((contact) => contact.id === contactId)?.name ||
+                "Cliente WhatsApp";
+
+              notifyNewMessage(
+                newContact.description ||
+                  newContact.subject ||
+                  "Nova mensagem recebida via WhatsApp",
+                contactName,
+              );
+            } else if (isCurrentUserMessage) {
+              return;
+            }
+
+            await loadWhatsAppContacts({ silent: true });
+          } catch (error) {
+            console.error("Erro ao processar atualização em tempo real do chat:", error);
+          }
+        },
+      );
+
+    channel.subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [
+    selectedContact?.id,
+    user?.id,
+    loadWhatsAppContacts,
+    mapAttachmentRowToChatAttachment,
+    notifyNewMessage,
+  ]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("whatsapp-chat-attachments")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "message_attachments" },
+        (payload) => {
+          const attachment = payload.new as MessageAttachmentRow | undefined;
+          if (!attachment) return;
+
+          setMessages((prev) => {
+            const index = prev.findIndex((message) => message.id === attachment.message_id);
+            if (index === -1) return prev;
+
+            const mappedAttachment = mapAttachmentRowToChatAttachment(attachment);
+            const existingAttachments = prev[index].attachments ?? [];
+            if (existingAttachments.some((att) => att.id === mappedAttachment.id)) {
+              return prev;
+            }
+
+            const updated = [...prev];
+            updated[index] = {
+              ...prev[index],
+              attachments: [...existingAttachments, mappedAttachment],
+            };
+            return updated;
+          });
+        },
+      );
+
+    channel.subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [mapAttachmentRowToChatAttachment]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void loadWhatsAppContacts({ silent: true });
+
+      if (selectedContact?.id) {
+        void loadMessages(selectedContact.id);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [loadMessages, loadWhatsAppContacts, selectedContact?.id]);
+
   // Scroll automático para última mensagem
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -563,26 +782,14 @@ export default function Chat() {
   // Carregar contatos inicialmente
   useEffect(() => {
     loadWhatsAppContacts();
-  }, [user?.id]);
-
-  // Polling para novas mensagens
-  useEffect(() => {
-    const interval = setInterval(() => {
-      loadWhatsAppContacts();
-      if (selectedContact) {
-        loadMessages(selectedContact.id);
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [selectedContact]);
+  }, [loadWhatsAppContacts, user?.id]);
 
   const handleContactSelect = async (contact: WhatsAppContact) => {
     setSelectedContact(contact);
     setPendingAttachments([]);
     setNewMessage("");
     await loadMessages(contact.id);
-    setUnreadMessagesCount(0);
+    await loadWhatsAppContacts({ silent: true });
   };
 
   const filteredContacts = contacts.filter((contact) =>
