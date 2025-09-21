@@ -43,7 +43,7 @@ export default function Login() {
         <CardHeader>
           <div className="flex flex-col items-center space-y-4">
             <Logo size="lg" />
-            <CardTitle className="text-center">CONCEPÇÃO CONTABILIDADE</CardTitle>
+            <CardTitle className="text-center">CONCEPÇÃO ARQUITETURA</CardTitle>
             <p className="text-center text-sm text-muted-foreground">Acesse seu portal</p>
           </div>
         </CardHeader>
