@@ -378,17 +378,18 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
     
-  } catch (error) {
-    console.error('Critical error in WhatsApp function:', error);
-    console.error('Error name:', error.name);
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    return new Response(JSON.stringify({ 
-      ok: false, 
-      error: error.message,
-      errorType: error.name,
-      stack: error.stack
-    }), { 
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    console.error('Critical error in WhatsApp function:', err);
+    console.error('Error name:', err.name);
+    console.error('Error message:', err.message);
+    console.error('Error stack:', err.stack);
+    return new Response(JSON.stringify({
+      ok: false,
+      error: err.message,
+      errorType: err.name,
+      stack: err.stack
+    }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
