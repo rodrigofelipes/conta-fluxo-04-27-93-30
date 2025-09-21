@@ -336,6 +336,22 @@ All colors MUST be HSL.
     -webkit-line-clamp: 3;
     overflow: hidden;
   }
+
+  /* Chat message utilities */
+  .chat-message-container {
+    width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+  }
+
+  .chat-message-bubble {
+    max-width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+    overflow: visible;
+  }
 }
 
 @keyframes gradient-pan {

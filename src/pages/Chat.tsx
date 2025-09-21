@@ -912,23 +912,23 @@ export default function Chat() {
                 </div>
               </CardHeader>
               
-              {/* Área de Mensagens */}
-              <div className="flex-1 flex flex-col min-h-0">
-                <div className="flex-1 min-h-0">
-                  <ScrollArea className="h-full p-4">
-                    <div className="space-y-4">
+               {/* Área de Mensagens */}
+               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                 <div className="flex-1 min-h-0 overflow-hidden">
+                   <ScrollArea className="h-full p-4">
+                     <div className="space-y-4 w-full">
                       {messages.map((message) => (
-                        <div
-                          key={message.id}
-                          className={`flex ${message.isOutgoing ? "justify-end" : "justify-start"}`}
-                        >
-                          <div
-                            className={`flex max-w-[92%] min-w-0 flex-col gap-2 rounded-2xl px-3 py-2 shadow-sm ${
-                              message.isOutgoing
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted"
-                            } sm:max-w-[75%] lg:max-w-[60%]`}
-                          >
+                         <div
+                           key={message.id}
+                           className={`flex w-full chat-message-container ${message.isOutgoing ? "justify-end" : "justify-start"}`}
+                         >
+                           <div
+                             className={`chat-message-bubble flex max-w-[85%] min-w-0 w-auto flex-col gap-2 rounded-2xl px-3 py-2 shadow-sm ${
+                               message.isOutgoing
+                                 ? "bg-primary text-primary-foreground"
+                                 : "bg-muted"
+                             } sm:max-w-[70%] lg:max-w-[55%]`}
+                           >
                             <div className="space-y-2">
                               {message.attachments && message.attachments.length > 0 && (
                                 <div className="space-y-2">
@@ -948,11 +948,11 @@ export default function Chat() {
                                 </div>
                               )}
 
-                              {message.content && (
-                                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                                  {message.content}
-                                </p>
-                              )}
+                               {message.content && (
+                                 <p className="text-sm leading-relaxed whitespace-pre-wrap break-words overflow-visible word-wrap">
+                                   {message.content}
+                                 </p>
+                               )}
                             </div>
 
                             <div
