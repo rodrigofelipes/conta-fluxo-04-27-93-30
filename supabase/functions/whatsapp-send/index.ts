@@ -201,7 +201,7 @@ Deno.serve(async (req) => {
   console.log('Extracted fields:', {
     to,
     hasMessage: typeof message === 'string' && message.length > 0,
-    hasMedia: typeof mediaUrl === 'string' && mediaUrl.length > 0,
+    hasMediaUrl: typeof mediaUrl === 'string' && mediaUrl.length > 0,
     mediaType,
     fileName,
   });
@@ -213,7 +213,7 @@ Deno.serve(async (req) => {
   const normalizedFileName = typeof fileName === 'string' ? fileName : undefined;
 
   if (!to || (!textBody && !mediaLink)) {
-    console.error('Missing required fields:', { to: !!to, message: !!textBody, mediaUrl: !!mediaLink });
+    console.error('Missing required fields:', { to: !!to, hasMessage: !!textBody, hasMediaUrl: !!mediaLink });
     return new Response(JSON.stringify({
       ok: false,
       error: "Informe o número de destino e uma mensagem ou mídia para envio"

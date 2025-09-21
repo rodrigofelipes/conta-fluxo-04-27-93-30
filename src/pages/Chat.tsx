@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { useCustomNotifications } from "@/hooks/useCustomNotifications";
 import { NotificationCenter } from "@/components/NotificationCenter";
 import { FileUpload, UploadedFileInfo } from "@/components/chat/FileUpload";
+import { MediaMessage } from "@/components/chat/MediaMessage";
 
 interface WhatsAppContact {
   id: string;
