@@ -7,8 +7,8 @@ export default function UserProjects() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  // Show user phases for regular users, redirect others to main projects page
-  if (user?.role === 'user') {
+  // Show user phases for regular users and coordinators
+  if (user?.role === 'user' || user?.role === 'coordenador') {
     return <UserPhasesView />;
   }
 
