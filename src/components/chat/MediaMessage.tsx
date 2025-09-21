@@ -114,10 +114,10 @@ export function MediaMessage({ attachment }: MediaMessageProps) {
       {isImage && (
         <div className="relative group">
           {!imageError ? (
-            <img 
-              src={proxyUrl} 
+            <img
+              src={proxyUrl}
               alt={attachment.fileName}
-              className="w-full h-auto max-h-64 object-cover"
+              className="w-full h-auto max-h-[70vh] object-contain"
               loading="lazy"
               onError={() => setImageError(true)}
             />
