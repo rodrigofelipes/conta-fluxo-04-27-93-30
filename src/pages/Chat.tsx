@@ -858,9 +858,9 @@ export default function Chat() {
                           </div>
                           <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground mt-1 min-w-0">
                             <Phone className="h-3 w-3 flex-shrink-0" />
-                            <span className="truncate min-w-0">{contact.phone}</span>
+                            <span className="break-all min-w-0">{contact.phone}</span>
                           </div>
-                          <p className="text-sm text-muted-foreground truncate mt-1">
+                          <p className="text-sm text-muted-foreground mt-1 whitespace-normal break-words line-clamp-3">
                             {contact.lastMessage}
                           </p>
                           {contact.lastMessageTime && (
