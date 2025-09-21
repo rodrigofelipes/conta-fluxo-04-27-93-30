@@ -122,6 +122,19 @@ export default function Clients() {
 
     setLoading(true);
     try {
+      // Verificar se a sessão está válida antes de fazer query
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.error('Sessão inválida ao buscar clientes');
+        toast({
+          title: "Erro de Autenticação",
+          description: "Sessão expirada. Faça login novamente.",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
       console.log('Fazendo query para buscar clientes...');
       const { data, error } = await supabase
         .from('clients')

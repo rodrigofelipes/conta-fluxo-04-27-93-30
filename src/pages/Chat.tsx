@@ -89,6 +89,27 @@ export default function Chat() {
   const [isSending, setIsSending] = useState(false);
   const [isClearingConversation, setIsClearingConversation] = useState(false);
 
+  // Verificar sessão ao entrar no chat
+  useEffect(() => {
+    const verifySessionOnMount = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error('Erro ao verificar sessão no Chat:', error);
+        }
+        if (!session) {
+          console.warn('Sem sessão ativa ao entrar no Chat');
+        } else {
+          console.log('Sessão válida no Chat');
+        }
+      } catch (error) {
+        console.error('Erro inesperado ao verificar sessão no Chat:', error);
+      }
+    };
+
+    verifySessionOnMount();
+  }, []);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const contactsRef = useRef<WhatsAppContact[]>([]);
 

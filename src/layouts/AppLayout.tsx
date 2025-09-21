@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useMemo, useEffect } from "react";
+import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { Home, Calendar, Users, Building2, DollarSign, Settings, LogOut, Shield, UserCog, MessageSquare, FolderOpen, BarChart3, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { ProportionalScaler } from "@/components/ui/proportional-scaler";
 import { useAuth } from "@/state/auth";
 import { useGradientDatabase } from "@/hooks/useGradientDatabase";
+import { useAuthSession } from "@/hooks/useAuthSession";
 import { getRoleLabel } from "@/lib/roleUtils";
 
 interface NavItem {
@@ -72,7 +73,26 @@ export default function AppLayout() {
   // Initialize gradient system
   useGradientDatabase();
   
+  // Use session monitoring
+  const { verifySession } = useAuthSession();
+  const location = useLocation();
+  
   const navigate = useNavigate();
+
+  // Verify session on navigation changes
+  useEffect(() => {
+    console.log('Navigation changed to:', location.pathname);
+    const checkSessionOnNavigation = async () => {
+      if (user) {
+        const isValid = await verifySession();
+        if (!isValid) {
+          console.warn('Sessão inválida detectada na navegação');
+        }
+      }
+    };
+    
+    checkSessionOnNavigation();
+  }, [location.pathname, user, verifySession]);
   const items = useMemo(() => {
     let filteredNav = nav;
 
