@@ -184,6 +184,45 @@ export default function Clients() {
     if (!user) return;
 
     try {
+      let profileId: string | null = null;
+      if (!editingCliente) {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (profileError) {
+          throw profileError;
+        }
+
+        if (profileData?.id) {
+          profileId = profileData.id;
+        } else {
+          const fallbackName = user.name || user.username || user.email || 'Usuário';
+          const { data: newProfile, error: createProfileError } = await supabase
+            .from('profiles')
+            .insert({
+              user_id: user.id,
+              name: fallbackName,
+              email: user.email || '',
+              role: user.role,
+            })
+            .select('id')
+            .single();
+
+          if (createProfileError) {
+            throw createProfileError;
+          }
+
+          profileId = newProfile?.id ?? null;
+        }
+
+        if (!profileId) {
+          throw new Error('Não foi possível encontrar o perfil do usuário para criar o cliente.');
+        }
+      }
+
       const clienteData = {
         name: data.name,
         email: data.email,
@@ -194,8 +233,6 @@ export default function Clients() {
         indication: data.indication || '',
         birth_date: data.birth_date || null,
         classification: data.classification,
-        // Remove created_by to avoid foreign key constraint issues
-        // created_by: user.id
       };
 
       let result;
@@ -207,9 +244,16 @@ export default function Clients() {
           .eq('id', editingCliente.id);
       } else {
         // Criar novo cliente
+        if (!profileId) {
+          throw new Error('Perfil do usuário não encontrado para criação do cliente.');
+        }
+
         result = await supabase
           .from('clients')
-          .insert(clienteData);
+          .insert({
+            ...clienteData,
+            created_by: profileId,
+          });
       }
 
       if (result.error) {
