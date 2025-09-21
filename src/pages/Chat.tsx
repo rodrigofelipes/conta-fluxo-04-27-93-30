@@ -862,8 +862,22 @@ export default function Chat() {
 
   // Carregar contatos inicialmente
   useEffect(() => {
-    // Clear localStorage to reset message history state
-    localStorage.clear();
+    const clearChatHistoryEntries = () => {
+      try {
+        const keysToRemove: string[] = [];
+        for (let index = 0; index < localStorage.length; index += 1) {
+          const key = localStorage.key(index);
+          if (key?.startsWith("read_messages_")) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach((key) => localStorage.removeItem(key));
+      } catch (error) {
+        console.error("Erro ao limpar histórico do chat:", error);
+      }
+    };
+
+    clearChatHistoryEntries();
     loadWhatsAppContacts();
   }, [loadWhatsAppContacts, user?.id]);
 
