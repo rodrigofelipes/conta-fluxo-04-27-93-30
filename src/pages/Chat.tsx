@@ -923,11 +923,11 @@ export default function Chat() {
                           className={`flex ${message.isOutgoing ? "justify-end" : "justify-start"}`}
                         >
                           <div
-                            className={`max-w-[70%] rounded-lg px-3 py-2 ${
+                            className={`flex max-w-[92%] min-w-0 flex-col gap-2 rounded-2xl px-3 py-2 shadow-sm ${
                               message.isOutgoing
                                 ? "bg-primary text-primary-foreground"
                                 : "bg-muted"
-                            }`}
+                            } sm:max-w-[75%] lg:max-w-[60%]`}
                           >
                             <div className="space-y-2">
                               {message.attachments && message.attachments.length > 0 && (
@@ -949,20 +949,26 @@ export default function Chat() {
                               )}
 
                               {message.content && (
-                                <p className="text-sm break-words">{message.content}</p>
+                                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                                  {message.content}
+                                </p>
                               )}
                             </div>
 
-                            <p className="mt-2 text-xs opacity-70">
-                              {formatTime(message.timestamp)}
+                            <div
+                              className={`flex flex-wrap items-center gap-1 text-xs opacity-70 ${
+                                message.isOutgoing ? "justify-end" : "justify-start"
+                              }`}
+                            >
+                              <span>{formatTime(message.timestamp)}</span>
                               {message.isOutgoing && (
-                                <span className="ml-1">
+                                <span className="ml-1 flex items-center gap-0.5">
                                   {message.status === "sent" && "✓"}
                                   {message.status === "delivered" && "✓✓"}
                                   {message.status === "read" && "✓✓"}
                                 </span>
                               )}
-                            </p>
+                            </div>
                           </div>
                         </div>
                       ))}
