@@ -32,6 +32,110 @@ const inferMediaCategory = (mimeType?: string, fileName?: string) => {
   return 'document';
 };
 
+const sanitizeFileName = (name: string) =>
+  name
+    .split(/[\\/]/)
+    .pop()!
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '_');
+
+const getExtensionFromMimeType = (mimeType?: string) => {
+  if (!mimeType) return undefined;
+  if (mimeType.includes('jpeg')) return 'jpg';
+  if (mimeType.includes('png')) return 'png';
+  if (mimeType.includes('gif')) return 'gif';
+  if (mimeType.includes('webp')) return 'webp';
+  if (mimeType.includes('heic')) return 'heic';
+  if (mimeType.includes('heif')) return 'heif';
+  if (mimeType.includes('pdf')) return 'pdf';
+  if (mimeType.includes('msword')) return 'doc';
+  if (mimeType.includes('presentation')) return 'ppt';
+  if (mimeType.includes('sheet') || mimeType.includes('excel')) return 'xls';
+  if (mimeType.includes('plain')) return 'txt';
+  if (mimeType.includes('mp4')) return 'mp4';
+  if (mimeType.includes('quicktime')) return 'mov';
+  if (mimeType.includes('webm')) return 'webm';
+  if (mimeType.includes('audio/mpeg')) return 'mp3';
+  if (mimeType.includes('audio/aac')) return 'aac';
+  if (mimeType.includes('audio/ogg')) return 'ogg';
+  if (mimeType.includes('audio/wav')) return 'wav';
+  return undefined;
+};
+
+const buildUploadFileName = (fileName?: string, mimeType?: string) => {
+  const baseName = fileName ? sanitizeFileName(fileName) : 'whatsapp-media';
+  if (baseName.includes('.')) {
+    return baseName;
+  }
+
+  const ext = getExtensionFromMimeType(mimeType);
+  return ext ? `${baseName}.${ext}` : `${baseName}.bin`;
+};
+
+interface MediaUploadResult {
+  mediaId: string;
+  mimeType: string;
+  fileName: string;
+}
+
+const uploadMediaToWhatsApp = async (
+  sourceUrl: string,
+  options: { mimeType?: string; fileName?: string }
+): Promise<MediaUploadResult> => {
+  console.log('⬇️ Baixando arquivo para envio via WhatsApp:', {
+    sourceUrl,
+    providedMime: options.mimeType,
+    providedName: options.fileName,
+  });
+
+  const mediaResponse = await fetch(sourceUrl);
+
+  if (!mediaResponse.ok) {
+    const errorText = await mediaResponse.text().catch(() => '');
+    console.error('❌ Falha ao baixar arquivo antes do envio:', errorText || mediaResponse.statusText);
+    throw new Error(`Não foi possível baixar o arquivo (${mediaResponse.status}).`);
+  }
+
+  const resolvedMime = options.mimeType || mediaResponse.headers.get('content-type') || 'application/octet-stream';
+  const fileBuffer = await mediaResponse.arrayBuffer();
+  const uploadFileName = buildUploadFileName(options.fileName, resolvedMime);
+
+  const formData = new FormData();
+  formData.append('messaging_product', 'whatsapp');
+  formData.append('file', new Blob([fileBuffer], { type: resolvedMime }), uploadFileName);
+  formData.append('type', resolvedMime);
+
+  console.log('⬆️ Enviando mídia para API do WhatsApp:', {
+    uploadFileName,
+    resolvedMime,
+    size: fileBuffer.byteLength,
+  });
+
+  const uploadResponse = await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/media`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+    },
+    body: formData,
+  });
+
+  const uploadData = await uploadResponse.json().catch(() => null);
+
+  if (!uploadResponse.ok || !uploadData?.id) {
+    console.error('❌ Erro ao enviar mídia para WhatsApp:', uploadData || uploadResponse.statusText);
+    throw new Error('Falha ao enviar mídia para WhatsApp.');
+  }
+
+  console.log('✅ Mídia enviada para WhatsApp com sucesso:', uploadData);
+
+  return {
+    mediaId: uploadData.id,
+    mimeType: resolvedMime,
+    fileName: uploadFileName,
+  };
+};
+
 Deno.serve(async (req) => {
   console.log('=== WhatsApp Send Function Called ===');
   console.log('Method:', req.method);
@@ -155,34 +259,66 @@ Deno.serve(async (req) => {
     };
 
     if (mediaLink) {
-      const mediaCategory = inferMediaCategory(normalizedMediaType, normalizedFileName);
+      let mediaUpload: MediaUploadResult | null = null;
+      try {
+        mediaUpload = await uploadMediaToWhatsApp(mediaLink, {
+          mimeType: normalizedMediaType,
+          fileName: normalizedFileName,
+        });
+      } catch (uploadError) {
+        console.error('⚠️ Não foi possível pré-carregar mídia na API. Tentando enviar via link direto.', uploadError);
+      }
+
+      const mediaCategory = inferMediaCategory(mediaUpload?.mimeType || normalizedMediaType, mediaUpload?.fileName || normalizedFileName);
       const sanitizedCaption = normalizedCaption ? normalizedCaption.slice(0, 1024) : undefined;
+      const finalFileName = mediaUpload?.fileName || (normalizedFileName ? sanitizeFileName(normalizedFileName) : undefined);
 
       if (mediaCategory === 'image') {
         whatsappPayload.type = 'image';
-        whatsappPayload.image = {
-          link: mediaLink,
-          ...(sanitizedCaption ? { caption: sanitizedCaption } : {}),
-        };
+        whatsappPayload.image = mediaUpload
+          ? {
+              id: mediaUpload.mediaId,
+              ...(sanitizedCaption ? { caption: sanitizedCaption } : {}),
+            }
+          : {
+              link: mediaLink,
+              ...(sanitizedCaption ? { caption: sanitizedCaption } : {}),
+            };
       } else if (mediaCategory === 'video') {
         whatsappPayload.type = 'video';
-        whatsappPayload.video = {
-          link: mediaLink,
-          ...(sanitizedCaption ? { caption: sanitizedCaption } : {}),
-        };
+        whatsappPayload.video = mediaUpload
+          ? {
+              id: mediaUpload.mediaId,
+              ...(sanitizedCaption ? { caption: sanitizedCaption } : {}),
+            }
+          : {
+              link: mediaLink,
+              ...(sanitizedCaption ? { caption: sanitizedCaption } : {}),
+            };
       } else if (mediaCategory === 'audio') {
         whatsappPayload.type = 'audio';
-        whatsappPayload.audio = {
-          link: mediaLink,
-        };
+        whatsappPayload.audio = mediaUpload
+          ? {
+              id: mediaUpload.mediaId,
+            }
+          : {
+              link: mediaLink,
+            };
       } else {
         whatsappPayload.type = 'document';
-        whatsappPayload.document = {
-          link: mediaLink,
-          ...(normalizedFileName ? { filename: normalizedFileName } : {}),
-          ...(sanitizedCaption ? { caption: sanitizedCaption } : {}),
-        };
+        whatsappPayload.document = mediaUpload
+          ? {
+              id: mediaUpload.mediaId,
+              ...(finalFileName ? { filename: finalFileName } : {}),
+              ...(sanitizedCaption ? { caption: sanitizedCaption } : {}),
+            }
+          : {
+              link: mediaLink,
+              ...(finalFileName ? { filename: finalFileName } : {}),
+              ...(sanitizedCaption ? { caption: sanitizedCaption } : {}),
+            };
       }
+
     } else {
       whatsappPayload.type = 'text';
       whatsappPayload.text = { body: textBody };

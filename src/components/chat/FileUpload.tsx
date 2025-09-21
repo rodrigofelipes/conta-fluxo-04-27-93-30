@@ -120,7 +120,8 @@ export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
         .from('chat-files')
         .upload(fileName, file, {
           cacheControl: '3600',
-          upsert: false
+          upsert: false,
+          contentType: file.type || undefined,
         });
 
       if (error) throw error;
