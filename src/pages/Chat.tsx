@@ -95,15 +95,101 @@ export default function Chat() {
       const { data, error } = await supabase.storage
         .from("chat-files")
         .createSignedUrl(storagePath, 86400);
-      if (error || !data) {
+
+      if (error || !data?.signedUrl) {
         console.error("Erro ao gerar URL assinada:", error);
-        return storagePath;
+        throw new Error(
+          "Não foi possível gerar um link temporário para o arquivo. Verifique suas permissões e tente novamente."
+        );
       }
+
       return data.signedUrl;
     } catch (error) {
       console.error("Erro inesperado ao gerar URL assinada:", error);
-      return storagePath;
+      throw new Error(
+        "Não foi possível gerar um link temporário para o arquivo anexado. Atualize a página e tente novamente."
+      );
     }
+  };
+
+  const isValidHttpUrl = (value?: string | null) =>
+    typeof value === "string" && /^https?:\/\//i.test(value);
+
+  const extractEdgeFunctionError = (edgeError: unknown): string | null => {
+    const pickMessage = (payload: unknown): string | null => {
+      if (!payload) return null;
+
+      if (typeof payload === "string") {
+        try {
+          const parsed = JSON.parse(payload);
+          return pickMessage(parsed);
+        } catch (error) {
+          return payload;
+        }
+      }
+
+      if (typeof payload === "object") {
+        const objectPayload = payload as Record<string, unknown>;
+
+        const directMessage = objectPayload.message;
+        if (typeof directMessage === "string" && directMessage.trim()) {
+          return directMessage;
+        }
+
+        const directError = objectPayload.error;
+        if (typeof directError === "string" && directError.trim()) {
+          return directError;
+        }
+
+        if (
+          typeof directError === "object" &&
+          directError !== null &&
+          typeof (directError as { message?: unknown }).message === "string"
+        ) {
+          const nestedMessage = (directError as { message?: string }).message;
+          if (nestedMessage?.trim()) {
+            return nestedMessage;
+          }
+        }
+
+        const bodyMessage = pickMessage(objectPayload.body);
+        if (bodyMessage) return bodyMessage;
+
+        const responseMessage = pickMessage(objectPayload.response);
+        if (responseMessage) return responseMessage;
+
+        const dataMessage = pickMessage(objectPayload.data);
+        if (dataMessage) return dataMessage;
+      }
+
+      return null;
+    };
+
+    if (!edgeError) return null;
+
+    if (edgeError instanceof Error) {
+      return (
+        pickMessage((edgeError as Error & { context?: unknown }).context) ||
+        (edgeError.message?.trim() ? edgeError.message : null)
+      );
+    }
+
+    if (typeof edgeError === "string") {
+      return edgeError.trim() ? edgeError : null;
+    }
+
+    if (typeof edgeError === "object") {
+      const objectError = edgeError as Record<string, unknown>;
+      const contextMessage = pickMessage(objectError.context);
+      if (contextMessage) return contextMessage;
+
+      const message = objectError.message;
+      if (typeof message === "string" && message.trim()) {
+        return message;
+      }
+    }
+
+    return null;
   };
 
   interface SendWhatsAppPayload {
@@ -120,11 +206,15 @@ export default function Chat() {
       body: { to, message, mediaUrl, mediaType, fileName, caption },
     });
     if (result.error || !result.data?.ok) {
-      const msg =
-        (result.error && (result.error as any).message) ||
-        result.data?.error?.message ||
-        "Erro ao enviar mensagem via WhatsApp";
-      throw new Error(msg);
+      const edgeMessage = extractEdgeFunctionError(result.error);
+      const responseMessage =
+        (typeof result.data?.message === "string" && result.data.message.trim()) ||
+        (typeof result.data?.error === "string" && result.data.error.trim()) ||
+        (typeof result.data?.error?.message === "string" && result.data.error.message.trim()) ||
+        null;
+
+      const message = edgeMessage || responseMessage || "Erro ao enviar mensagem via WhatsApp.";
+      throw new Error(message);
     }
   };
 
@@ -331,9 +421,16 @@ export default function Chat() {
           const attachment = pendingAttachments[index];
           const caption = index === 0 && hasText ? newMessage.trim() : undefined;
 
-          const signedUrl = attachment.downloadUrl && attachment.downloadUrl !== attachment.storagePath
-            ? attachment.downloadUrl
+          const existingUrl = attachment.downloadUrl;
+          const signedUrl = isValidHttpUrl(existingUrl)
+            ? existingUrl
             : await getSignedUrlForPath(attachment.storagePath);
+
+          if (!isValidHttpUrl(signedUrl)) {
+            throw new Error(
+              "Não foi possível gerar um link válido para o arquivo anexado. Verifique suas permissões e tente novamente."
+            );
+          }
 
           await sendWhatsApp({
             to: contactPhone,
