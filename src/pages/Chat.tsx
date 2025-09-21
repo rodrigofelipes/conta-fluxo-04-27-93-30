@@ -5,14 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MessageSquare, Phone, Search, Send } from "lucide-react";
+import { MessageSquare, Phone, Search, Send, Download, Eye, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
 import { toast } from "@/hooks/use-toast";
 import { PageHeader } from "@/components/ui/page-header";
 import { useCustomNotifications } from "@/hooks/useCustomNotifications";
 import { NotificationCenter } from "@/components/NotificationCenter";
-import { FileUpload } from "@/components/chat/FileUpload";
+import { FileUpload, UploadedFileInfo } from "@/components/chat/FileUpload";
 
 interface WhatsAppContact {
   id: string;
@@ -33,6 +33,16 @@ interface ChatMessage {
   timestamp: string;
   isOutgoing: boolean;
   status: MsgStatus;
+  attachments?: ChatAttachment[];
+}
+
+interface ChatAttachment {
+  id: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  url: string;
+  storagePath?: string;
 }
 
 export default function Chat() {
@@ -46,6 +56,8 @@ export default function Chat() {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [pendingAttachments, setPendingAttachments] = useState<UploadedFileInfo[]>([]);
+  const [isSending, setIsSending] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -69,9 +81,43 @@ export default function Chat() {
     return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   };
 
-  const sendWhatsApp = async (to: string, message: string) => {
+  const formatFileSize = (bytes: number) => {
+    if (!bytes) return "0 KB";
+    const units = ["Bytes", "KB", "MB", "GB"];
+    const k = 1024;
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const size = bytes / Math.pow(k, i);
+    return `${size.toFixed(size > 100 ? 0 : 1)} ${units[i]}`;
+  };
+
+  const getSignedUrlForPath = async (storagePath: string) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from("chat-files")
+        .createSignedUrl(storagePath, 3600);
+      if (error || !data) {
+        console.error("Erro ao gerar URL assinada:", error);
+        return storagePath;
+      }
+      return data.signedUrl;
+    } catch (error) {
+      console.error("Erro inesperado ao gerar URL assinada:", error);
+      return storagePath;
+    }
+  };
+
+  interface SendWhatsAppPayload {
+    to: string;
+    message?: string;
+    mediaUrl?: string;
+    mediaType?: string;
+    fileName?: string;
+    caption?: string;
+  }
+
+  const sendWhatsApp = async ({ to, message, mediaUrl, mediaType, fileName, caption }: SendWhatsAppPayload) => {
     const result = await supabase.functions.invoke("whatsapp-send", {
-      body: { to, message },
+      body: { to, message, mediaUrl, mediaType, fileName, caption },
     });
     if (result.error || !result.data?.ok) {
       const msg =
@@ -168,7 +214,7 @@ export default function Chat() {
         return;
       }
 
-      const chatMessages: ChatMessage[] = contactHistory
+      let chatMessages: ChatMessage[] = contactHistory
         .filter((contact: any) => !contact.subject?.startsWith("ROUTING:"))
         .map((contact: any) => ({
           id: contact.id,
@@ -178,11 +224,77 @@ export default function Chat() {
           status: "delivered" as MsgStatus,
         }));
 
+      const messageIds = chatMessages.map(msg => msg.id);
+
+      if (messageIds.length > 0) {
+        const { data: attachmentData, error: attachmentError } = await supabase
+          .from('message_attachments')
+          .select('*')
+          .in('message_id', messageIds);
+
+        if (attachmentError) {
+          console.error('Erro ao carregar anexos:', attachmentError);
+        } else if (attachmentData && attachmentData.length > 0) {
+          const storagePaths = attachmentData
+            .filter((attachment) => attachment.file_path && !attachment.file_path.startsWith('http'))
+            .map((attachment) => attachment.file_path);
+
+          const uniquePaths = Array.from(new Set(storagePaths));
+          const signedUrlMap = new Map<string, string>();
+
+          if (uniquePaths.length > 0) {
+            try {
+              const { data: signedUrls, error: signedError } = await supabase.storage
+                .from('chat-files')
+                .createSignedUrls(uniquePaths, 3600);
+              if (signedError) {
+                console.error('Erro ao gerar URLs assinadas:', signedError);
+              } else if (signedUrls) {
+                signedUrls.forEach((item) => {
+                  if (item.signedUrl) {
+                    signedUrlMap.set(item.path, item.signedUrl);
+                  }
+                });
+              }
+            } catch (error) {
+              console.error('Erro inesperado ao gerar URLs assinadas:', error);
+            }
+          }
+
+          const attachmentsByMessage: Record<string, ChatAttachment[]> = {};
+
+          attachmentData.forEach((attachment) => {
+            const url = attachment.file_path.startsWith('http')
+              ? attachment.file_path
+              : signedUrlMap.get(attachment.file_path) || attachment.file_path;
+
+            const chatAttachment: ChatAttachment = {
+              id: attachment.id,
+              fileName: attachment.file_name,
+              fileType: attachment.file_type,
+              fileSize: attachment.file_size,
+              url,
+              storagePath: attachment.file_path,
+            };
+
+            if (!attachmentsByMessage[attachment.message_id]) {
+              attachmentsByMessage[attachment.message_id] = [];
+            }
+
+            attachmentsByMessage[attachment.message_id].push(chatAttachment);
+          });
+
+          chatMessages = chatMessages.map((message) => ({
+            ...message,
+            attachments: attachmentsByMessage[message.id] || [],
+          }));
+        }
+      }
+
       setMessages(chatMessages);
 
       // Marcar como lidas
       const readMessagesKey = `read_messages_${contactId}`;
-      const messageIds = chatMessages.map(msg => msg.id);
       localStorage.setItem(readMessagesKey, JSON.stringify(messageIds));
     } catch (error) {
       console.error("Erro ao carregar mensagens:", error);
@@ -195,45 +307,152 @@ export default function Chat() {
   };
 
   // -------- Enviar Mensagem --------
+  const removePendingAttachment = (attachmentId: string) => {
+    setPendingAttachments((prev) => prev.filter((file) => file.id !== attachmentId));
+  };
+
   const sendMessage = async () => {
-    if (!newMessage.trim() || !selectedContact) return;
+    if (!selectedContact) return;
+
+    const contactId = selectedContact.id;
+    const contactPhone = selectedContact.phone;
+
+    const hasText = newMessage.trim().length > 0;
+    const hasAttachments = pendingAttachments.length > 0;
+
+    if (!hasText && !hasAttachments) return;
+    if (isSending) return;
+
+    setIsSending(true);
 
     try {
-      await sendWhatsApp(selectedContact.phone, newMessage);
+      if (hasAttachments) {
+        for (let index = 0; index < pendingAttachments.length; index++) {
+          const attachment = pendingAttachments[index];
+          const caption = index === 0 && hasText ? newMessage.trim() : undefined;
 
-      await supabase.from("client_contacts").insert({
-        client_id: selectedContact.id,
-        contact_type: "whatsapp",
-        subject: "Mensagem enviada via WhatsApp",
-        description: newMessage,
-        contact_date: new Date().toISOString(),
-        created_by: user?.id,
-      });
+          const signedUrl = attachment.downloadUrl && attachment.downloadUrl !== attachment.storagePath
+            ? attachment.downloadUrl
+            : await getSignedUrlForPath(attachment.storagePath);
 
-      const newMsg: ChatMessage = {
-        id: `temp-${Date.now()}`,
-        content: newMessage,
-        timestamp: new Date().toISOString(),
-        isOutgoing: true,
-        status: "sent",
-      };
+          await sendWhatsApp({
+            to: contactPhone,
+            mediaUrl: signedUrl,
+            mediaType: attachment.fileType,
+            fileName: attachment.fileName,
+            caption,
+          });
 
-      setMessages((prev) => [...prev, newMsg]);
+          const description = caption || `Arquivo enviado: ${attachment.fileName}`;
+
+          const { data: savedMessage, error: saveError } = await supabase
+            .from('client_contacts')
+            .insert({
+              client_id: contactId,
+              contact_type: 'whatsapp',
+              subject: 'Mensagem enviada via WhatsApp',
+              description,
+              contact_date: new Date().toISOString(),
+              created_by: user?.id,
+            })
+            .select()
+            .single();
+
+          if (saveError || !savedMessage) {
+            throw saveError || new Error('Erro ao salvar mensagem.');
+          }
+
+          if (!user?.id) {
+            throw new Error('Usuário não autenticado para salvar anexos.');
+          }
+
+          const { data: attachmentInsert, error: attachmentError } = await supabase
+            .from('message_attachments')
+            .insert({
+              message_id: savedMessage.id,
+              file_name: attachment.fileName,
+              file_path: attachment.storagePath,
+              file_type: attachment.fileType,
+              file_size: attachment.fileSize,
+              uploaded_by: user.id,
+            })
+            .select()
+            .single();
+
+          if (attachmentError) {
+            throw attachmentError;
+          }
+
+          const chatAttachment: ChatAttachment = {
+            id: attachmentInsert?.id || `${savedMessage.id}-attachment`,
+            fileName: attachment.fileName,
+            fileType: attachment.fileType,
+            fileSize: attachment.fileSize,
+            url: signedUrl,
+            storagePath: attachment.storagePath,
+          };
+
+          const newChatMessage: ChatMessage = {
+            id: savedMessage.id,
+            content: description,
+            timestamp: savedMessage.contact_date,
+            isOutgoing: true,
+            status: 'sent',
+            attachments: [chatAttachment],
+          };
+
+          setMessages((prev) => [...prev, newChatMessage]);
+        }
+      } else if (hasText) {
+        await sendWhatsApp({ to: contactPhone, message: newMessage.trim() });
+
+        const { data: savedMessage, error: saveError } = await supabase
+          .from('client_contacts')
+          .insert({
+            client_id: contactId,
+            contact_type: 'whatsapp',
+            subject: 'Mensagem enviada via WhatsApp',
+            description: newMessage.trim(),
+            contact_date: new Date().toISOString(),
+            created_by: user?.id,
+          })
+          .select()
+          .single();
+
+        if (saveError || !savedMessage) {
+          throw saveError || new Error('Erro ao salvar mensagem.');
+        }
+
+        const newChatMessage: ChatMessage = {
+          id: savedMessage.id,
+          content: newMessage.trim(),
+          timestamp: savedMessage.contact_date,
+          isOutgoing: true,
+          status: 'sent',
+        };
+
+        setMessages((prev) => [...prev, newChatMessage]);
+      }
+
       setNewMessage("");
+      setPendingAttachments([]);
 
       toast({
-        title: "Mensagem enviada",
-        description: "Sua mensagem foi enviada via WhatsApp.",
+        title: 'Mensagem enviada',
+        description: 'Sua mensagem foi enviada via WhatsApp.',
       });
 
       await loadWhatsAppContacts();
+      await loadMessages(contactId);
     } catch (error) {
-      console.error("Erro ao enviar mensagem:", error);
+      console.error('Erro ao enviar mensagem:', error);
       toast({
-        title: "Erro ao enviar",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
+        title: 'Erro ao enviar',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
       });
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -263,6 +482,8 @@ export default function Chat() {
 
   const handleContactSelect = async (contact: WhatsAppContact) => {
     setSelectedContact(contact);
+    setPendingAttachments([]);
+    setNewMessage("");
     await loadMessages(contact.id);
     setUnreadMessagesCount(0);
   };
@@ -407,8 +628,114 @@ export default function Chat() {
                               : "bg-muted"
                           }`}
                         >
-                          <p className="text-sm">{message.content}</p>
-                          <p className="text-xs opacity-70 mt-1">
+                          <div className="space-y-2">
+                            {message.attachments && message.attachments.length > 0 && (
+                              <div className="space-y-2">
+                                {message.attachments.map((attachment) => {
+                                  const key = `${message.id}-${attachment.id}`;
+                                  if (attachment.fileType.startsWith('image/')) {
+                                    return (
+                                      <a
+                                        key={key}
+                                        href={attachment.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="block overflow-hidden rounded-md border border-border"
+                                      >
+                                        <img
+                                          src={attachment.url}
+                                          alt={attachment.fileName}
+                                          className="max-h-60 w-full object-cover"
+                                        />
+                                      </a>
+                                    );
+                                  }
+
+                                  if (attachment.fileType.startsWith('video/')) {
+                                    return (
+                                      <div
+                                        key={key}
+                                        className="rounded-md border border-border bg-background/80 p-2 text-foreground"
+                                      >
+                                        <p className="mb-1 text-sm font-medium break-words">
+                                          {attachment.fileName}
+                                        </p>
+                                        <video
+                                          controls
+                                          className="max-h-60 w-full rounded-md"
+                                          src={attachment.url}
+                                        >
+                                          Seu navegador não suporta o elemento de vídeo.
+                                        </video>
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                          {formatFileSize(attachment.fileSize)}
+                                        </p>
+                                      </div>
+                                    );
+                                  }
+
+                                  if (attachment.fileType.startsWith('audio/')) {
+                                    return (
+                                      <div
+                                        key={key}
+                                        className="rounded-md border border-border bg-background/80 p-2 text-foreground"
+                                      >
+                                        <p className="mb-1 text-sm font-medium break-words">
+                                          {attachment.fileName}
+                                        </p>
+                                        <audio controls className="w-full">
+                                          <source src={attachment.url} type={attachment.fileType} />
+                                          Seu navegador não suporta o elemento de áudio.
+                                        </audio>
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                          {formatFileSize(attachment.fileSize)}
+                                        </p>
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <div
+                                      key={key}
+                                      className="rounded-md border border-border bg-background/80 p-3 text-foreground"
+                                    >
+                                      <p className="text-sm font-medium break-words">{attachment.fileName}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {attachment.fileType} • {formatFileSize(attachment.fileSize)}
+                                      </p>
+                                      <div className="mt-2 flex flex-wrap gap-2">
+                                        <Button variant="secondary" size="sm" asChild>
+                                          <a
+                                            href={attachment.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                          >
+                                            <Eye className="mr-1 h-4 w-4" /> Visualizar
+                                          </a>
+                                        </Button>
+                                        <Button variant="outline" size="sm" asChild>
+                                          <a
+                                            href={attachment.url}
+                                            download={attachment.fileName}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                          >
+                                            <Download className="mr-1 h-4 w-4" /> Baixar
+                                          </a>
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {message.content && (
+                              <p className="text-sm break-words">{message.content}</p>
+                            )}
+                          </div>
+
+                          <p className="mt-2 text-xs opacity-70">
                             {formatTime(message.timestamp)}
                             {message.isOutgoing && (
                               <span className="ml-1">
@@ -427,22 +754,65 @@ export default function Chat() {
 
                 {/* Input de Mensagem */}
                 <div className="p-4 border-t bg-background flex-shrink-0 space-y-3">
-                  <FileUpload 
-                    onFileUploaded={(fileUrl, fileName, fileType) => {
-                      // Handle file uploaded - you can add this to message or show preview
-                      console.log('Arquivo enviado:', { fileUrl, fileName, fileType });
+                  <FileUpload
+                    onFileUploaded={(file) => {
+                      setPendingAttachments((prev) => [...prev, file]);
+                      toast({
+                        title: 'Arquivo anexado',
+                        description: `${file.fileName} está pronto para envio.`,
+                      });
                     }}
-                    disabled={!selectedContact}
+                    disabled={!selectedContact || isSending}
                   />
+
+                  {pendingAttachments.length > 0 && (
+                    <div className="space-y-2 rounded-lg border border-dashed border-muted bg-muted/40 p-3">
+                      <p className="text-sm font-medium">Arquivos prontos para envio</p>
+                      <div className="space-y-2">
+                        {pendingAttachments.map((file) => (
+                          <div
+                            key={file.id}
+                            className="flex items-center justify-between gap-3 rounded-md bg-background p-2 shadow-sm"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{file.fileName}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {file.fileType} • {formatFileSize(file.fileSize)}
+                              </p>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removePendingAttachment(file.id)}
+                              className="h-8 w-8"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex gap-2">
                     <Input
                       placeholder="Digite sua mensagem..."
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
-                      onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          sendMessage();
+                        }
+                      }}
                       className="flex-1"
+                      disabled={!selectedContact || isSending}
                     />
-                    <Button onClick={sendMessage} size="icon" disabled={!newMessage.trim()}>
+                    <Button
+                      onClick={sendMessage}
+                      size="icon"
+                      disabled={(!newMessage.trim() && pendingAttachments.length === 0) || isSending}
+                    >
                       <Send className="h-4 w-4" />
                     </Button>
                   </div>

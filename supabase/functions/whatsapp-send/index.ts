@@ -9,6 +9,29 @@ const ACCESS_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN") || Deno.env.get("WHAT
 const PHONE_NUMBER_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
 const VERIFY_TOKEN = Deno.env.get("WHATSAPP_VERIFY_TOKEN") || Deno.env.get("WHATSAPP_WEBHOOK_VERIFY_TOKEN");
 
+const inferMediaCategory = (mimeType?: string, fileName?: string) => {
+  if (mimeType) {
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType.startsWith('video/')) return 'video';
+    if (mimeType.startsWith('audio/')) return 'audio';
+    if (mimeType.includes('pdf') || mimeType.includes('document') || mimeType.includes('msword')) {
+      return 'document';
+    }
+  }
+
+  if (fileName) {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    if (ext) {
+      if (["jpg", "jpeg", "png", "gif", "bmp", "webp", "heic", "heif"].includes(ext)) return "image";
+      if (["mp4", "mov", "avi", "mkv", "webm"].includes(ext)) return "video";
+      if (["mp3", "wav", "ogg", "m4a", "aac", "flac"].includes(ext)) return "audio";
+      if (["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt"].includes(ext)) return "document";
+    }
+  }
+
+  return 'document';
+};
+
 Deno.serve(async (req) => {
   console.log('=== WhatsApp Send Function Called ===');
   console.log('Method:', req.method);
@@ -70,15 +93,27 @@ Deno.serve(async (req) => {
     });
   }
 
-  const { to, message } = body;
-  console.log('Extracted fields:', { to, message });
-  
-  if (!to || !message) {
-    console.error('Missing required fields:', { to: !!to, message: !!message });
-    return new Response(JSON.stringify({ 
+  const { to, message, mediaUrl, mediaType, fileName, caption } = body;
+  console.log('Extracted fields:', {
+    to,
+    hasMessage: typeof message === 'string' && message.length > 0,
+    hasMedia: typeof mediaUrl === 'string' && mediaUrl.length > 0,
+    mediaType,
+    fileName,
+  });
+
+  const textBody = typeof message === 'string' ? message.trim() : '';
+  const mediaLink = typeof mediaUrl === 'string' ? mediaUrl.trim() : '';
+  const normalizedCaption = typeof caption === 'string' ? caption.trim() : '';
+  const normalizedMediaType = typeof mediaType === 'string' ? mediaType : undefined;
+  const normalizedFileName = typeof fileName === 'string' ? fileName : undefined;
+
+  if (!to || (!textBody && !mediaLink)) {
+    console.error('Missing required fields:', { to: !!to, message: !!textBody, mediaUrl: !!mediaLink });
+    return new Response(JSON.stringify({
       ok: false,
-      error: "Campos 'to' e 'message' são obrigatórios" 
-    }), { 
+      error: "Informe o número de destino e uma mensagem ou mídia para envio"
+    }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
@@ -107,15 +142,51 @@ Deno.serve(async (req) => {
 
   try {
     console.log(`Enviando mensagem WhatsApp para: ${finalTo}`);
-    console.log(`Mensagem: ${message}`);
     console.log(`Phone Number ID: ${PHONE_NUMBER_ID}`);
-    
-    const whatsappPayload = {
+    if (mediaLink) {
+      console.log('Enviando mídia:', { mediaLink, mediaType: normalizedMediaType, fileName: normalizedFileName, caption: normalizedCaption });
+    } else {
+      console.log(`Mensagem: ${textBody}`);
+    }
+
+    const whatsappPayload: Record<string, any> = {
       messaging_product: "whatsapp",
       to: finalTo,
-      type: "text",
-      text: { body: message },
     };
+
+    if (mediaLink) {
+      const mediaCategory = inferMediaCategory(normalizedMediaType, normalizedFileName);
+      const sanitizedCaption = normalizedCaption ? normalizedCaption.slice(0, 1024) : undefined;
+
+      if (mediaCategory === 'image') {
+        whatsappPayload.type = 'image';
+        whatsappPayload.image = {
+          link: mediaLink,
+          ...(sanitizedCaption ? { caption: sanitizedCaption } : {}),
+        };
+      } else if (mediaCategory === 'video') {
+        whatsappPayload.type = 'video';
+        whatsappPayload.video = {
+          link: mediaLink,
+          ...(sanitizedCaption ? { caption: sanitizedCaption } : {}),
+        };
+      } else if (mediaCategory === 'audio') {
+        whatsappPayload.type = 'audio';
+        whatsappPayload.audio = {
+          link: mediaLink,
+        };
+      } else {
+        whatsappPayload.type = 'document';
+        whatsappPayload.document = {
+          link: mediaLink,
+          ...(normalizedFileName ? { filename: normalizedFileName } : {}),
+          ...(sanitizedCaption ? { caption: sanitizedCaption } : {}),
+        };
+      }
+    } else {
+      whatsappPayload.type = 'text';
+      whatsappPayload.text = { body: textBody };
+    }
     console.log('WhatsApp API payload:', JSON.stringify(whatsappPayload, null, 2));
     
     const waResp = await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {

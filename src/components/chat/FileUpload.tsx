@@ -9,7 +9,7 @@ import { useAuth } from "@/state/auth";
 import { toast } from "@/hooks/use-toast";
 
 interface FileUploadProps {
-  onFileUploaded: (fileUrl: string, fileName: string, fileType: string) => void;
+  onFileUploaded: (file: UploadedFileInfo) => void;
   disabled?: boolean;
 }
 
@@ -17,6 +17,15 @@ interface UploadingFile {
   file: File;
   progress: number;
   id: string;
+}
+
+export interface UploadedFileInfo {
+  id: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  storagePath: string;
+  downloadUrl: string;
 }
 
 export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
@@ -116,30 +125,35 @@ export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
 
       if (error) throw error;
 
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from('chat-files')
-        .getPublicUrl(fileName);
+      let signedUrl = "";
+      try {
+        const { data: signedData, error: signedError } = await supabase.storage
+          .from('chat-files')
+          .createSignedUrl(fileName, 3600);
 
-      // Save file metadata to database
-      await supabase
-        .from('message_attachments')
-        .insert({
-          message_id: `temp-${Date.now()}`, // This will be updated when message is sent
-          file_name: file.name,
-          file_path: fileName,
-          file_type: file.type,
-          file_size: file.size,
-          uploaded_by: user?.id
-        });
+        if (signedError) {
+          console.error('Erro ao gerar URL assinada:', signedError);
+        } else {
+          signedUrl = signedData.signedUrl;
+        }
+      } catch (error) {
+        console.error('Erro inesperado ao gerar URL assinada:', error);
+      }
 
       // Update progress to 100%
-      setUploadingFiles(prev => 
+      setUploadingFiles(prev =>
         prev.map(f => f.id === fileId ? { ...f, progress: 100 } : f)
       );
 
       // Notify parent component
-      onFileUploaded(urlData.publicUrl, file.name, file.type);
+      onFileUploaded({
+        id: fileId,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
+        storagePath: data.path,
+        downloadUrl: signedUrl || data.path
+      });
 
       // Remove from uploading list after short delay
       setTimeout(() => {
