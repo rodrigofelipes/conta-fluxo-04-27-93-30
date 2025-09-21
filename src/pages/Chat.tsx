@@ -915,19 +915,19 @@ export default function Chat() {
                {/* Área de Mensagens */}
                <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                  <div className="flex-1 min-h-0 overflow-hidden">
-                   <ScrollArea className="h-full p-4">
-                     <div className="space-y-4 w-full">
+                   <ScrollArea className="h-full px-3 py-4">
+                     <div className="space-y-4 w-full pr-2">
                       {messages.map((message) => (
                          <div
                            key={message.id}
-                           className={`flex w-full chat-message-container ${message.isOutgoing ? "justify-end" : "justify-start"}`}
+                           className={`flex w-full chat-message-container ${message.isOutgoing ? "justify-end pr-1" : "justify-start"}`}
                          >
                            <div
-                             className={`chat-message-bubble flex max-w-[85%] min-w-0 w-auto flex-col gap-2 rounded-2xl px-3 py-2 shadow-sm ${
+                             className={`chat-message-bubble flex max-w-[75%] min-w-0 w-auto flex-col gap-2 rounded-2xl px-3 py-2 shadow-sm ${
                                message.isOutgoing
                                  ? "bg-primary text-primary-foreground"
                                  : "bg-muted"
-                             } sm:max-w-[70%] lg:max-w-[55%]`}
+                             } sm:max-w-[65%] lg:max-w-[50%]`}
                            >
                             <div className="space-y-2">
                               {message.attachments && message.attachments.length > 0 && (
