@@ -769,6 +769,8 @@ export default function Chat() {
 
   // Carregar contatos inicialmente
   useEffect(() => {
+    // Clear localStorage to reset message history state
+    localStorage.clear();
     loadWhatsAppContacts();
   }, [loadWhatsAppContacts, user?.id]);
 
