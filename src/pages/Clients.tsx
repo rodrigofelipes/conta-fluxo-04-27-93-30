@@ -115,11 +115,13 @@ export default function Clients() {
     console.log('fetchClientes called, user:', user);
     if (!user) {
       console.log('No user, returning early');
+      setClientes([]);
+      setLoading(false);
       return;
     }
-    
+
+    setLoading(true);
     try {
-      setLoading(true);
       console.log('Fazendo query para buscar clientes...');
       const { data, error } = await supabase
         .from('clients')
@@ -153,8 +155,6 @@ export default function Clients() {
   }, [user]);
 
   useEffect(() => {
-    // Clear localStorage to reset any cached data
-    localStorage.clear();
     fetchClientes();
   }, [fetchClientes]);
 
