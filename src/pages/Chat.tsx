@@ -355,16 +355,15 @@ export default function Chat() {
           const attachmentsByMessage: Record<string, ChatAttachment[]> = {};
 
           attachmentData.forEach((attachment) => {
-            const url = attachment.file_path.startsWith('http')
-              ? attachment.file_path
-              : signedUrlMap.get(attachment.file_path) || attachment.file_path;
-
+            // Use proxy URL for all media files
+            const proxyUrl = `https://wcdyxxthaqzchjpharwh.supabase.co/functions/v1/media-proxy?path=${encodeURIComponent(attachment.file_path)}&bucket=chat-files`;
+            
             const chatAttachment: ChatAttachment = {
               id: attachment.id,
               fileName: attachment.file_name,
               fileType: attachment.file_type,
               fileSize: attachment.file_size,
-              url,
+              url: proxyUrl,
               storagePath: attachment.file_path,
             };
 
@@ -729,102 +728,19 @@ export default function Chat() {
                           <div className="space-y-2">
                             {message.attachments && message.attachments.length > 0 && (
                               <div className="space-y-2">
-                                {message.attachments.map((attachment) => {
-                                  const key = `${message.id}-${attachment.id}`;
-                                  if (attachment.fileType.startsWith('image/')) {
-                                    return (
-                                      <a
-                                        key={key}
-                                        href={attachment.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="block overflow-hidden rounded-md border border-border"
-                                      >
-                                        <img
-                                          src={attachment.url}
-                                          alt={attachment.fileName}
-                                          className="max-h-60 w-full object-cover"
-                                        />
-                                      </a>
-                                    );
-                                  }
-
-                                  if (attachment.fileType.startsWith('video/')) {
-                                    return (
-                                      <div
-                                        key={key}
-                                        className="rounded-md border border-border bg-background/80 p-2 text-foreground"
-                                      >
-                                        <p className="mb-1 text-sm font-medium break-words">
-                                          {attachment.fileName}
-                                        </p>
-                                        <video
-                                          controls
-                                          className="max-h-60 w-full rounded-md"
-                                          src={attachment.url}
-                                        >
-                                          Seu navegador não suporta o elemento de vídeo.
-                                        </video>
-                                        <p className="mt-1 text-xs text-muted-foreground">
-                                          {formatFileSize(attachment.fileSize)}
-                                        </p>
-                                      </div>
-                                    );
-                                  }
-
-                                  if (attachment.fileType.startsWith('audio/')) {
-                                    return (
-                                      <div
-                                        key={key}
-                                        className="rounded-md border border-border bg-background/80 p-2 text-foreground"
-                                      >
-                                        <p className="mb-1 text-sm font-medium break-words">
-                                          {attachment.fileName}
-                                        </p>
-                                        <audio controls className="w-full">
-                                          <source src={attachment.url} type={attachment.fileType} />
-                                          Seu navegador não suporta o elemento de áudio.
-                                        </audio>
-                                        <p className="mt-1 text-xs text-muted-foreground">
-                                          {formatFileSize(attachment.fileSize)}
-                                        </p>
-                                      </div>
-                                    );
-                                  }
-
-                                  return (
-                                    <div
-                                      key={key}
-                                      className="rounded-md border border-border bg-background/80 p-3 text-foreground"
-                                    >
-                                      <p className="text-sm font-medium break-words">{attachment.fileName}</p>
-                                      <p className="text-xs text-muted-foreground">
-                                        {attachment.fileType} • {formatFileSize(attachment.fileSize)}
-                                      </p>
-                                      <div className="mt-2 flex flex-wrap gap-2">
-                                        <Button variant="secondary" size="sm" asChild>
-                                          <a
-                                            href={attachment.url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                          >
-                                            <Eye className="mr-1 h-4 w-4" /> Visualizar
-                                          </a>
-                                        </Button>
-                                        <Button variant="outline" size="sm" asChild>
-                                          <a
-                                            href={attachment.url}
-                                            download={attachment.fileName}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                          >
-                                            <Download className="mr-1 h-4 w-4" /> Baixar
-                                          </a>
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
+                                 {message.attachments.map((attachment) => (
+                                   <MediaMessage
+                                     key={`${message.id}-${attachment.id}`}
+                                     attachment={{
+                                       id: attachment.id,
+                                       fileName: attachment.fileName,
+                                       fileType: attachment.fileType,
+                                       fileSize: attachment.fileSize,
+                                       downloadUrl: attachment.url,
+                                       storagePath: attachment.storagePath
+                                     }}
+                                   />
+                                 ))}
                               </div>
                             )}
 

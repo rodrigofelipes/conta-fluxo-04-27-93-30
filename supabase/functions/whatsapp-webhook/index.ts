@@ -310,15 +310,25 @@ async function saveWhatsAppMessage(
 ) {
   console.log(`💾 Salvando mensagem WhatsApp - Cliente: ${clientId}, Admin: ${adminId}, Outgoing: ${isOutgoing}`);
 
+  // Find admin user for messages table
+  const { data: adminProfile } = await supabase
+    .from('profiles')
+    .select('id, name')
+    .eq('user_id', adminId)
+    .single();
+
+  const adminName = adminProfile?.name || 'Admin';
+
+  // Save to messages table for chat interface
   const { data: messageRecord, error } = await supabase
-    .from('client_contacts')
+    .from('messages')
     .insert({
-      client_id: clientId,
-      contact_type: 'whatsapp',
-      subject: isOutgoing ? 'Mensagem enviada via WhatsApp' : 'Mensagem recebida via WhatsApp',
-      description: messageText,
-      contact_date: new Date().toISOString(),
-      created_by: adminId || null
+      from_user_id: isOutgoing ? adminId : `whatsapp-${clientId}`,
+      to_user_id: isOutgoing ? `whatsapp-${clientId}` : adminId,
+      message: messageText,
+      from_user_name: isOutgoing ? adminName : `Cliente WhatsApp`,
+      to_user_name: isOutgoing ? `Cliente WhatsApp` : adminName,
+      message_type: attachments && attachments.length > 0 ? 'attachment' : 'text'
     })
     .select()
     .single();
@@ -327,6 +337,18 @@ async function saveWhatsAppMessage(
     console.error('❌ Erro ao salvar mensagem WhatsApp:', error);
     return null;
   }
+
+  // Also save to client_contacts for record keeping
+  await supabase
+    .from('client_contacts')
+    .insert({
+      client_id: clientId,
+      contact_type: 'whatsapp',
+      subject: isOutgoing ? 'Mensagem enviada via WhatsApp' : 'Mensagem recebida via WhatsApp',
+      description: messageText,
+      contact_date: new Date().toISOString(),
+      created_by: adminId || null
+    });
 
   if (attachments && attachments.length > 0) {
     const attachmentsWithMessageId = attachments.map((attachment) => ({

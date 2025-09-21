@@ -10,17 +10,32 @@ interface MediaMessageProps {
     fileType: string;
     fileSize: number;
     downloadUrl: string;
+    storagePath?: string;
   };
 }
 
+// Helper function to create proxy URL for media files
+const getProxyUrl = (attachment: MediaMessageProps['attachment']) => {
+  if (attachment.storagePath) {
+    const supabaseUrl = "https://wcdyxxthaqzchjpharwh.supabase.co";
+    return `${supabaseUrl}/functions/v1/media-proxy?path=${encodeURIComponent(attachment.storagePath)}&bucket=chat-files`;
+  }
+  return attachment.downloadUrl;
+};
+
 export function MediaMessage({ attachment }: MediaMessageProps) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  const proxyUrl = getProxyUrl(attachment);
+
   const handleDownload = async () => {
     try {
-      const response = await fetch(attachment.downloadUrl);
+      const response = await fetch(proxyUrl);
+      if (!response.ok) throw new Error('Failed to fetch file');
+      
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -65,12 +80,22 @@ export function MediaMessage({ attachment }: MediaMessageProps) {
     <div className="max-w-sm bg-card border rounded-lg overflow-hidden">
       {isImage && (
         <div className="relative group">
-          <img 
-            src={attachment.downloadUrl} 
-            alt={attachment.fileName}
-            className="w-full h-auto max-h-64 object-cover"
-            loading="lazy"
-          />
+          {!imageError ? (
+            <img 
+              src={proxyUrl} 
+              alt={attachment.fileName}
+              className="w-full h-auto max-h-64 object-cover"
+              loading="lazy"
+              onError={() => setImageError(true)}
+            />
+          ) : (
+            <div className="w-full h-32 bg-muted flex items-center justify-center">
+              <div className="text-center">
+                <Image className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">Erro ao carregar imagem</p>
+              </div>
+            </div>
+          )}
           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
             <Button
               onClick={handleDownload}
@@ -89,7 +114,7 @@ export function MediaMessage({ attachment }: MediaMessageProps) {
         <div className="relative">
           <video 
             ref={videoRef}
-            src={attachment.downloadUrl}
+            src={proxyUrl}
             className="w-full h-auto max-h-64"
             controls
             preload="metadata"
@@ -113,7 +138,7 @@ export function MediaMessage({ attachment }: MediaMessageProps) {
           </div>
           <audio
             ref={audioRef}
-            src={attachment.downloadUrl}
+            src={proxyUrl}
             onEnded={() => setIsPlaying(false)}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
