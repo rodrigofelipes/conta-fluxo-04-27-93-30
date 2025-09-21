@@ -359,6 +359,9 @@ export default function Chat() {
   const loadMessages = useCallback(
     async (contactId: string) => {
       try {
+        // Limpar mensagens imediatamente para evitar cache visual
+        setMessages([]);
+        
         const { data: contactHistory, error } = await supabase
           .from("client_contacts")
           .select("*")
@@ -769,6 +772,11 @@ export default function Chat() {
 
   // Carregar contatos inicialmente
   useEffect(() => {
+    // Limpar estado e cache local
+    setContacts([]);
+    setMessages([]);
+    setSelectedContact(null);
+    localStorage.clear(); // Limpar cache de mensagens lidas
     loadWhatsAppContacts();
   }, [loadWhatsAppContacts, user?.id]);
 
