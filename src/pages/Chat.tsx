@@ -912,11 +912,11 @@ export default function Chat() {
                 </div>
               </CardHeader>
               
-               {/* Área de Mensagens */}
-               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                 <div className="flex-1 min-h-0 overflow-hidden">
-                   <ScrollArea className="h-full px-3 py-4">
-                     <div className="space-y-4 w-full pr-2">
+              {/* Área de Mensagens */}
+              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <ScrollArea className="h-full px-3 py-4">
+                    <div className="space-y-4 w-full pr-6 sm:pr-8 lg:pr-10">
                       {messages.map((message) => (
                          <div
                            key={message.id}
