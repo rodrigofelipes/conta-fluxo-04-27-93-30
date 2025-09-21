@@ -36,11 +36,12 @@ async function findClientByPhone(phone: string) {
     }
   }
   
-  // Buscar cliente pelo telefone
+  // Buscar cliente pelo telefone (usando LIKE para maior flexibilidade)
   const { data, error } = await supabase
     .from('clients')
     .select('id, name, phone, email')
-    .eq('phone', phone)
+    .or(`phone.eq.${phone},phone.eq.${cleanPhone},phone.like.%${cleanPhone.slice(-10)}%`)
+    .limit(1)
     .maybeSingle();
     
   if (error) {
@@ -310,36 +311,17 @@ async function saveWhatsAppMessage(
 ) {
   console.log(`💾 Salvando mensagem WhatsApp - Cliente: ${clientId}, Admin: ${adminId}, Outgoing: ${isOutgoing}`);
 
-  // Find admin user for messages table
+  // Find admin user name
   const { data: adminProfile } = await supabase
     .from('profiles')
     .select('id, name')
     .eq('user_id', adminId)
-    .single();
+    .maybeSingle();
 
-  const adminName = adminProfile?.name || 'Admin';
+  const adminName = adminProfile?.name || 'Mara';
 
-  // Save to messages table for chat interface
-  const { data: messageRecord, error } = await supabase
-    .from('messages')
-    .insert({
-      from_user_id: isOutgoing ? adminId : `whatsapp-${clientId}`,
-      to_user_id: isOutgoing ? `whatsapp-${clientId}` : adminId,
-      message: messageText,
-      from_user_name: isOutgoing ? adminName : `Cliente WhatsApp`,
-      to_user_name: isOutgoing ? `Cliente WhatsApp` : adminName,
-      message_type: attachments && attachments.length > 0 ? 'attachment' : 'text'
-    })
-    .select()
-    .single();
-
-  if (error || !messageRecord) {
-    console.error('❌ Erro ao salvar mensagem WhatsApp:', error);
-    return null;
-  }
-
-  // Also save to client_contacts for record keeping
-  await supabase
+  // Save to client_contacts for record keeping
+  const { data: contactRecord, error: contactError } = await supabase
     .from('client_contacts')
     .insert({
       client_id: clientId,
@@ -348,12 +330,20 @@ async function saveWhatsAppMessage(
       description: messageText,
       contact_date: new Date().toISOString(),
       created_by: adminId || null
-    });
+    })
+    .select()
+    .single();
 
+  if (contactError || !contactRecord) {
+    console.error('❌ Erro ao salvar contato WhatsApp:', contactError);
+    return null;
+  }
+
+  // Save attachments if any
   if (attachments && attachments.length > 0) {
     const attachmentsWithMessageId = attachments.map((attachment) => ({
       ...attachment,
-      message_id: messageRecord.id,
+      message_id: contactRecord.id, // Use contact record ID as message reference
     }));
 
     const { error: attachmentError } = await supabase
@@ -363,12 +353,12 @@ async function saveWhatsAppMessage(
     if (attachmentError) {
       console.error('❌ Erro ao salvar anexos da mensagem:', attachmentError);
     } else {
-      console.log(`📎 ${attachments.length} anexo(s) vinculados à mensagem ${messageRecord.id}`);
+      console.log(`📎 ${attachments.length} anexo(s) vinculados ao contato ${contactRecord.id}`);
     }
   }
 
   console.log('✅ Mensagem WhatsApp salva com sucesso');
-  return messageRecord;
+  return contactRecord;
 }
 
 const getExtensionFromMime = (mimeType?: string) => {
@@ -561,8 +551,8 @@ serve(async (req) => {
                 continue;
               }
 
-              // Sempre atribuir ao admin
-              let assignedUser = await findUserByRole('admin');
+              // Sempre atribuir à Mara (admin principal)
+              let assignedUser = await findUserByName('Mara') || await findUserByRole('admin');
 
               if (messageType === 'image') {
                 messageText = message.image?.caption || 'Imagem recebida';
