@@ -505,6 +505,7 @@ export default function Chat() {
 
       if (deleteMessagesError) throw deleteMessagesError;
 
+      // Limpar cache local e estado
       setMessages([]);
       const readMessagesKey = `read_messages_${contactId}`;
       localStorage.removeItem(readMessagesKey);
@@ -514,8 +515,14 @@ export default function Chat() {
         description: `O histórico com ${selectedContact.name} foi removido.`,
       });
 
-      await loadWhatsAppContacts({ silent: true });
-      await loadMessages(contactId);
+      // Forçar refresh completo das mensagens e contatos
+      await loadWhatsAppContacts({ silent: false });
+      
+      // Aguardar um pouco antes de recarregar mensagens
+      setTimeout(async () => {
+        await loadMessages(contactId);
+      }, 500);
+      
     } catch (error) {
       console.error("Erro ao apagar conversas:", error);
       toast({

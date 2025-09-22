@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,19 +22,43 @@ export function CreatePhaseDialog({
   onPhaseCreated 
 }: CreatePhaseDialogProps) {
   const [saving, setSaving] = useState(false);
+  const [collaborators, setCollaborators] = useState<{id: string, name: string}[]>([]);
   const [formData, setFormData] = useState({
     phase_name: "",
     description: "",
     allocated_hours: 0,
-    status: "pending" as 'pending' | 'in_progress' | 'completed' | 'cancelled'
+    status: "pending" as 'pending' | 'in_progress' | 'completed' | 'cancelled',
+    assigned_to: ""
   });
+
+  useEffect(() => {
+    if (open) {
+      loadCollaborators();
+    }
+  }, [open]);
+
+  const loadCollaborators = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, name')
+        .eq('role', 'user')
+        .order('name');
+      
+      if (error) throw error;
+      setCollaborators(data || []);
+    } catch (error) {
+      console.error('Erro ao carregar colaboradores:', error);
+    }
+  };
 
   const resetForm = () => {
     setFormData({
       phase_name: "",
       description: "",
       allocated_hours: 0,
-      status: "pending"
+      status: "pending",
+      assigned_to: ""
     });
   };
 
@@ -74,7 +98,8 @@ export function CreatePhaseDialog({
           allocated_hours: formData.allocated_hours,
           status: formData.status,
           order_index: nextOrderIndex,
-          executed_hours: 0
+          executed_hours: 0,
+          assigned_to: formData.assigned_to || null
         });
 
       if (error) throw error;
@@ -111,12 +136,12 @@ export function CreatePhaseDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Nova Fase do Projeto</DialogTitle>
+          <DialogTitle>Nova Etapa do Projeto</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="phase_name">Nome da Fase *</Label>
+            <Label htmlFor="phase_name">Nome da Etapa *</Label>
             <Input
               id="phase_name"
               value={formData.phase_name}
@@ -165,6 +190,23 @@ export function CreatePhaseDialog({
             />
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="assigned_to">Colaborador Responsável</Label>
+            <Select value={formData.assigned_to} onValueChange={(value) => setFormData(prev => ({ ...prev, assigned_to: value }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione um colaborador" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Nenhum</SelectItem>
+                {collaborators.map((collaborator) => (
+                  <SelectItem key={collaborator.id} value={collaborator.id}>
+                    {collaborator.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="flex justify-end space-x-2 pt-4">
             <Button
               type="button"
@@ -175,7 +217,7 @@ export function CreatePhaseDialog({
               Cancelar
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? "Criando..." : "Criar Fase"}
+              {saving ? "Criando..." : "Criar Etapa"}
             </Button>
           </div>
         </form>

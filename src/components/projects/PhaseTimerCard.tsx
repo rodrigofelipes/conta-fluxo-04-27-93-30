@@ -13,11 +13,13 @@ import {
   User,
   CheckCircle,
   DollarSign,
-  TrendingDown
+  TrendingDown,
+  Eye
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/state/auth";
 import { supabase } from "@/integrations/supabase/client";
+import { ProjectObservationDialog } from "./ProjectObservationDialog";
 
 interface Phase {
   id: string;
@@ -421,6 +423,22 @@ export function PhaseTimerCard({ phase, onHoursUpdate, showProjectTitle = false 
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Project Observation Button */}
+        {phase.project?.id && (
+          <div className="space-y-2">
+            <ProjectObservationDialog projectId={phase.project.id}>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-full gap-2"
+              >
+                <Eye className="h-4 w-4" />
+                Ver Detalhes do Projeto
+              </Button>
+            </ProjectObservationDialog>
           </div>
         )}
 

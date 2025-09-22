@@ -433,7 +433,13 @@ export default function Agenda() {
                 <Calendar
                   mode="single"
                   selected={currentMonth}
-                  onSelect={date => date && setCurrentMonth(date)}
+                  onSelect={(date) => {
+                    if (date) {
+                      // Ajustar timezone para evitar problemas
+                      const adjustedDate = new Date(date.getTime() + date.getTimezoneOffset() * 60000);
+                      setCurrentMonth(adjustedDate);
+                    }
+                  }}
                   initialFocus
                   className={cn("p-3 pointer-events-auto")}
                 />
@@ -592,9 +598,42 @@ export default function Agenda() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Data</FormLabel>
-                          <FormControl>
-                            <Input type="date" placeholder="dd/mm/aaaa" {...field} />
-                          </FormControl>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  variant={"outline"}
+                                  className={cn(
+                                    "w-full pl-3 text-left font-normal",
+                                    !field.value && "text-muted-foreground"
+                                  )}
+                                >
+                                  {field.value ? (
+                                    format(new Date(field.value + 'T12:00:00'), "PPP", { locale: ptBR })
+                                  ) : (
+                                    <span>Selecione uma data</span>
+                                  )}
+                                  <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <Calendar
+                                mode="single"
+                                selected={field.value ? new Date(field.value + 'T12:00:00') : undefined}
+                                onSelect={(date) => {
+                                  if (date) {
+                                    // Formatar a data como YYYY-MM-DD evitando problemas de timezone
+                                    const formattedDate = formatDateToLocalString(date);
+                                    field.onChange(formattedDate);
+                                  }
+                                }}
+                                disabled={(date) => date < new Date("1900-01-01")}
+                                initialFocus
+                                className={cn("p-3 pointer-events-auto")}
+                              />
+                            </PopoverContent>
+                          </Popover>
                           <FormMessage />
                         </FormItem>
                       )}

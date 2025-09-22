@@ -151,8 +151,8 @@ export function SupervisorDashboard({ userName }: SupervisorDashboardProps) {
                   >
                     <Plus className="mr-3 size-5" />
                     <div className="text-left flex-1">
-                      <p className="font-medium">Nova Fase</p>
-                      <p className="text-xs opacity-70">Criar nova fase do projeto</p>
+                      <p className="font-medium">Nova Etapa</p>
+                      <p className="text-xs opacity-70">Criar nova etapa do projeto</p>
                     </div>
                     <ChevronDown className="ml-2 size-4" />
                   </Button>

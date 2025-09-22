@@ -85,8 +85,8 @@ export function UserPhasesView() {
 
       // Filtrar baseado no role
       if (currentProfile.role === 'coordenador') {
-        // Coordenadores veem apenas fases em andamento
-        query = query.eq('status', 'in_progress');
+        // Coordenadores veem apenas suas fases atribuídas (como usuário)
+        query = query.eq('assigned_to', currentProfile.id);
       } else {
         // Usuários regulares veem apenas suas fases atribuídas
         query = query.eq('assigned_to', currentProfile.id);
