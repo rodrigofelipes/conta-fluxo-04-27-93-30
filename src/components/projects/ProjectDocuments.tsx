@@ -2,16 +2,12 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { 
-  Upload, 
-  FileText, 
-  Download, 
-  Calendar, 
+import {
+  Upload,
+  FileText,
+  Download,
+  Calendar,
   Trash2,
-  Plus,
-  File,
   Image,
   FileVideo,
   FileArchive
@@ -32,9 +28,10 @@ interface ProjectDocument {
 
 interface ProjectDocumentsProps {
   projectId: string;
+  allowManage?: boolean;
 }
 
-export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
+export function ProjectDocuments({ projectId, allowManage = true }: ProjectDocumentsProps) {
   const { user } = useAuth();
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [loading, setLoading] = useState(true);
@@ -229,25 +226,27 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
           <FileText className="h-5 w-5 text-primary" />
           Documentos do Projeto
         </CardTitle>
-        <div className="flex items-center gap-2">
-          <Input
-            type="file"
-            onChange={handleFileUpload}
-            disabled={uploading}
-            className="hidden"
-            id="document-upload"
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => globalThis.document.getElementById('document-upload')?.click()}
-            disabled={uploading}
-            className="gap-2"
-          >
-            <Upload className="h-4 w-4" />
-            {uploading ? 'Enviando...' : 'Adicionar Documento'}
-          </Button>
-        </div>
+        {allowManage && (
+          <div className="flex items-center gap-2">
+            <Input
+              type="file"
+              onChange={handleFileUpload}
+              disabled={uploading}
+              className="hidden"
+              id="document-upload"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => globalThis.document.getElementById('document-upload')?.click()}
+              disabled={uploading}
+              className="gap-2"
+            >
+              <Upload className="h-4 w-4" />
+              {uploading ? 'Enviando...' : 'Adicionar Documento'}
+            </Button>
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         {documents.length > 0 ? (
@@ -278,14 +277,16 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
                   >
                     <Download className="h-4 w-4" />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDelete(doc)}
-                    className="p-2 text-red-600 hover:text-red-700"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  {allowManage && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(doc)}
+                      className="p-2 text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
@@ -297,17 +298,21 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
             </div>
             <h3 className="font-medium mb-2">Nenhum documento anexado</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Adicione documentos relacionados ao projeto como plantas, contratos, fotos, etc.
+              {allowManage
+                ? 'Adicione documentos relacionados ao projeto como plantas, contratos, fotos, etc.'
+                : 'Nenhum documento disponível para este projeto no momento.'}
             </p>
-            <Button
-              variant="outline"
-              onClick={() => globalThis.document.getElementById('document-upload')?.click()}
-              disabled={uploading}
-              className="gap-2"
-            >
-              <Upload className="h-4 w-4" />
-              {uploading ? 'Enviando...' : 'Adicionar Primeiro Documento'}
-            </Button>
+            {allowManage && (
+              <Button
+                variant="outline"
+                onClick={() => globalThis.document.getElementById('document-upload')?.click()}
+                disabled={uploading}
+                className="gap-2"
+              >
+                <Upload className="h-4 w-4" />
+                {uploading ? 'Enviando...' : 'Adicionar Primeiro Documento'}
+              </Button>
+            )}
           </div>
         )}
       </CardContent>

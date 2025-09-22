@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
 import { toast } from "@/hooks/use-toast";
 import { PhaseTimerCard } from "./PhaseTimerCard";
+import { PhaseProjectDetailsDialog } from "./PhaseProjectDetailsDialog";
 
 interface UserPhase {
   id: string;
@@ -38,6 +39,8 @@ export function UserPhasesView() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [activeTimers, setActiveTimers] = useState<Set<string>>(new Set());
+  const [selectedPhase, setSelectedPhase] = useState<UserPhase | null>(null);
+  const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
 
   useEffect(() => {
     loadUserPhases();
@@ -136,6 +139,18 @@ export function UserPhasesView() {
   const handleHoursUpdate = () => {
     loadUserPhases();
     checkActiveTimers();
+  };
+
+  const handleViewProject = (phase: UserPhase) => {
+    setSelectedPhase(phase);
+    setIsProjectDialogOpen(true);
+  };
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setIsProjectDialogOpen(open);
+    if (!open) {
+      setSelectedPhase(null);
+    }
   };
 
   const filteredPhases = phases.filter(phase => {
@@ -251,9 +266,10 @@ export function UserPhasesView() {
           {filteredPhases.map((phase) => (
             <PhaseTimerCard
               key={phase.id}
-              phase={{...phase, assigned_to: phase.assigned_to || '', supervised_by: phase.supervised_by || ''}}
+              phase={{ ...phase, assigned_to: phase.assigned_to || '', supervised_by: phase.supervised_by || '' }}
               onHoursUpdate={handleHoursUpdate}
               showProjectTitle={true}
+              onViewProject={() => handleViewProject(phase)}
             />
           ))}
         </div>
@@ -278,6 +294,14 @@ export function UserPhasesView() {
           </CardContent>
         </Card>
       )}
+
+      <PhaseProjectDetailsDialog
+        open={isProjectDialogOpen}
+        onOpenChange={handleDialogOpenChange}
+        projectId={selectedPhase?.project?.id}
+        projectTitle={selectedPhase?.project?.title}
+        phaseName={selectedPhase?.phase_name}
+      />
     </div>
   );
 }
