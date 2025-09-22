@@ -4,17 +4,16 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import {
-  Play,
-  Square,
+import { 
+  Play, 
+  Square, 
   Timer,
   Clock,
   AlertTriangle,
   User,
   CheckCircle,
   DollarSign,
-  TrendingDown,
-  Eye
+  TrendingDown
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/state/auth";
@@ -42,10 +41,9 @@ interface PhaseTimerCardProps {
   phase: Phase;
   onHoursUpdate: () => void;
   showProjectTitle?: boolean;
-  onViewProject?: (phase: Phase) => void;
 }
 
-export function PhaseTimerCard({ phase, onHoursUpdate, showProjectTitle = false, onViewProject }: PhaseTimerCardProps) {
+export function PhaseTimerCard({ phase, onHoursUpdate, showProjectTitle = false }: PhaseTimerCardProps) {
   const { user } = useAuth();
   const [isRunning, setIsRunning] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -347,23 +345,10 @@ export function PhaseTimerCard({ phase, onHoursUpdate, showProjectTitle = false,
             )}
           </div>
           
-          <div className="flex items-center gap-2">
-            {phase.project?.id && onViewProject && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 gap-1"
-                onClick={() => onViewProject(phase)}
-              >
-                <Eye className="h-4 w-4" />
-                Visualizar
-              </Button>
-            )}
-            <Badge variant="outline" className={getStatusColor()}>
-              {getStatusIcon()}
-              <span className="ml-1">{getStatusLabel()}</span>
-            </Badge>
-          </div>
+          <Badge variant="outline" className={getStatusColor()}>
+            {getStatusIcon()}
+            <span className="ml-1">{getStatusLabel()}</span>
+          </Badge>
         </div>
 
         {/* Assigned user */}
