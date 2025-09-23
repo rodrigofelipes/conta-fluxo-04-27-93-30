@@ -83,16 +83,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
       const [incomesRes, clientsRes] = await Promise.all([
         supabase
           .from("client_financials")
-          .select(`
-            id,
-            description,
-            amount,
-            transaction_date,
-            status,
-            client_id,
-            created_at,
-            client:clients(id, name)
-          `)
+          .select("id, description, amount, transaction_date, status, client_id, created_at")
           .eq("transaction_type", "income")
           .order("transaction_date", { ascending: false }),
         supabase
@@ -104,19 +95,28 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
       if (incomesRes.error) throw incomesRes.error;
       if (clientsRes.error) throw clientsRes.error;
 
-      const normalizedIncomes: IncomeRecord[] = (incomesRes.data || []).map((income: any) => ({
-        id: String(income.id),
-        description: String(income.description),
-        amount: Number(income.amount) || 0,
-        transaction_date: String(income.transaction_date),
-        status: normalizeStatus(income.status),
-        client_id: income.client_id ? String(income.client_id) : null,
-        client_name: income.client?.name ? String(income.client?.name) : null,
-        created_at: String(income.created_at),
+      const clientOptions: ClientOption[] = (clientsRes.data ?? []).map((client: any) => ({
+        id: String(client.id),
+        name: String(client.name),
       }));
+      const clientMap = new Map(clientOptions.map(client => [client.id, client.name]));
+
+      const normalizedIncomes: IncomeRecord[] = (incomesRes.data || []).map((income: any) => {
+        const clientId = income.client_id ? String(income.client_id) : null;
+        return {
+          id: String(income.id),
+          description: String(income.description),
+          amount: Number(income.amount) || 0,
+          transaction_date: String(income.transaction_date),
+          status: normalizeStatus(income.status),
+          client_id: clientId,
+          client_name: clientId ? clientMap.get(clientId) ?? null : null,
+          created_at: String(income.created_at),
+        };
+      });
 
       setIncomes(normalizedIncomes);
-      setClients((clientsRes.data as ClientOption[]) || []);
+      setClients(clientOptions);
     } catch (error) {
       console.error("Erro ao carregar receitas:", error);
       toast({
