@@ -33,8 +33,9 @@ import { UnifiedFinancialTab } from "@/components/financial/UnifiedFinancialTab"
 import { ClientFinancialTab } from "@/components/financial/ClientFinancialTab";
 
 /** *********************************************
- *  FinancialCategoryManagement (embutido)
- *  - Corrigido para usar category_type no banco
+ *  FinancialCategoryManagement
+ *  - Usa category_type no banco
+ *  - Remove genéricos do supabase.from para evitar erros de tipo
  ********************************************* */
 const categorySchema = z.object({
   name: z.string().min(2, "Informe um nome com pelo menos 2 caracteres"),
@@ -43,19 +44,7 @@ const categorySchema = z.object({
 });
 type CategoryForm = z.infer<typeof categorySchema>;
 
-// Linha REAL do banco
-type CategoryRow = {
-  id: string;
-  name: string;
-  category_type: "income" | "expense";
-  parent_id: string | null;
-  is_active: boolean;
-  created_by?: string;
-  created_at: string;
-  updated_at?: string | null;
-};
-
-// Tipo de exibição (se quiser manter "type" no front)
+// Tipos usados no FRONT (exibição)
 type Category = {
   id: string;
   name: string;
@@ -78,21 +67,21 @@ function FinancialCategoryManagement() {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from<CategoryRow>("financial_categories")
+        .from("financial_categories")
         .select("id,name,category_type,parent_id,is_active,created_at")
         .order("category_type", { ascending: true })
         .order("name", { ascending: true });
 
       if (error) throw error;
 
-      // Mapeia category_type -> type (para uso no front)
-      const mapped: Category[] = (data ?? []).map((c) => ({
-        id: c.id,
-        name: c.name,
-        type: c.category_type,
-        parent_id: c.parent_id,
-        is_active: c.is_active,
-        created_at: c.created_at,
+      const rows = Array.isArray(data) ? data : [];
+      const mapped: Category[] = rows.map((c: any) => ({
+        id: String(c.id),
+        name: String(c.name),
+        type: c.category_type as "income" | "expense",
+        parent_id: c.parent_id ?? null,
+        is_active: Boolean(c.is_active),
+        created_at: String(c.created_at),
       }));
 
       setCategories(mapped);
@@ -122,19 +111,24 @@ function FinancialCategoryManagement() {
         return;
       }
 
-      // Payload alinhado com o esquema do banco (category_type + created_by)
-      const payload: Omit<CategoryRow, "id" | "created_at"> = {
+      // Payload alinhado com o schema do BANCO (category_type + created_by obrigatórios)
+      const payload: {
+        name: string;
+        category_type: "income" | "expense";
+        parent_id: string | null;
+        is_active: boolean;
+        created_by: string;
+      } = {
         name: values.name.trim(),
-        category_type: values.type,        // <--- coluna correta no banco
+        category_type: values.type,
         parent_id: values.parent_id || null,
         is_active: true,
-        created_by: user.id,               // remova se a coluna tiver DEFAULT auth.uid()
-        updated_at: null,
+        created_by: user.id,
       };
 
       const { data, error } = await supabase
         .from("financial_categories")
-        .insert(payload)
+        .insert([payload]) // <- envia como ARRAY para satisfazer a assinatura
         .select()
         .single();
 
@@ -295,9 +289,11 @@ function FinancialCategoryManagement() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Ativa</TableHead>
-                  <TableHead>Criada em</TableHead>
+                  <TableRow>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Ativa</TableHead>
+                    <TableHead>Criada em</TableHead>
+                  </TableRow>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -475,22 +471,22 @@ export default function Financeiro() {
       if (installmentsError) throw installmentsError;
 
       const clientMap = new Map<string, string>();
-      clientsData?.forEach(client => clientMap.set(client.id, client.name));
+      (clientsData ?? []).forEach(client => clientMap.set(client.id, client.name));
 
-      const processedTransactions = transactionsData?.map((t: any) => ({
+      const processedTransactions = (transactionsData ?? []).map((t: any) => ({
         ...t,
         client: clientMap.get(t.client_id) || undefined,
         transaction_type: t.transaction_type as "income" | "expense",
         transaction_category: t.transaction_category as "receivable" | "payable" | "project" | "fixed_expense" | "variable_expense",
         status: t.status as "pending" | "paid" | "overdue",
         recurrence_type: (t.recurrence_type || "none") as "none" | "monthly" | "quarterly" | "yearly"
-      })) || [];
+      }));
 
-      const processedInstallments = installmentsData?.map((i: any) => ({
+      const processedInstallments = (installmentsData ?? []).map((i: any) => ({
         ...i,
         client_name: clientMap.get(i.client_id) || 'Cliente não encontrado',
         status: i.status as 'pending' | 'paid' | 'overdue' | 'cancelled'
-      })) || [];
+      }));
 
       setTransactions(processedTransactions);
       setClients(clientsData || []);
