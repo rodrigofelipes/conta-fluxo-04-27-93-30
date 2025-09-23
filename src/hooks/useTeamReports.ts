@@ -215,7 +215,6 @@ export function useTeamReports() {
           if (profile) {
             const executedHours = phase.executed_hours || 0;
             const phaseEfficiency = Math.min(100, (allocatedHours / Math.max(executedHours, allocatedHours)) * 100);
-
             const currentEfficiency = efficiencyByUser.get(profile.user_id) || { total: 0, count: 0 };
             efficiencyByUser.set(profile.user_id, {
               total: currentEfficiency.total + phaseEfficiency,
