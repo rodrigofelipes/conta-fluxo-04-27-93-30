@@ -82,6 +82,7 @@ export default function Projects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -94,9 +95,13 @@ export default function Projects() {
     }
   }, [user?.role, navigate]);
 
-  const loadProjects = async () => {
+  const loadProjects = async ({ background = false }: { background?: boolean } = {}) => {
+    const shouldShowSkeleton = isInitialLoading && !background;
+
     try {
-      setLoading(true);
+      if (shouldShowSkeleton) {
+        setLoading(true);
+      }
 
       // Buscar apenas projetos em andamento ou em obra
       const { data: projectsData, error: projectsError } = await supabase
@@ -174,17 +179,20 @@ export default function Projects() {
         variant: "destructive"
       });
     } finally {
-      setLoading(false);
+      if (shouldShowSkeleton) {
+        setLoading(false);
+      }
+      setIsInitialLoading(false);
     }
   };
 
   useEffect(() => {
     if (user?.role !== 'user') {
       loadProjects();
-      
+
       // Atualizar a cada 30 segundos
-      const interval = setInterval(loadProjects, 30000);
-      
+      const interval = setInterval(() => loadProjects({ background: true }), 30000);
+
       return () => clearInterval(interval);
     }
   }, [user?.role]);
@@ -221,11 +229,11 @@ export default function Projects() {
   
   const projectsWithTimers = projects.filter(p => p.has_active_timer);
 
-  if (loading) {
+  if (loading && isInitialLoading) {
     return (
       <div className="space-y-6">
-        <PageHeader 
-          title="Projetos" 
+        <PageHeader
+          title="Projetos"
           subtitle="Carregando..." 
         />
         <div className="grid gap-4">
