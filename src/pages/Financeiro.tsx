@@ -520,11 +520,10 @@ export default function Financeiro() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="grid w-full grid-flow-col auto-cols-fr gap-2">
           <TabsTrigger value="overview">Visão Geral</TabsTrigger>
           <TabsTrigger value="unified">Contas e Parcelas</TabsTrigger>
           <TabsTrigger value="clients">Clientes</TabsTrigger>
-          <TabsTrigger value="horas">Relatório de Horas</TabsTrigger>
           <TabsTrigger value="fluxo">Fluxo de Caixa</TabsTrigger>
           <TabsTrigger value="relatorios">Relatórios</TabsTrigger>
           <TabsTrigger value="cadastro">Cadastro</TabsTrigger>
@@ -670,72 +669,6 @@ export default function Financeiro() {
           <ClientFinancialTab />
         </TabsContent>
 
-        {/* Horas */}
-        <TabsContent value="horas" className="space-y-6">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">Relatório de Horas por Colaborador</h3>
-            <div className="flex gap-2">
-              <Select value={format(selectedMonth, "yyyy-MM")}>
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={format(new Date(), "yyyy-MM")}>
-                    {format(new Date(), "MMMM yyyy", { locale: ptBR })}
-                  </SelectItem>
-                  <SelectItem value={format(subMonths(new Date(), 1), "yyyy-MM")}>
-                    {format(subMonths(new Date(), 1), "MMMM yyyy", { locale: ptBR })}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <Button variant="outline">
-                <Download className="w-4 h-4 mr-2" />
-                Exportar
-              </Button>
-            </div>
-          </div>
-
-          <Card>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Colaborador</TableHead>
-                  <TableHead>Horas/Semana</TableHead>
-                  <TableHead>Horas/Mês</TableHead>
-                  <TableHead>Valor/Hora</TableHead>
-                  <TableHead className="text-right">Total Mensal</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {horasColaboradores.map((colaborador) => (
-                  <TableRow key={colaborador.id}>
-                    <TableCell className="font-medium">{colaborador.nome}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Timer className="w-4 h-4 text-muted-foreground" />
-                        {colaborador.horas_semana}h
-                      </div>
-                    </TableCell>
-                    <TableCell>{colaborador.horas_mes}h</TableCell>
-                    <TableCell>{formatCurrency(colaborador.valor_hora)}</TableCell>
-                    <TableCell className="text-right font-semibold">
-                      {formatCurrency(colaborador.total_mes)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {horasColaboradores.length > 0 && (
-                  <TableRow className="border-t-2">
-                    <TableCell colSpan={4} className="font-semibold">Total Geral</TableCell>
-                    <TableCell className="text-right font-bold text-lg">
-                      {formatCurrency(horasColaboradores.reduce((acc, c) => acc + c.total_mes, 0))}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </Card>
-        </TabsContent>
-
         {/* Fluxo */}
         <TabsContent value="fluxo">
           <Card>
@@ -750,7 +683,7 @@ export default function Financeiro() {
         </TabsContent>
 
         {/* Relatórios */}
-        <TabsContent value="relatorios">
+        <TabsContent value="relatorios" className="space-y-6">
           <Card>
             <CardContent className="py-8 text-center">
               <BarChart3 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
@@ -758,6 +691,78 @@ export default function Financeiro() {
               <p className="text-muted-foreground">
                 Relatórios mensais e anuais em desenvolvimento
               </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <CardTitle>Relatório de Horas por Colaborador</CardTitle>
+              <div className="flex gap-2">
+                <Select
+                  value={format(selectedMonth, "yyyy-MM")}
+                  onValueChange={(value) => {
+                    const [year, month] = value.split("-").map(Number);
+                    if (!Number.isNaN(year) && !Number.isNaN(month)) {
+                      setSelectedMonth(new Date(year, month - 1, 1));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={format(new Date(), "yyyy-MM")}>
+                      {format(new Date(), "MMMM yyyy", { locale: ptBR })}
+                    </SelectItem>
+                    <SelectItem value={format(subMonths(new Date(), 1), "yyyy-MM")}>
+                      {format(subMonths(new Date(), 1), "MMMM yyyy", { locale: ptBR })}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline">
+                  <Download className="w-4 h-4 mr-2" />
+                  Exportar
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Colaborador</TableHead>
+                    <TableHead>Horas/Semana</TableHead>
+                    <TableHead>Horas/Mês</TableHead>
+                    <TableHead>Valor/Hora</TableHead>
+                    <TableHead className="text-right">Total Mensal</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {horasColaboradores.map((colaborador) => (
+                    <TableRow key={colaborador.id}>
+                      <TableCell className="font-medium">{colaborador.nome}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Timer className="w-4 h-4 text-muted-foreground" />
+                          {colaborador.horas_semana}h
+                        </div>
+                      </TableCell>
+                      <TableCell>{colaborador.horas_mes}h</TableCell>
+                      <TableCell>{formatCurrency(colaborador.valor_hora)}</TableCell>
+                      <TableCell className="text-right font-semibold">
+                        {formatCurrency(colaborador.total_mes)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {horasColaboradores.length > 0 && (
+                    <TableRow className="border-t-2">
+                      <TableCell colSpan={4} className="font-semibold">Total Geral</TableCell>
+                      <TableCell className="text-right font-bold text-lg">
+                        {formatCurrency(horasColaboradores.reduce((acc, c) => acc + c.total_mes, 0))}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </TabsContent>
