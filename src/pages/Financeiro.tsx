@@ -34,8 +34,7 @@ import { ClientFinancialTab } from "@/components/financial/ClientFinancialTab";
 
 /** *********************************************
  *  FinancialCategoryManagement (embutido)
- *  - Criação de categoria (name, type, parent)
- *  - Lista categorias por tipo
+ *  - Corrigido para usar category_type no banco
  ********************************************* */
 const categorySchema = z.object({
   name: z.string().min(2, "Informe um nome com pelo menos 2 caracteres"),
@@ -44,6 +43,19 @@ const categorySchema = z.object({
 });
 type CategoryForm = z.infer<typeof categorySchema>;
 
+// Linha REAL do banco
+type CategoryRow = {
+  id: string;
+  name: string;
+  category_type: "income" | "expense";
+  parent_id: string | null;
+  is_active: boolean;
+  created_by?: string;
+  created_at: string;
+  updated_at?: string | null;
+};
+
+// Tipo de exibição (se quiser manter "type" no front)
 type Category = {
   id: string;
   name: string;
@@ -66,13 +78,24 @@ function FinancialCategoryManagement() {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from("financial_categories")
-        .select("id,name,type,parent_id,is_active,created_at")
-        .order("type", { ascending: true })
+        .from<CategoryRow>("financial_categories")
+        .select("id,name,category_type,parent_id,is_active,created_at")
+        .order("category_type", { ascending: true })
         .order("name", { ascending: true });
 
       if (error) throw error;
-      setCategories(data || []);
+
+      // Mapeia category_type -> type (para uso no front)
+      const mapped: Category[] = (data ?? []).map((c) => ({
+        id: c.id,
+        name: c.name,
+        type: c.category_type,
+        parent_id: c.parent_id,
+        is_active: c.is_active,
+        created_at: c.created_at,
+      }));
+
+      setCategories(mapped);
     } catch (err) {
       console.error("Erro ao carregar categorias:", err);
       toast({
@@ -99,14 +122,14 @@ function FinancialCategoryManagement() {
         return;
       }
 
-      const payload: Partial<Category> & { created_by?: string } = {
+      // Payload alinhado com o esquema do banco (category_type + created_by)
+      const payload: Omit<CategoryRow, "id" | "created_at"> = {
         name: values.name.trim(),
-        type: values.type,
+        category_type: values.type,        // <--- coluna correta no banco
         parent_id: values.parent_id || null,
         is_active: true,
-        // Se sua tabela tem default auth.uid() em created_by, pode remover a linha abaixo
-        // e a coluna created_by do insert:
-        // created_by: user.id
+        created_by: user.id,               // remova se a coluna tiver DEFAULT auth.uid()
+        updated_at: null,
       };
 
       const { data, error } = await supabase
@@ -581,7 +604,7 @@ export default function Financeiro() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        {/* Cadastro movido para o FINAL e removida a aba 'contas' sem trigger */}
+        {/* Cadastro por último */}
         <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="overview">Visão Geral</TabsTrigger>
           <TabsTrigger value="unified">Contas e Parcelas</TabsTrigger>
