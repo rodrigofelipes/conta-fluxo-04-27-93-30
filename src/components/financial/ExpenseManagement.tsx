@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Plus, DollarSign, Calendar, Tag, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
@@ -17,6 +18,12 @@ interface FinancialCategory {
   category_type: 'previsao_custo' | 'variavel' | 'fixo';
   parent_id?: string;
 }
+
+const CATEGORY_LABELS: Record<FinancialCategory['category_type'], string> = {
+  previsao_custo: 'Previsão de Custo',
+  variavel: 'Variável',
+  fixo: 'Fixo',
+};
 
 interface Expense {
   id: string;
@@ -37,6 +44,7 @@ export function ExpenseManagement() {
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
+  const [savingExpense, setSavingExpense] = useState(false);
 
   const [expenseForm, setExpenseForm] = useState({
     description: "",
@@ -45,7 +53,9 @@ export function ExpenseManagement() {
     category_id: "",
     payment_method: "",
     status: "pending" as const,
-    recurrence_type: "none" as const
+    recurrence_type: "none" as const,
+    isInstallment: false,
+    installmentCount: "1"
   });
 
   const [categoryForm, setCategoryForm] = useState({
@@ -134,34 +144,104 @@ export function ExpenseManagement() {
   };
 
   const createExpense = async () => {
-    if (!expenseForm.description.trim() || !expenseForm.amount) {
+    if (savingExpense) return;
+
+    const parseAmount = (value: string) => {
+      if (!value) return NaN;
+      const normalized = value.replace(/\./g, '').replace(',', '.');
+      return Number(normalized);
+    };
+
+    const amountValue = parseAmount(expenseForm.amount);
+
+    if (!expenseForm.description.trim() || Number.isNaN(amountValue) || amountValue <= 0) {
       toast({
         title: "Erro",
-        description: "Descrição e valor são obrigatórios.",
+        description: "Informe uma descrição e um valor válido.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!user?.id) {
+      toast({
+        title: "Sessão expirada",
+        description: "Faça login novamente para cadastrar despesas.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const baseDate = new Date(expenseForm.expense_date);
+    if (Number.isNaN(baseDate.getTime())) {
+      toast({
+        title: "Erro",
+        description: "Informe uma data válida.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const installmentCount = expenseForm.isInstallment ? parseInt(expenseForm.installmentCount, 10) : 1;
+    if (expenseForm.isInstallment && (!installmentCount || installmentCount < 1)) {
+      toast({
+        title: "Erro",
+        description: "Informe um número válido de parcelas.",
         variant: "destructive"
       });
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from('expenses')
-        .insert({
+      setSavingExpense(true);
+
+      const entries: Array<Record<string, any>> = [];
+
+      if (expenseForm.isInstallment && installmentCount > 1) {
+        const totalInCents = Math.round(amountValue * 100);
+        const baseAmountInCents = Math.floor(totalInCents / installmentCount);
+        const remainder = totalInCents % installmentCount;
+
+        for (let i = 0; i < installmentCount; i++) {
+          const amountInCents = baseAmountInCents + (i < remainder ? 1 : 0);
+          const dueDate = new Date(baseDate);
+          dueDate.setMonth(dueDate.getMonth() + i);
+
+          entries.push({
+            description: `${expenseForm.description} (Parcela ${i + 1}/${installmentCount})`,
+            amount: amountInCents / 100,
+            expense_date: dueDate.toISOString().split('T')[0],
+            category_id: expenseForm.category_id || null,
+            payment_method: expenseForm.payment_method || null,
+            status: expenseForm.status,
+            recurrence_type: 'monthly',
+            created_by: user.id
+          });
+        }
+      } else {
+        entries.push({
           description: expenseForm.description,
-          amount: parseFloat(expenseForm.amount),
+          amount: amountValue,
           expense_date: expenseForm.expense_date,
           category_id: expenseForm.category_id || null,
           payment_method: expenseForm.payment_method || null,
           status: expenseForm.status,
           recurrence_type: expenseForm.recurrence_type,
-          created_by: user?.id
+          created_by: user.id
         });
+      }
+
+      const { error } = await supabase
+        .from('expenses')
+        .insert(entries);
 
       if (error) throw error;
 
       toast({
         title: "Sucesso",
-        description: "Despesa criada com sucesso!"
+        description: expenseForm.isInstallment && installmentCount > 1
+          ? `${installmentCount} parcelas criadas com sucesso!`
+          : "Despesa criada com sucesso!"
       });
 
       setExpenseForm({
@@ -171,7 +251,9 @@ export function ExpenseManagement() {
         category_id: "",
         payment_method: "",
         status: "pending",
-        recurrence_type: "none"
+        recurrence_type: "none",
+        isInstallment: false,
+        installmentCount: "1"
       });
       setCreateDialogOpen(false);
       fetchData();
@@ -182,6 +264,8 @@ export function ExpenseManagement() {
         description: "Não foi possível criar a despesa.",
         variant: "destructive"
       });
+    } finally {
+      setSavingExpense(false);
     }
   };
 
@@ -255,6 +339,31 @@ export function ExpenseManagement() {
 
   const totalPending = expenses.filter(e => e.status === 'pending').reduce((sum, e) => sum + e.amount, 0);
   const totalPaid = expenses.filter(e => e.status === 'paid').reduce((sum, e) => sum + e.amount, 0);
+  const installmentCountNumber = parseInt(expenseForm.installmentCount, 10);
+  const normalizedAmountPreview = expenseForm.amount
+    ? Number(expenseForm.amount.replace(/\./g, '').replace(',', '.'))
+    : NaN;
+  const showInstallmentPreview =
+    expenseForm.isInstallment &&
+    installmentCountNumber > 1 &&
+    !Number.isNaN(normalizedAmountPreview) &&
+    normalizedAmountPreview > 0;
+
+  const perInstallment = showInstallmentPreview
+    ? normalizedAmountPreview / installmentCountNumber
+    : 0;
+
+  const firstInstallmentDate = (() => {
+    const date = new Date(expenseForm.expense_date);
+    return Number.isNaN(date.getTime()) ? null : date;
+  })();
+
+  const lastInstallmentDate = (() => {
+    if (!firstInstallmentDate || !showInstallmentPreview) return null;
+    const last = new Date(firstInstallmentDate);
+    last.setMonth(last.getMonth() + installmentCountNumber - 1);
+    return last;
+  })();
 
   if (loading) {
     return (
@@ -337,26 +446,72 @@ export function ExpenseManagement() {
                   placeholder="Descrição da despesa"
                 />
               </div>
-              <div>
-                <Label htmlFor="amount">Valor</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  step="0.01"
-                  value={expenseForm.amount}
-                  onChange={(e) => setExpenseForm(prev => ({ ...prev, amount: e.target.value }))}
-                  placeholder="0,00"
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="amount">Valor</Label>
+                  <Input
+                    id="amount"
+                    type="number"
+                    step="0.01"
+                    value={expenseForm.amount}
+                    onChange={(e) => setExpenseForm(prev => ({ ...prev, amount: e.target.value }))}
+                    placeholder="0,00"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="expense_date">Data / Primeiro vencimento</Label>
+                  <Input
+                    id="expense_date"
+                    type="date"
+                    value={expenseForm.expense_date}
+                    onChange={(e) => setExpenseForm(prev => ({ ...prev, expense_date: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="rounded-lg border bg-muted/50 p-3 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium">Pagamento parcelado</p>
+                  <p className="text-xs text-muted-foreground">
+                    Habilite para dividir o valor em parcelas mensais automáticas.
+                  </p>
+                </div>
+                <Switch
+                  checked={expenseForm.isInstallment}
+                  onCheckedChange={(checked) =>
+                    setExpenseForm(prev => ({
+                      ...prev,
+                      isInstallment: checked,
+                      installmentCount: checked
+                        ? (prev.installmentCount === "1" ? "2" : prev.installmentCount)
+                        : "1",
+                    }))
+                  }
                 />
               </div>
-              <div>
-                <Label htmlFor="expense_date">Data</Label>
-                <Input
-                  id="expense_date"
-                  type="date"
-                  value={expenseForm.expense_date}
-                  onChange={(e) => setExpenseForm(prev => ({ ...prev, expense_date: e.target.value }))}
-                />
-              </div>
+              {expenseForm.isInstallment && (
+                <div>
+                  <Label htmlFor="installment_count">Número de Parcelas</Label>
+                  <Input
+                    id="installment_count"
+                    type="number"
+                    min={1}
+                    value={expenseForm.installmentCount}
+                    onChange={(e) => setExpenseForm(prev => ({ ...prev, installmentCount: e.target.value }))}
+                    placeholder="2"
+                  />
+                </div>
+              )}
+              {showInstallmentPreview && firstInstallmentDate && lastInstallmentDate && (
+                <div className="text-xs text-muted-foreground rounded-md border bg-muted/40 p-3">
+                  <p>
+                    Serão criadas <span className="font-medium text-foreground">{installmentCountNumber} parcelas</span> de
+                    <span className="font-medium text-foreground"> R$ {perInstallment.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>.
+                  </p>
+                  <p>
+                    Vencimentos de {firstInstallmentDate.toLocaleDateString('pt-BR')} até {lastInstallmentDate.toLocaleDateString('pt-BR')}.
+                  </p>
+                </div>
+              )}
               <div>
                 <Label htmlFor="category">Categoria</Label>
                 <Select value={expenseForm.category_id} onValueChange={(value) => setExpenseForm(prev => ({ ...prev, category_id: value }))}>
@@ -366,7 +521,7 @@ export function ExpenseManagement() {
                   <SelectContent>
                     {categories.map((category) => (
                       <SelectItem key={category.id} value={category.id}>
-                        {category.name} ({category.category_type})
+                        {category.name} ({CATEGORY_LABELS[category.category_type]})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -389,8 +544,8 @@ export function ExpenseManagement() {
                 </Select>
               </div>
               <div className="flex gap-2">
-                <Button onClick={createExpense} className="flex-1">
-                  Criar Despesa
+                <Button onClick={createExpense} className="flex-1" disabled={savingExpense}>
+                  {savingExpense ? "Criando..." : "Criar Despesa"}
                 </Button>
               </div>
             </div>
@@ -452,9 +607,12 @@ export function ExpenseManagement() {
                   <div className="flex items-center gap-2 mb-2">
                     <h4 className="font-medium">{expense.description}</h4>
                     <Badge variant={getStatusBadgeVariant(expense.status)}>
-                      {expense.status === 'pending' ? 'Pendente' : 
+                      {expense.status === 'pending' ? 'Pendente' :
                        expense.status === 'paid' ? 'Pago' : 'Cancelado'}
                     </Badge>
+                    {expense.recurrence_type === 'monthly' && (
+                      <Badge variant="outline">Parcelado</Badge>
+                    )}
                     {expense.category && (
                       <Badge variant={getCategoryTypeBadgeVariant(expense.category.category_type)}>
                         {expense.category.name}
