@@ -29,6 +29,7 @@ import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { UnifiedFinancialTab } from "@/components/financial/UnifiedFinancialTab";
 import { ClientFinancialTab } from "@/components/financial/ClientFinancialTab";
+import { ExpenseManagement } from "@/components/financial/ExpenseManagement";
 
 /** *********************************************
  *  FinancialCategoryManagement
@@ -805,7 +806,8 @@ export default function Financeiro() {
         </TabsContent>
 
         {/* Cadastro — por último */}
-        <TabsContent value="cadastro">
+        <TabsContent value="cadastro" className="space-y-6">
+          <ExpenseManagement />
           <FinancialCategoryManagement />
         </TabsContent>
       </Tabs>
