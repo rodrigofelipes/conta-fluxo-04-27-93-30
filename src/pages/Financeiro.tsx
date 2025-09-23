@@ -9,18 +9,16 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { 
-  DollarSign, 
-  TrendingUp, 
+import {
+  DollarSign,
+  TrendingUp,
   TrendingDown,
   Plus,
   Eye,
   Download,
   AlertCircle,
   Timer,
-  BarChart3,
-  CheckCircle2,
-  XCircle
+  BarChart3
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -37,7 +35,7 @@ import { ClientFinancialTab } from "@/components/financial/ClientFinancialTab";
  ********************************************* */
 const categorySchema = z.object({
   name: z.string().min(2, "Informe um nome com pelo menos 2 caracteres"),
-  type: z.enum(["income", "expense"], { required_error: "Selecione o tipo" }),
+  type: z.enum(["previsao_custo", "variavel", "fixo"], { required_error: "Selecione o tipo" }),
   parent_id: z.string().optional().nullable()
 });
 type CategoryForm = z.infer<typeof categorySchema>;
@@ -45,16 +43,16 @@ type CategoryForm = z.infer<typeof categorySchema>;
 type Category = {
   id: string;
   name: string;
-  type: "income" | "expense";
+  type: "previsao_custo" | "variavel" | "fixo";
   parent_id: string | null;
-  is_active: boolean;
   created_at: string;
+  updated_at: string | null;
 };
 
 function FinancialCategoryManagement() {
   const form = useForm<CategoryForm>({
     resolver: zodResolver(categorySchema),
-    defaultValues: { name: "", type: "expense", parent_id: null }
+    defaultValues: { name: "", type: "previsao_custo", parent_id: null }
   });
 
   const [loading, setLoading] = useState(false);
@@ -65,7 +63,7 @@ function FinancialCategoryManagement() {
       setLoading(true);
       const { data, error } = await supabase
         .from("financial_categories")
-        .select("id,name,category_type,parent_id,is_active,created_at")
+        .select("id,name,category_type,parent_id,created_at,updated_at")
         .order("category_type", { ascending: true })
         .order("name", { ascending: true });
 
@@ -75,10 +73,10 @@ function FinancialCategoryManagement() {
       const mapped: Category[] = rows.map((c: any) => ({
         id: String(c.id),
         name: String(c.name),
-        type: c.category_type as "income" | "expense",
+        type: c.category_type as Category["type"],
         parent_id: c.parent_id ?? null,
-        is_active: Boolean(c.is_active),
         created_at: String(c.created_at),
+        updated_at: c.updated_at ? String(c.updated_at) : null,
       }));
 
       setCategories(mapped);
@@ -110,9 +108,8 @@ function FinancialCategoryManagement() {
 
       const payload = [{
         name: values.name.trim(),
-        category_type: values.type as "income" | "expense",
+        category_type: values.type,
         parent_id: values.parent_id || null,
-        is_active: true,
         created_by: user.id, // remova se tiver DEFAULT auth.uid()
       }];
 
@@ -145,8 +142,30 @@ function FinancialCategoryManagement() {
     }
   };
 
-  const incomeCats = categories.filter(c => c.type === "income");
-  const expenseCats = categories.filter(c => c.type === "expense");
+  const typeLabels: Record<Category["type"], string> = {
+    previsao_custo: "Previsão de Custo",
+    variavel: "Variável",
+    fixo: "Fixo",
+  };
+
+  const groupedCategories: { type: Category["type"]; items: Category[] }[] = [
+    { type: "previsao_custo", items: categories.filter(c => c.type === "previsao_custo") },
+    { type: "variavel", items: categories.filter(c => c.type === "variavel") },
+    { type: "fixo", items: categories.filter(c => c.type === "fixo") },
+  ];
+
+  const getParentName = (category: Category) => {
+    if (!category.parent_id) return "—";
+    const parent = categories.find(cat => cat.id === category.parent_id);
+    return parent?.name ?? "—";
+  };
+
+  const formatDate = (value: string | null) => {
+    if (!value) return "—";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "—";
+    return format(parsed, "dd/MM/yyyy");
+  };
 
   return (
     <div className="space-y-6">
@@ -183,8 +202,9 @@ function FinancialCategoryManagement() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="income">Receita</SelectItem>
-                        <SelectItem value="expense">Despesa</SelectItem>
+                        <SelectItem value="previsao_custo">Previsão de Custo</SelectItem>
+                        <SelectItem value="variavel">Variável</SelectItem>
+                        <SelectItem value="fixo">Fixo</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -195,7 +215,8 @@ function FinancialCategoryManagement() {
                 control={form.control}
                 name="parent_id"
                 render={({ field }) => {
-                  const list = form.watch("type") === "income" ? incomeCats : expenseCats;
+                  const selectedType = form.watch("type");
+                  const list = categories.filter(cat => cat.type === selectedType);
                   return (
                     <FormItem>
                       <FormLabel>Categoria Pai (opcional)</FormLabel>
@@ -205,12 +226,12 @@ function FinancialCategoryManagement() {
                         onValueChange={(v) => field.onChange(v === "none" ? null : v)}
                       >
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Sem pai" />
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sem categoria pai" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="none">Sem pai</SelectItem>
+                          <SelectItem value="none">Sem categoria pai</SelectItem>
                           {list.map(cat => (
                             <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                           ))}
@@ -232,84 +253,41 @@ function FinancialCategoryManagement() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Categorias de Receita</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Ativa</TableHead>
-                  <TableHead>Criada em</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {incomeCats.map((cat) => (
-                  <TableRow key={cat.id}>
-                    <TableCell className="font-medium">{cat.name}</TableCell>
-                    <TableCell>
-                      {cat.is_active ? (
-                        <span className="inline-flex items-center gap-1 text-green-600">
-                          <CheckCircle2 className="w-4 h-4" /> Ativa
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-red-600">
-                          <XCircle className="w-4 h-4" /> Inativa
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>{format(new Date(cat.created_at), "dd/MM/yyyy")}</TableCell>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {groupedCategories.map(({ type, items }) => (
+          <Card key={type}>
+            <CardHeader>
+              <CardTitle>{`Categorias - ${typeLabels[type]}`}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Categoria Pai</TableHead>
+                    <TableHead>Criada em</TableHead>
                   </TableRow>
-                ))}
-                {incomeCats.length === 0 && (
-                  <TableRow><TableCell colSpan={3} className="text-muted-foreground">Nenhuma categoria de receita.</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Categorias de Despesa</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Ativa</TableHead>
-                  <TableHead>Criada em</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {expenseCats.map((cat) => (
-                  <TableRow key={cat.id}>
-                    <TableCell className="font-medium">{cat.name}</TableCell>
-                    <TableCell>
-                      {cat.is_active ? (
-                        <span className="inline-flex items-center gap-1 text-green-600">
-                          <CheckCircle2 className="w-4 h-4" /> Ativa
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-red-600">
-                          <XCircle className="w-4 h-4" /> Inativa
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>{format(new Date(cat.created_at), "dd/MM/yyyy")}</TableCell>
-                  </TableRow>
-                ))}
-                {expenseCats.length === 0 && (
-                  <TableRow><TableCell colSpan={3} className="text-muted-foreground">Nenhuma categoria de despesa.</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                </TableHeader>
+                <TableBody>
+                  {items.map((cat) => (
+                    <TableRow key={cat.id}>
+                      <TableCell className="font-medium">{cat.name}</TableCell>
+                      <TableCell>{getParentName(cat)}</TableCell>
+                      <TableCell>{formatDate(cat.created_at)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {items.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-muted-foreground">
+                        Nenhuma categoria cadastrada.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        ))}
       </div>
     </div>
   );
