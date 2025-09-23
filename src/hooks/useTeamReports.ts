@@ -31,6 +31,24 @@ export interface TeamStats {
   totalMeetings: number;
 }
 
+interface PhaseData {
+  id: string;
+  assigned_to: string | null;
+  supervised_by: string | null;
+  allocated_hours: number | null;
+  executed_hours: number | null;
+  status: string | null;
+}
+
+interface TimeEntryData {
+  user_id: string;
+  start_time: string;
+  end_time: string | null;
+  duration_minutes: number | null;
+  project_id: string | null;
+  phase_id: string | null;
+}
+
 export function useTeamReports() {
   const [teamStats, setTeamStats] = useState<TeamStats>({
     totalMembers: 0,
@@ -67,9 +85,6 @@ export function useTeamReports() {
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
       
-      const fourWeeksAgo = new Date();
-      fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
-
       // Executar queries em paralelo para melhor performance
       console.log('About to execute queries...');
       const [
@@ -88,11 +103,10 @@ export function useTeamReports() {
           .select('id, user_id, name, email, role, created_at')
           .neq('role', 'admin'),
 
-        // Buscar time entries das últimas 4 semanas
+        // Buscar time entries alinhadas com o horizonte utilizado nas fases
         supabase
           .from('time_entries')
           .select('user_id, start_time, end_time, duration_minutes, project_id, phase_id')
-          .gte('start_time', fourWeeksAgo.toISOString())
           .not('end_time', 'is', null),
 
         // Buscar timers ativos
@@ -110,7 +124,7 @@ export function useTeamReports() {
         // Buscar todas as fases para cálculo de eficiência
         supabase
           .from('project_phases')
-          .select('assigned_to, supervised_by, allocated_hours, executed_hours, status'),
+          .select('id, assigned_to, supervised_by, allocated_hours, executed_hours, status'),
 
         // Buscar documentos de projetos
         supabase
@@ -141,17 +155,20 @@ export function useTeamReports() {
       if (clientDocumentsResult.error) throw clientDocumentsResult.error;
 
       const profiles = profilesResult.data || [];
-      const timeEntries = timeEntriesResult.data || [];
+      const timeEntries = (timeEntriesResult.data || []) as TimeEntryData[];
       const activeTimers = activeTimersResult.data || [];
       const completedPhases = completedPhasesResult.data || [];
-      const allPhases = allPhasesResult.data || [];
-      const relevantPhases = allPhases.filter(phase => {
-        const executedHours = phase.executed_hours ?? 0;
-        return phase.status === 'completed' || executedHours > 0;
-      });
+      const allPhases = (allPhasesResult.data || []) as PhaseData[];
       const projectDocuments = documentsResult.data || [];
       const meetings = meetingsResult.data || [];
       const clientDocuments = clientDocumentsResult.data || [];
+
+      const relevantPhaseIds = new Set(
+        allPhases
+          .filter(phase => (phase.allocated_hours || 0) > 0)
+          .map(phase => phase.id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      );
 
       // Criar mapa de usuários ativos
       const activeUserIds = new Set(activeTimers.map(timer => timer.user_id));
@@ -191,19 +208,13 @@ export function useTeamReports() {
 
       // Calcular eficiência por usuário (baseado em horas planejadas vs executadas)
       const efficiencyByUser = new Map<string, { total: number; count: number }>();
-      relevantPhases.forEach(phase => {
-        if (phase.assigned_to && phase.allocated_hours > 0) {
+      allPhases.forEach(phase => {
+        const allocatedHours = phase.allocated_hours || 0;
+        if (phase.assigned_to && allocatedHours > 0) {
           const profile = profiles.find(p => p.id === phase.assigned_to);
           if (profile) {
-            const executedHours = phase.executed_hours ?? 0;
-            if (executedHours <= 0) {
-              return;
-            }
-
-            const allocatedHours = phase.allocated_hours;
-            const rawEfficiency = (allocatedHours / executedHours) * 100;
-            const phaseEfficiency = Math.min(100, rawEfficiency);
-
+            const executedHours = phase.executed_hours || 0;
+            const phaseEfficiency = Math.min(100, (allocatedHours / Math.max(executedHours, allocatedHours)) * 100);
             const currentEfficiency = efficiencyByUser.get(profile.user_id) || { total: 0, count: 0 };
             efficiencyByUser.set(profile.user_id, {
               total: currentEfficiency.total + phaseEfficiency,
@@ -258,6 +269,10 @@ export function useTeamReports() {
 
       // Processar time entries
       timeEntries.forEach(entry => {
+        if (!entry.phase_id || !relevantPhaseIds.has(entry.phase_id)) {
+          return;
+        }
+
         const stats = userStats.get(entry.user_id);
         if (!stats) return;
 
@@ -347,6 +362,10 @@ export function useTeamReports() {
         
         // Calcular horas reais do dia
         const dayHours = timeEntries.reduce((sum, entry) => {
+          if (!entry.phase_id || !relevantPhaseIds.has(entry.phase_id)) {
+            return sum;
+          }
+
           const entryDate = new Date(entry.start_time);
           if (entryDate >= date && entryDate < nextDate) {
             return sum + ((entry.duration_minutes || 0) / 60);
