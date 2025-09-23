@@ -36,8 +36,7 @@ import { ExpenseManagement } from "@/components/financial/ExpenseManagement";
  ********************************************* */
 const categorySchema = z.object({
   name: z.string().min(2, "Informe um nome com pelo menos 2 caracteres"),
-  type: z.enum(["previsao_custo", "variavel", "fixo"], { required_error: "Selecione o tipo" }),
-  parent_id: z.string().optional().nullable()
+  type: z.enum(["previsao_custo", "variavel", "fixo"], { required_error: "Selecione o tipo" })
 });
 type CategoryForm = z.infer<typeof categorySchema>;
 
@@ -45,7 +44,6 @@ type Category = {
   id: string;
   name: string;
   type: "previsao_custo" | "variavel" | "fixo";
-  parent_id: string | null;
   created_at: string;
   updated_at: string | null;
 };
@@ -53,7 +51,7 @@ type Category = {
 function FinancialCategoryManagement() {
   const form = useForm<CategoryForm>({
     resolver: zodResolver(categorySchema),
-    defaultValues: { name: "", type: "previsao_custo", parent_id: null }
+    defaultValues: { name: "", type: "previsao_custo" }
   });
 
   const [loading, setLoading] = useState(false);
@@ -75,7 +73,6 @@ function FinancialCategoryManagement() {
         id: String(c.id),
         name: String(c.name),
         type: c.category_type as Category["type"],
-        parent_id: c.parent_id ?? null,
         created_at: String(c.created_at),
         updated_at: c.updated_at ? String(c.updated_at) : null,
       }));
@@ -110,7 +107,6 @@ function FinancialCategoryManagement() {
       const payload = [{
         name: values.name.trim(),
         category_type: values.type,
-        parent_id: values.parent_id || null,
         created_by: user.id, // remova se tiver DEFAULT auth.uid()
       }];
 
@@ -127,7 +123,7 @@ function FinancialCategoryManagement() {
         description: `“${data.name}” foi adicionada.`,
       });
 
-      form.reset({ name: "", type: values.type, parent_id: null });
+      form.reset({ name: "", type: values.type });
       loadCategories();
     } catch (err: any) {
       const msg =
@@ -155,12 +151,6 @@ function FinancialCategoryManagement() {
     { type: "fixo", items: categories.filter(c => c.type === "fixo") },
   ];
 
-  const getParentName = (category: Category) => {
-    if (!category.parent_id) return "—";
-    const parent = categories.find(cat => cat.id === category.parent_id);
-    return parent?.name ?? "—";
-  };
-
   const formatDate = (value: string | null) => {
     if (!value) return "—";
     const parsed = new Date(value);
@@ -176,7 +166,7 @@ function FinancialCategoryManagement() {
         </CardHeader>
         <CardContent>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onCreateCategory)} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <form onSubmit={form.handleSubmit(onCreateCategory)} className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <FormField
                 control={form.control}
                 name="name"
@@ -212,38 +202,7 @@ function FinancialCategoryManagement() {
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="parent_id"
-                render={({ field }) => {
-                  const selectedType = form.watch("type");
-                  const list = categories.filter(cat => cat.type === selectedType);
-                  return (
-                    <FormItem>
-                      <FormLabel>Categoria Pai (opcional)</FormLabel>
-                      <Select
-                        // controla sem usar string vazia
-                        value={field.value ?? "none"}
-                        onValueChange={(v) => field.onChange(v === "none" ? null : v)}
-                      >
-                        <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sem categoria pai" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">Sem categoria pai</SelectItem>
-                          {list.map(cat => (
-                            <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  );
-                }}
-              />
-              <div className="md:col-span-4 flex justify-end">
+              <div className="md:col-span-3 flex justify-end">
                 <Button type="submit" className="btn-hero-static" disabled={loading}>
                   <Plus className="w-4 h-4 mr-2" />
                   Salvar categoria
@@ -265,7 +224,6 @@ function FinancialCategoryManagement() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nome</TableHead>
-                    <TableHead>Categoria Pai</TableHead>
                     <TableHead>Criada em</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -273,13 +231,12 @@ function FinancialCategoryManagement() {
                   {items.map((cat) => (
                     <TableRow key={cat.id}>
                       <TableCell className="font-medium">{cat.name}</TableCell>
-                      <TableCell>{getParentName(cat)}</TableCell>
                       <TableCell>{formatDate(cat.created_at)}</TableCell>
                     </TableRow>
                   ))}
                   {items.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-muted-foreground">
+                      <TableCell colSpan={2} className="text-muted-foreground">
                         Nenhuma categoria cadastrada.
                       </TableCell>
                     </TableRow>

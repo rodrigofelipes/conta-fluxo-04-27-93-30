@@ -16,7 +16,6 @@ interface FinancialCategory {
   id: string;
   name: string;
   category_type: 'previsao_custo' | 'variavel' | 'fixo';
-  parent_id?: string;
 }
 
 const CATEGORY_LABELS: Record<FinancialCategory['category_type'], string> = {
@@ -60,8 +59,7 @@ export function ExpenseManagement() {
 
   const [categoryForm, setCategoryForm] = useState({
     name: "",
-    category_type: "fixo" as const,
-    parent_id: ""
+    category_type: "fixo" as const
   });
 
   useEffect(() => {
@@ -119,7 +117,6 @@ export function ExpenseManagement() {
         .insert({
           name: categoryForm.name,
           category_type: categoryForm.category_type,
-          parent_id: categoryForm.parent_id || null,
           created_by: user?.id
         });
 
@@ -130,7 +127,7 @@ export function ExpenseManagement() {
         description: "Categoria criada com sucesso!"
       });
 
-      setCategoryForm({ name: "", category_type: "fixo", parent_id: "" });
+      setCategoryForm({ name: "", category_type: "fixo" });
       setCreateCategoryOpen(false);
       fetchData();
     } catch (error) {
