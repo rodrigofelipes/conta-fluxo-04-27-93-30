@@ -29,6 +29,7 @@ import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { UnifiedFinancialTab } from "@/components/financial/UnifiedFinancialTab";
 import { ClientFinancialTab } from "@/components/financial/ClientFinancialTab";
+import { FinancialCategoryManagement } from "@/components/financial/FinancialCategoryManagement";
 
 const transactionFormSchema = z.object({
   transaction_type: z.enum(["income", "expense"]),
@@ -312,10 +313,11 @@ export default function Financeiro() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="overview">Visão Geral</TabsTrigger>
           <TabsTrigger value="unified">Contas e Parcelas</TabsTrigger>
           <TabsTrigger value="clients">Clientes</TabsTrigger>
+          <TabsTrigger value="cadastro">Cadastro</TabsTrigger>
           <TabsTrigger value="horas">Relatório de Horas</TabsTrigger>
           <TabsTrigger value="fluxo">Fluxo de Caixa</TabsTrigger>
           <TabsTrigger value="relatorios">Relatórios</TabsTrigger>
@@ -459,6 +461,11 @@ export default function Financeiro() {
         {/* Client Financial Tab */}
         <TabsContent value="clients">
           <ClientFinancialTab />
+        </TabsContent>
+
+        {/* Financial Category Management */}
+        <TabsContent value="cadastro">
+          <FinancialCategoryManagement />
         </TabsContent>
 
         <TabsContent value="horas" className="space-y-6">

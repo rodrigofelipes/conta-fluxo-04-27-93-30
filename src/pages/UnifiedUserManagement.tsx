@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/page-header";
+import { UserStatusControl } from "@/components/users/UserStatusControl";
 
 // Interfaces unificadas
 interface UnifiedUser {
@@ -27,6 +28,7 @@ interface UnifiedUser {
   role: Role;
   created_at: string;
   type: 'system_user';
+  active: boolean;
 }
 
 interface UnifiedClient {
@@ -111,7 +113,7 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
     try {
       setLoading(true);
       
-      // Buscar usuários do sistema
+      // Buscar usuários do sistema (incluindo campo active)
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('*')
@@ -143,7 +145,8 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
         telefone: '',
         role: profile.role as Role,
         created_at: profile.created_at,
-        type: 'system_user' as const
+        type: 'system_user' as const,
+        active: profile.active ?? true
       })) || [];
 
       // Processar dados dos clientes
@@ -649,6 +652,16 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
               Apenas Master Admin
             </Badge>
           )}
+          
+          {/* Controle de Status */}
+          <UserStatusControl
+            userId={isUser ? entity.user_id : entity.id}
+            userType={entity.type}
+            active={isUser ? entity.active : undefined} // Para clientes, não temos campo active
+            name={isUser ? entity.full_name : entity.nome}
+            onUpdate={fetchAllData}
+            canDelete={isMasterAdmin && (isUser ? entity.user_id !== user?.id : true)}
+          />
         </div>
       </div>
     );
