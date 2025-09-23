@@ -520,7 +520,8 @@ export default function Financeiro() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-flow-col auto-cols-fr gap-2">
+
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="overview">Visão Geral</TabsTrigger>
           <TabsTrigger value="unified">Contas e Parcelas</TabsTrigger>
           <TabsTrigger value="clients">Clientes</TabsTrigger>
