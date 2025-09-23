@@ -36,7 +36,11 @@ interface Expense {
   category?: FinancialCategory;
 }
 
-export function ExpenseManagement() {
+interface ExpenseManagementProps {
+  onDataChange?: () => void;
+}
+
+export function ExpenseManagement({ onDataChange }: ExpenseManagementProps) {
   const { user } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<FinancialCategory[]>([]);
@@ -129,7 +133,7 @@ export function ExpenseManagement() {
 
       setCategoryForm({ name: "", category_type: "fixo" });
       setCreateCategoryOpen(false);
-      fetchData();
+      await fetchData();
     } catch (error) {
       console.error('Erro ao criar categoria:', error);
       toast({
@@ -253,7 +257,8 @@ export function ExpenseManagement() {
         installmentCount: "1"
       });
       setCreateDialogOpen(false);
-      fetchData();
+      await fetchData();
+      onDataChange?.();
     } catch (error) {
       console.error('Erro ao criar despesa:', error);
       toast({
@@ -280,7 +285,8 @@ export function ExpenseManagement() {
         description: "Despesa excluída com sucesso!"
       });
 
-      fetchData();
+      await fetchData();
+      onDataChange?.();
     } catch (error) {
       console.error('Erro ao excluir despesa:', error);
       toast({
@@ -305,7 +311,8 @@ export function ExpenseManagement() {
         description: "Status atualizado com sucesso!"
       });
 
-      fetchData();
+      await fetchData();
+      onDataChange?.();
     } catch (error) {
       console.error('Erro ao atualizar status:', error);
       toast({

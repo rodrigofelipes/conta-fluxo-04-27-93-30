@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { UnifiedFinancialTab } from "@/components/financial/UnifiedFinancialTab";
 import { ClientFinancialTab } from "@/components/financial/ClientFinancialTab";
 import { ExpenseManagement } from "@/components/financial/ExpenseManagement";
+import { IncomeManagement } from "@/components/financial/IncomeManagement";
 
 /** *********************************************
  *  FinancialCategoryManagement
@@ -317,6 +318,43 @@ interface HorasColaborador {
   total_mes: number;
 }
 
+type ManualExpenseStatus = "pending" | "paid" | "cancelled";
+
+interface ManualExpenseCategory {
+  id: string;
+  name: string;
+  category_type: "previsao_custo" | "variavel" | "fixo";
+}
+
+interface ManualExpense {
+  id: string;
+  description: string;
+  amount: number;
+  expense_date: string;
+  status: ManualExpenseStatus;
+  payment_method?: string | null;
+  created_at: string;
+  category?: ManualExpenseCategory | null;
+}
+
+interface OverviewRecord {
+  id: string;
+  type: "income" | "expense";
+  description: string;
+  amount: number;
+  date: string;
+  status: string;
+  origin: "client" | "operational";
+  category?: string | null;
+  categoryType?: ManualExpenseCategory["category_type"]; // only for expenses
+}
+
+const normalizeExpenseStatus = (status?: string | null): ManualExpenseStatus => {
+  if (status === "paid") return "paid";
+  if (status === "cancelled") return "cancelled";
+  return "pending";
+};
+
 const categorias = {
   income: [
     "Honorários de Projeto",
@@ -345,10 +383,12 @@ export default function Financeiro() {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [horasColaboradores, setHorasColaboradores] = useState<HorasColaborador[]>([]);
+  const [manualExpenses, setManualExpenses] = useState<ManualExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [selectedMonth, setSelectedMonth] = useState(new Date());
+  const [searchTerm, setSearchTerm] = useState("");
 
   const form = useForm<z.infer<typeof transactionFormSchema>>({
     resolver: zodResolver(transactionFormSchema),
@@ -391,6 +431,21 @@ export default function Financeiro() {
         .order('due_date', { ascending: true });
       if (installmentsError) throw installmentsError;
 
+      const { data: expensesData, error: expensesError } = await supabase
+        .from('expenses')
+        .select(`
+          id,
+          description,
+          amount,
+          expense_date,
+          status,
+          payment_method,
+          created_at,
+          category:financial_categories(id, name, category_type)
+        `)
+        .order('expense_date', { ascending: false });
+      if (expensesError) throw expensesError;
+
       const clientMap = new Map<string, string>();
       (clientsData ?? []).forEach(client => clientMap.set(client.id, client.name));
 
@@ -409,10 +464,28 @@ export default function Financeiro() {
         status: i.status as 'pending' | 'paid' | 'overdue' | 'cancelled'
       }));
 
+      const mappedExpenses: ManualExpense[] = (expensesData ?? []).map((expense: any) => ({
+        id: String(expense.id),
+        description: String(expense.description),
+        amount: Number(expense.amount) || 0,
+        expense_date: String(expense.expense_date),
+        status: normalizeExpenseStatus(expense.status),
+        payment_method: expense.payment_method ? String(expense.payment_method) : null,
+        created_at: String(expense.created_at),
+        category: expense.category
+          ? {
+              id: String(expense.category.id),
+              name: String(expense.category.name),
+              category_type: expense.category.category_type as ManualExpenseCategory["category_type"],
+            }
+          : null,
+      }));
+
       setTransactions(processedTransactions);
       setClients(clientsData || []);
       setBankAccounts(bankAccountsData || []);
       setInstallments(processedInstallments);
+      setManualExpenses(mappedExpenses);
     } catch (error) {
       console.error('Erro ao carregar dados financeiros:', error);
       toast({
@@ -476,9 +549,17 @@ export default function Financeiro() {
     .filter(t => t.transaction_type === "income" && t.status === "paid")
     .reduce((acc, t) => acc + t.amount, 0);
 
+  const manualExpensesPaid = manualExpenses
+    .filter(expense => expense.status === "paid")
+    .reduce((acc, expense) => acc + expense.amount, 0);
+
+  const manualExpensesPending = manualExpenses
+    .filter(expense => expense.status === "pending")
+    .reduce((acc, expense) => acc + expense.amount, 0);
+
   const totalDespesas = transactions
     .filter(t => t.transaction_type === "expense" && t.status === "paid")
-    .reduce((acc, t) => acc + t.amount, 0);
+    .reduce((acc, t) => acc + t.amount, 0) + manualExpensesPaid;
 
   const receitasPendentes = transactions
     .filter(t => t.transaction_type === "income" && t.status === "pending")
@@ -486,7 +567,7 @@ export default function Financeiro() {
 
   const despesasPendentes = transactions
     .filter(t => t.transaction_type === "expense" && t.status === "pending")
-    .reduce((acc, t) => acc + t.amount, 0);
+    .reduce((acc, t) => acc + t.amount, 0) + manualExpensesPending;
 
   const atrasados = transactions.filter(t => t.status === "overdue");
   const fluxoCaixa = totalReceitas - totalDespesas;
@@ -499,6 +580,67 @@ export default function Financeiro() {
       default: return "text-gray-600 bg-gray-100";
     }
   };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "paid": return "Pago";
+      case "pending": return "Pendente";
+      case "overdue": return "Em atraso";
+      case "cancelled": return "Cancelado";
+      default: return status;
+    }
+  };
+
+  const overviewRecords = useMemo<OverviewRecord[]>(() => {
+    const transactionRecords = transactions
+      .filter(t => t.transaction_type === "income" || t.transaction_type === "expense")
+      .map<OverviewRecord>(t => ({
+        id: t.id,
+        type: t.transaction_type,
+        description: t.description,
+        amount: t.amount,
+        date: t.transaction_date,
+        status: t.status,
+        origin: "client",
+        category: t.transaction_category,
+      }));
+
+    const expenseRecords = manualExpenses.map<OverviewRecord>(expense => ({
+      id: expense.id,
+      type: "expense",
+      description: expense.description,
+      amount: expense.amount,
+      date: expense.expense_date,
+      status: expense.status,
+      origin: "operational",
+      category: expense.category?.name ?? null,
+      categoryType: expense.category?.category_type,
+    }));
+
+    return [...transactionRecords, ...expenseRecords].sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA;
+    });
+  }, [transactions, manualExpenses]);
+
+  const filteredOverviewRecords = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return overviewRecords;
+
+    return overviewRecords.filter(record => {
+      const searchFields = [
+        record.description,
+        record.category ?? "",
+        record.status,
+        record.origin === "client" ? "clientes" : "operacional",
+        record.type === "income" ? "receita" : "despesa",
+        record.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
+      ];
+
+      return searchFields.some(field => field.toLowerCase().includes(term));
+    });
+  }, [overviewRecords, searchTerm]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -586,9 +728,73 @@ export default function Financeiro() {
                   </div>
                   <AlertCircle className="size-8 text-red-600 opacity-80" />
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+          </CardContent>
+        </Card>
+      </div>
+
+          <Card className="card-elevated">
+            <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <CardTitle>Movimentações Financeiras</CardTitle>
+              <Input
+                placeholder="Buscar por descrição, status ou categoria"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                className="w-full md:w-72"
+              />
+            </CardHeader>
+            <CardContent className="p-0">
+              {filteredOverviewRecords.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead>Descrição</TableHead>
+                        <TableHead>Categoria</TableHead>
+                        <TableHead>Origem</TableHead>
+                        <TableHead>Data</TableHead>
+                        <TableHead className="text-right">Valor</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredOverviewRecords.map(record => (
+                        <TableRow key={`${record.origin}-${record.id}`}>
+                          <TableCell>
+                            <Badge variant={record.type === "income" ? "default" : "destructive"}>
+                              {record.type === "income" ? "Receita" : "Despesa"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-medium">{record.description}</TableCell>
+                          <TableCell>{record.category ?? "—"}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {record.origin === "client" ? "Clientes" : "Operacional"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{format(new Date(record.date), "dd/MM/yyyy")}</TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {formatCurrency(record.amount)}
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${getStatusColor(record.status)}`}
+                            >
+                              {getStatusLabel(record.status)}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="py-8 text-center text-muted-foreground">
+                  Nenhuma movimentação encontrada para o filtro informado.
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
@@ -770,7 +976,8 @@ export default function Financeiro() {
 
         {/* Cadastro — por último */}
         <TabsContent value="cadastro" className="space-y-6">
-          <ExpenseManagement />
+          <IncomeManagement onDataChange={loadData} />
+          <ExpenseManagement onDataChange={loadData} />
           <FinancialCategoryManagement />
         </TabsContent>
       </Tabs>
