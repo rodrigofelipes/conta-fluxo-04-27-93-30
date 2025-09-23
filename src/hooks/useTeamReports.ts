@@ -145,6 +145,10 @@ export function useTeamReports() {
       const activeTimers = activeTimersResult.data || [];
       const completedPhases = completedPhasesResult.data || [];
       const allPhases = allPhasesResult.data || [];
+      const relevantPhases = allPhases.filter(phase => {
+        const executedHours = phase.executed_hours ?? 0;
+        return phase.status === 'completed' || executedHours > 0;
+      });
       const projectDocuments = documentsResult.data || [];
       const meetings = meetingsResult.data || [];
       const clientDocuments = clientDocumentsResult.data || [];
@@ -187,14 +191,19 @@ export function useTeamReports() {
 
       // Calcular eficiência por usuário (baseado em horas planejadas vs executadas)
       const efficiencyByUser = new Map<string, { total: number; count: number }>();
-      allPhases.forEach(phase => {
+      relevantPhases.forEach(phase => {
         if (phase.assigned_to && phase.allocated_hours > 0) {
           const profile = profiles.find(p => p.id === phase.assigned_to);
           if (profile) {
-            const executedHours = phase.executed_hours || 0;
+            const executedHours = phase.executed_hours ?? 0;
+            if (executedHours <= 0) {
+              return;
+            }
+
             const allocatedHours = phase.allocated_hours;
-            const phaseEfficiency = Math.min(100, (allocatedHours / Math.max(executedHours, allocatedHours)) * 100);
-            
+            const rawEfficiency = (allocatedHours / executedHours) * 100;
+            const phaseEfficiency = Math.min(100, rawEfficiency);
+
             const currentEfficiency = efficiencyByUser.get(profile.user_id) || { total: 0, count: 0 };
             efficiencyByUser.set(profile.user_id, {
               total: currentEfficiency.total + phaseEfficiency,
