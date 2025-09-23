@@ -18,7 +18,9 @@ import {
   Download,
   AlertCircle,
   Timer,
-  BarChart3
+  BarChart3,
+  CheckCircle2,
+  XCircle
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -29,7 +31,285 @@ import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { UnifiedFinancialTab } from "@/components/financial/UnifiedFinancialTab";
 import { ClientFinancialTab } from "@/components/financial/ClientFinancialTab";
-import { FinancialCategoryManagement } from "@/components/financial/FinancialCategoryManagement";
+
+/** *********************************************
+ *  FinancialCategoryManagement (embutido)
+ *  - Criação de categoria (name, type, parent)
+ *  - Lista categorias por tipo
+ ********************************************* */
+const categorySchema = z.object({
+  name: z.string().min(2, "Informe um nome com pelo menos 2 caracteres"),
+  type: z.enum(["income", "expense"], { required_error: "Selecione o tipo" }),
+  parent_id: z.string().optional().nullable()
+});
+type CategoryForm = z.infer<typeof categorySchema>;
+
+type Category = {
+  id: string;
+  name: string;
+  type: "income" | "expense";
+  parent_id: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
+function FinancialCategoryManagement() {
+  const form = useForm<CategoryForm>({
+    resolver: zodResolver(categorySchema),
+    defaultValues: { name: "", type: "expense", parent_id: null }
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  const loadCategories = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("financial_categories")
+        .select("id,name,type,parent_id,is_active,created_at")
+        .order("type", { ascending: true })
+        .order("name", { ascending: true });
+
+      if (error) throw error;
+      setCategories(data || []);
+    } catch (err) {
+      console.error("Erro ao carregar categorias:", err);
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar as categorias.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadCategories(); }, []);
+
+  const onCreateCategory = async (values: CategoryForm) => {
+    try {
+      const user = (await supabase.auth.getUser()).data.user;
+      if (!user?.id) {
+        toast({
+          title: "Sessão inválida",
+          description: "Faça login novamente.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const payload: Partial<Category> & { created_by?: string } = {
+        name: values.name.trim(),
+        type: values.type,
+        parent_id: values.parent_id || null,
+        is_active: true,
+        // Se sua tabela tem default auth.uid() em created_by, pode remover a linha abaixo
+        // e a coluna created_by do insert:
+        // created_by: user.id
+      };
+
+      const { data, error } = await supabase
+        .from("financial_categories")
+        .insert(payload)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast({
+        title: "Categoria criada",
+        description: `“${data.name}” foi adicionada.`,
+      });
+
+      form.reset({ name: "", type: values.type, parent_id: null });
+      loadCategories();
+    } catch (err: any) {
+      const msg =
+        err?.code === "23505"
+          ? "Já existe uma categoria com esse nome para este tipo."
+          : err?.message || "Erro desconhecido ao salvar.";
+      console.error("Erro ao salvar categoria:", err);
+      toast({
+        title: "Erro ao salvar",
+        description: msg,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const incomeCats = categories.filter(c => c.type === "income");
+  const expenseCats = categories.filter(c => c.type === "expense");
+
+  return (
+    <div className="space-y-6">
+      <Card className="card-elevated">
+        <CardHeader>
+          <CardTitle>Cadastrar Categoria</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onCreateCategory)} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem className="md:col-span-2">
+                    <FormLabel>Nome</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Ex: Aluguel, Consultoria, Software..." {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="type"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tipo</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="income">Receita</SelectItem>
+                        <SelectItem value="expense">Despesa</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="parent_id"
+                render={({ field }) => {
+                  const list = form.watch("type") === "income" ? incomeCats : expenseCats;
+                  return (
+                    <FormItem>
+                      <FormLabel>Categoria Pai (opcional)</FormLabel>
+                      <Select
+                        onValueChange={(v) => field.onChange(v || null)}
+                        defaultValue={field.value ?? undefined}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Sem pai" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="">Sem pai</SelectItem>
+                          {list.map(cat => (
+                            <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
+              />
+              <div className="md:col-span-4 flex justify-end">
+                <Button type="submit" className="btn-hero-static" disabled={loading}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Salvar categoria
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Categorias de Receita</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Ativa</TableHead>
+                  <TableHead>Criada em</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {incomeCats.map((cat) => (
+                  <TableRow key={cat.id}>
+                    <TableCell className="font-medium">{cat.name}</TableCell>
+                    <TableCell>
+                      {cat.is_active ? (
+                        <span className="inline-flex items-center gap-1 text-green-600">
+                          <CheckCircle2 className="w-4 h-4" /> Ativa
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-red-600">
+                          <XCircle className="w-4 h-4" /> Inativa
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>{format(new Date(cat.created_at), "dd/MM/yyyy")}</TableCell>
+                  </TableRow>
+                ))}
+                {incomeCats.length === 0 && (
+                  <TableRow><TableCell colSpan={3} className="text-muted-foreground">Nenhuma categoria de receita.</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Categorias de Despesa</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Ativa</TableHead>
+                  <TableHead>Criada em</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {expenseCats.map((cat) => (
+                  <TableRow key={cat.id}>
+                    <TableCell className="font-medium">{cat.name}</TableCell>
+                    <TableCell>
+                      {cat.is_active ? (
+                        <span className="inline-flex items-center gap-1 text-green-600">
+                          <CheckCircle2 className="w-4 h-4" /> Ativa
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-red-600">
+                          <XCircle className="w-4 h-4" /> Inativa
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>{format(new Date(cat.created_at), "dd/MM/yyyy")}</TableCell>
+                  </TableRow>
+                ))}
+                {expenseCats.length === 0 && (
+                  <TableRow><TableCell colSpan={3} className="text-muted-foreground">Nenhuma categoria de despesa.</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/** *********************************************
+ *  Página Financeiro
+ ********************************************* */
 
 const transactionFormSchema = z.object({
   transaction_type: z.enum(["income", "expense"]),
@@ -143,44 +423,38 @@ export default function Financeiro() {
     try {
       setLoading(true);
 
-      // Carregar transações financeiras
+      // Transações
       const { data: transactionsData, error: transactionsError } = await supabase
         .from('client_financials')
         .select('*')
         .order('transaction_date', { ascending: false });
-
       if (transactionsError) throw transactionsError;
 
-      // Carregar clientes
+      // Clientes
       const { data: clientsData, error: clientsError } = await supabase
         .from('clients')
         .select('id, name')
         .order('name');
-
       if (clientsError) throw clientsError;
 
-      // Carregar contas bancárias
+      // Contas bancárias
       const { data: bankAccountsData, error: bankAccountsError } = await supabase
         .from('bank_accounts')
         .select('*')
         .order('name');
-
       if (bankAccountsError) throw bankAccountsError;
 
-      // Carregar parcelas
+      // Parcelas
       const { data: installmentsData, error: installmentsError } = await supabase
         .from('payment_installments')
         .select('*')
         .order('due_date', { ascending: true });
-
       if (installmentsError) throw installmentsError;
 
-      // Buscar nomes dos clientes para as transações
-      const clientMap = new Map();
+      const clientMap = new Map<string, string>();
       clientsData?.forEach(client => clientMap.set(client.id, client.name));
 
-      // Processar dados das transações
-      const processedTransactions = transactionsData?.map(t => ({
+      const processedTransactions = transactionsData?.map((t: any) => ({
         ...t,
         client: clientMap.get(t.client_id) || undefined,
         transaction_type: t.transaction_type as "income" | "expense",
@@ -189,8 +463,7 @@ export default function Financeiro() {
         recurrence_type: (t.recurrence_type || "none") as "none" | "monthly" | "quarterly" | "yearly"
       })) || [];
 
-      // Processar dados das parcelas
-      const processedInstallments = installmentsData?.map(i => ({
+      const processedInstallments = installmentsData?.map((i: any) => ({
         ...i,
         client_name: clientMap.get(i.client_id) || 'Cliente não encontrado',
         status: i.status as 'pending' | 'paid' | 'overdue' | 'cancelled'
@@ -200,7 +473,6 @@ export default function Financeiro() {
       setClients(clientsData || []);
       setBankAccounts(bankAccountsData || []);
       setInstallments(processedInstallments);
-
     } catch (error) {
       console.error('Erro ao carregar dados financeiros:', error);
       toast({
@@ -213,22 +485,22 @@ export default function Financeiro() {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
-  const handleInstallmentCreated = () => {
-    loadData(); // Recarregar dados quando uma nova parcela for criada
-  };
+  const handleInstallmentCreated = () => { loadData(); };
 
   const onSubmit = async (values: z.infer<typeof transactionFormSchema>) => {
     try {
+      const normalized = values.amount
+        .replace(/\./g, '')
+        .replace(',', '.')
+        .replace(/[^\d.]/g, '');
       const { data, error } = await supabase
         .from('client_financials')
         .insert([{
           transaction_type: values.transaction_type,
           description: values.description,
-          amount: parseFloat(values.amount.replace(/[^\d,]/g, '').replace(',', '.')),
+          amount: parseFloat(normalized),
           transaction_category: values.transaction_category,
           transaction_date: values.transaction_date,
           client_id: values.client_id || null,
@@ -249,18 +521,18 @@ export default function Financeiro() {
       
       setIsDialogOpen(false);
       form.reset();
-      loadData(); // Recarregar dados
-    } catch (error) {
+      loadData();
+    } catch (error: any) {
       console.error('Erro ao criar transação:', error);
       toast({
         title: "Erro",
-        description: "Erro ao criar transação.",
+        description: error?.message || "Erro ao criar transação.",
         variant: "destructive",
       });
     }
   };
 
-  // Cálculos financeiros
+  // Cálculos
   const totalReceitas = transactions
     .filter(t => t.transaction_type === "income" && t.status === "paid")
     .reduce((acc, t) => acc + t.amount, 0);
@@ -278,7 +550,6 @@ export default function Financeiro() {
     .reduce((acc, t) => acc + t.amount, 0);
 
   const atrasados = transactions.filter(t => t.status === "overdue");
-
   const fluxoCaixa = totalReceitas - totalDespesas;
 
   const getStatusColor = (status: string) => {
@@ -291,10 +562,7 @@ export default function Financeiro() {
   };
 
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(value);
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   };
 
   if (loading) {
@@ -313,14 +581,15 @@ export default function Financeiro() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        {/* Cadastro movido para o FINAL e removida a aba 'contas' sem trigger */}
         <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="overview">Visão Geral</TabsTrigger>
           <TabsTrigger value="unified">Contas e Parcelas</TabsTrigger>
           <TabsTrigger value="clients">Clientes</TabsTrigger>
-          <TabsTrigger value="cadastro">Cadastro</TabsTrigger>
           <TabsTrigger value="horas">Relatório de Horas</TabsTrigger>
           <TabsTrigger value="fluxo">Fluxo de Caixa</TabsTrigger>
           <TabsTrigger value="relatorios">Relatórios</TabsTrigger>
+          <TabsTrigger value="cadastro">Cadastro</TabsTrigger>
         </TabsList>
 
         {/* Overview */}
@@ -448,7 +717,7 @@ export default function Financeiro() {
           </div>
         </TabsContent>
 
-        {/* Unified Financial Tab */}
+        {/* Unificado */}
         <TabsContent value="unified">
           <UnifiedFinancialTab 
             transactions={transactions}
@@ -458,16 +727,12 @@ export default function Financeiro() {
           />
         </TabsContent>
 
-        {/* Client Financial Tab */}
+        {/* Clientes */}
         <TabsContent value="clients">
           <ClientFinancialTab />
         </TabsContent>
 
-        {/* Financial Category Management */}
-        <TabsContent value="cadastro">
-          <FinancialCategoryManagement />
-        </TabsContent>
-
+        {/* Horas */}
         <TabsContent value="horas" className="space-y-6">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold">Relatório de Horas por Colaborador</h3>
@@ -533,200 +798,7 @@ export default function Financeiro() {
           </Card>
         </TabsContent>
 
-        {/* Contas a Pagar/Receber */}
-        <TabsContent value="contas" className="space-y-6">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">Gestão de Contas</h3>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="btn-hero">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Nova Transação
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Nova Transação</DialogTitle>
-                </DialogHeader>
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="transaction_type"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Tipo</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="income">Receita</SelectItem>
-                              <SelectItem value="expense">Despesa</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="description"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Descrição</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Ex: Projeto residencial..." {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="amount"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Valor</FormLabel>
-                          <FormControl>
-                            <Input placeholder="R$ 0,00" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="transaction_category"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Categoria</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione uma categoria" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="receivable">Recebível</SelectItem>
-                              <SelectItem value="payable">Pagável</SelectItem>
-                              <SelectItem value="project">Projeto</SelectItem>
-                              <SelectItem value="fixed_expense">Despesa Fixa</SelectItem>
-                              <SelectItem value="variable_expense">Despesa Variável</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="client_id"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Cliente (Opcional)</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione um cliente" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {clients.map(client => (
-                                <SelectItem key={client.id} value={client.id}>
-                                  {client.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="transaction_date"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Data da Transação</FormLabel>
-                          <FormControl>
-                            <Input type="date" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <div className="flex gap-2 pt-4">
-                      <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} className="flex-1">
-                        Cancelar
-                      </Button>
-                      <Button type="submit" className="flex-1 btn-hero-static">
-                        Salvar
-                      </Button>
-                    </div>
-                  </form>
-                </Form>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          <Card>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Descrição</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Categoria</TableHead>
-                  <TableHead>Valor</TableHead>
-                  <TableHead>Data</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {transactions.map((transaction) => (
-                  <TableRow key={transaction.id}>
-                    <TableCell className="font-medium">{transaction.description}</TableCell>
-                    <TableCell>
-                      <Badge variant={transaction.transaction_type === "income" ? "default" : "secondary"}>
-                        {transaction.transaction_type === "income" ? "Receita" : "Despesa"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {transaction.transaction_category}
-                    </TableCell>
-                    <TableCell className={transaction.transaction_type === "income" ? "text-green-600" : "text-red-600"}>
-                      {formatCurrency(transaction.amount)}
-                    </TableCell>
-                    <TableCell>
-                      {format(new Date(transaction.transaction_date), "dd/MM/yyyy")}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getStatusColor(transaction.status)}>
-                        {transaction.status === "paid" ? "Pago" : transaction.status === "pending" ? "Pendente" : "Atrasado"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="outline" size="sm">
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-        </TabsContent>
-
-        {/* Outras tabs continuam... */}
+        {/* Fluxo */}
         <TabsContent value="fluxo">
           <Card>
             <CardContent className="py-8 text-center">
@@ -739,6 +811,7 @@ export default function Financeiro() {
           </Card>
         </TabsContent>
 
+        {/* Relatórios */}
         <TabsContent value="relatorios">
           <Card>
             <CardContent className="py-8 text-center">
@@ -749,6 +822,11 @@ export default function Financeiro() {
               </p>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Cadastro — por último */}
+        <TabsContent value="cadastro">
+          <FinancialCategoryManagement />
         </TabsContent>
       </Tabs>
     </div>
