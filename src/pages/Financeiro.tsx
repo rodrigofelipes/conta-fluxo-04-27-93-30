@@ -34,8 +34,6 @@ import { ClientFinancialTab } from "@/components/financial/ClientFinancialTab";
 
 /** *********************************************
  *  FinancialCategoryManagement
- *  - Usa category_type no banco
- *  - Remove genéricos do supabase.from para evitar erros de tipo
  ********************************************* */
 const categorySchema = z.object({
   name: z.string().min(2, "Informe um nome com pelo menos 2 caracteres"),
@@ -44,7 +42,6 @@ const categorySchema = z.object({
 });
 type CategoryForm = z.infer<typeof categorySchema>;
 
-// Tipos usados no FRONT (exibição)
 type Category = {
   id: string;
   name: string;
@@ -111,24 +108,17 @@ function FinancialCategoryManagement() {
         return;
       }
 
-      // Payload alinhado com o schema do BANCO (category_type + created_by obrigatórios)
-      const payload: {
-        name: string;
-        category_type: "income" | "expense";
-        parent_id: string | null;
-        is_active: boolean;
-        created_by: string;
-      } = {
+      const payload = [{
         name: values.name.trim(),
-        category_type: values.type,
+        category_type: values.type as "income" | "expense",
         parent_id: values.parent_id || null,
         is_active: true,
-        created_by: user.id,
-      };
+        created_by: user.id, // remova se tiver DEFAULT auth.uid()
+      }];
 
       const { data, error } = await supabase
         .from("financial_categories")
-        .insert([payload]) // <- envia como ARRAY para satisfazer a assinatura
+        .insert(payload)
         .select()
         .single();
 
@@ -186,7 +176,7 @@ function FinancialCategoryManagement() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Tipo</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Selecione" />
@@ -210,8 +200,9 @@ function FinancialCategoryManagement() {
                     <FormItem>
                       <FormLabel>Categoria Pai (opcional)</FormLabel>
                       <Select
-                        onValueChange={(v) => field.onChange(v || null)}
-                        defaultValue={field.value ?? undefined}
+                        // controla sem usar string vazia
+                        value={field.value ?? "none"}
+                        onValueChange={(v) => field.onChange(v === "none" ? null : v)}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -219,7 +210,7 @@ function FinancialCategoryManagement() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="">Sem pai</SelectItem>
+                          <SelectItem value="none">Sem pai</SelectItem>
                           {list.map(cat => (
                             <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                           ))}
@@ -289,11 +280,9 @@ function FinancialCategoryManagement() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Ativa</TableHead>
-                    <TableHead>Criada em</TableHead>
-                  </TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Ativa</TableHead>
+                  <TableHead>Criada em</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -442,28 +431,24 @@ export default function Financeiro() {
     try {
       setLoading(true);
 
-      // Transações
       const { data: transactionsData, error: transactionsError } = await supabase
         .from('client_financials')
         .select('*')
         .order('transaction_date', { ascending: false });
       if (transactionsError) throw transactionsError;
 
-      // Clientes
       const { data: clientsData, error: clientsError } = await supabase
         .from('clients')
         .select('id, name')
         .order('name');
       if (clientsError) throw clientsError;
 
-      // Contas bancárias
       const { data: bankAccountsData, error: bankAccountsError } = await supabase
         .from('bank_accounts')
         .select('*')
         .order('name');
       if (bankAccountsError) throw bankAccountsError;
 
-      // Parcelas
       const { data: installmentsData, error: installmentsError } = await supabase
         .from('payment_installments')
         .select('*')
@@ -551,7 +536,6 @@ export default function Financeiro() {
     }
   };
 
-  // Cálculos
   const totalReceitas = transactions
     .filter(t => t.transaction_type === "income" && t.status === "paid")
     .reduce((acc, t) => acc + t.amount, 0);
@@ -600,7 +584,6 @@ export default function Financeiro() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        {/* Cadastro por último */}
         <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="overview">Visão Geral</TabsTrigger>
           <TabsTrigger value="unified">Contas e Parcelas</TabsTrigger>
