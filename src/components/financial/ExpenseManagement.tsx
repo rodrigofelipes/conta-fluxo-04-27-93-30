@@ -36,6 +36,30 @@ interface ExpenseManagementProps {
   onDataChange?: () => void;
 }
 
+type ExpenseFormState = {
+  description: string;
+  amount: string;
+  expense_date: string;
+  category_id: string;
+  payment_method: string;
+  status: Expense['status'];
+  recurrence_type: NonNullable<Expense['recurrence_type']>;
+  isInstallment: boolean;
+  installmentCount: string;
+};
+
+const getInitialExpenseForm = (): ExpenseFormState => ({
+  description: "",
+  amount: "",
+  expense_date: new Date().toISOString().split('T')[0],
+  category_id: "",
+  payment_method: "",
+  status: "pending",
+  recurrence_type: "none",
+  isInstallment: false,
+  installmentCount: "1"
+});
+
 export function ExpenseManagement({
   onDataChange
 }: ExpenseManagementProps) {
@@ -49,20 +73,16 @@ export function ExpenseManagement({
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
   const [savingExpense, setSavingExpense] = useState(false);
+  const [isEditingExpense, setIsEditingExpense] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
-  const [expenseForm, setExpenseForm] = useState({
+  const [expenseForm, setExpenseForm] = useState<ExpenseFormState>(getInitialExpenseForm);
 
-    description: "",
-    amount: "",
-    expense_date: new Date().toISOString().split('T')[0],
-    category_id: "",
-    payment_method: "",
-    status: "pending",
-    recurrence_type: "none",
-    isInstallment: false,
-    installmentCount: "1"
-  });
-
+  const resetExpenseDialog = () => {
+    setIsEditingExpense(false);
+    setEditingExpenseId(null);
+    setExpenseForm(getInitialExpenseForm());
+  };
 
   const [categoryForm, setCategoryForm] = useState({
     name: "",
@@ -96,6 +116,35 @@ export function ExpenseManagement({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleExpenseDialogOpenChange = (open: boolean) => {
+    setCreateDialogOpen(open);
+    if (!open) {
+      resetExpenseDialog();
+    }
+  };
+
+  const startCreateExpense = () => {
+    resetExpenseDialog();
+    setCreateDialogOpen(true);
+  };
+
+  const startEditExpense = (expense: Expense) => {
+    setIsEditingExpense(true);
+    setEditingExpenseId(expense.id);
+    setExpenseForm({
+      description: expense.description,
+      amount: expense.amount.toString(),
+      expense_date: expense.expense_date.split('T')[0],
+      category_id: expense.category_id || "",
+      payment_method: expense.payment_method || "",
+      status: expense.status,
+      recurrence_type: expense.recurrence_type ?? "none",
+      isInstallment: false,
+      installmentCount: "1"
+    });
+    setCreateDialogOpen(true);
   };
   const createCategory = async () => {
     if (!categoryForm.name.trim()) {
@@ -135,7 +184,7 @@ export function ExpenseManagement({
     }
   };
 
-  const createExpense = async () => {
+  const saveExpense = async () => {
     if (savingExpense) return;
     const parseAmount = (value: string) => {
       if (!value) return NaN;
@@ -170,8 +219,8 @@ export function ExpenseManagement({
       return;
     }
 
-    const installmentCount = expenseForm.isInstallment ? parseInt(expenseForm.installmentCount, 10) : 1;
-    if (expenseForm.isInstallment && (!installmentCount || installmentCount < 1)) {
+    const installmentCount = !isEditingExpense && expenseForm.isInstallment ? parseInt(expenseForm.installmentCount, 10) : 1;
+    if (!isEditingExpense && expenseForm.isInstallment && (!installmentCount || installmentCount < 1)) {
       toast({
         title: "Erro",
         description: "Informe um número válido de parcelas.",
@@ -181,16 +230,45 @@ export function ExpenseManagement({
     }
     try {
       setSavingExpense(true);
-      const entries: Array<Record<string, any>> = [];
-      if (expenseForm.isInstallment && installmentCount > 1) {
-        const totalInCents = Math.round(amountValue * 100);
-        const baseAmountInCents = Math.floor(totalInCents / installmentCount);
-        const remainder = totalInCents % installmentCount;
-        for (let i = 0; i < installmentCount; i++) {
-          const amountInCents = baseAmountInCents + (i < remainder ? 1 : 0);
-          const dueDate = new Date(baseDate);
-          dueDate.setMonth(dueDate.getMonth() + i);
+      if (isEditingExpense && editingExpenseId) {
+        const { error } = await supabase.from('expenses').update({
+          description: expenseForm.description.trim(),
+          amount: amountValue,
+          expense_date: expenseForm.expense_date,
+          category_id: expenseForm.category_id || null,
+          payment_method: expenseForm.payment_method || null,
+          status: expenseForm.status,
+          recurrence_type: expenseForm.recurrence_type
+        }).eq('id', editingExpenseId);
+        if (error) throw error;
+        toast({
+          title: "Sucesso",
+          description: "Despesa atualizada com sucesso!"
+        });
+      } else {
+        const entries: Array<Record<string, any>> = [];
+        if (expenseForm.isInstallment && installmentCount > 1) {
+          const totalInCents = Math.round(amountValue * 100);
+          const baseAmountInCents = Math.floor(totalInCents / installmentCount);
+          const remainder = totalInCents % installmentCount;
+          for (let i = 0; i < installmentCount; i++) {
+            const amountInCents = baseAmountInCents + (i < remainder ? 1 : 0);
+            const dueDate = new Date(baseDate);
+            dueDate.setMonth(dueDate.getMonth() + i);
 
+            entries.push({
+              description: expenseForm.description.trim(),
+              amount: amountInCents / 100,
+              expense_date: dueDate.toISOString().split('T')[0],
+              category_id: expenseForm.category_id || null,
+              payment_method: expenseForm.payment_method || null,
+              status: expenseForm.status,
+              recurrence_type: expenseForm.recurrence_type,
+              created_by: user.id
+            });
+          }
+
+        } else {
           entries.push({
             description: expenseForm.description.trim(),
             amount: amountValue,
@@ -202,40 +280,15 @@ export function ExpenseManagement({
             created_by: user.id
           });
         }
-
-      } else {
-        entries.push({
-          description: expenseForm.description,
-          amount: amountValue,
-          expense_date: expenseForm.expense_date,
-          category_id: expenseForm.category_id || null,
-          payment_method: expenseForm.payment_method || null,
-          status: expenseForm.status,
-          recurrence_type: expenseForm.recurrence_type,
-          created_by: user.id
+        const { error } = await supabase.from('expenses').insert(entries);
+        if (error) throw error;
+        toast({
+          title: "Sucesso",
+          description: expenseForm.isInstallment && installmentCount > 1 ? `${installmentCount} parcelas criadas com sucesso!` : "Despesa criada com sucesso!"
         });
       }
-      const {
-        error
-      } = await supabase.from('expenses').insert(entries);
-      if (error) throw error;
-      toast({
-        title: "Sucesso",
-        description: expenseForm.isInstallment && installmentCount > 1 ? `${installmentCount} parcelas criadas com sucesso!` : "Despesa criada com sucesso!"
-      });
-      setExpenseForm({
-        description: "",
-        amount: "",
-        expense_date: new Date().toISOString().split('T')[0],
-        category_id: "",
-        payment_method: "",
-        status: "pending",
-        recurrence_type: "none",
-        isInstallment: false,
-        installmentCount: "1"
-      });
 
-      setCreateDialogOpen(false);
+      handleExpenseDialogOpenChange(false);
       await fetchData();
       onDataChange?.();
     } catch (error) {
@@ -445,7 +498,7 @@ export function ExpenseManagement({
                     Habilite para dividir o valor em parcelas mensais automáticas.
                   </p>
                 </div>
-                <Switch checked={expenseForm.isInstallment} onCheckedChange={checked => setExpenseForm(prev => ({
+                <Switch disabled={isEditingExpense} checked={expenseForm.isInstallment} onCheckedChange={checked => setExpenseForm(prev => ({
                 ...prev,
                 isInstallment: checked,
                 installmentCount: checked ? prev.installmentCount === "1" ? "2" : prev.installmentCount : "1"
@@ -453,7 +506,7 @@ export function ExpenseManagement({
               </div>
               {expenseForm.isInstallment && <div>
                   <Label htmlFor="installment_count">Número de Parcelas</Label>
-                  <Input id="installment_count" type="number" min={1} value={expenseForm.installmentCount} onChange={e => setExpenseForm(prev => ({
+                  <Input id="installment_count" type="number" min={1} disabled={isEditingExpense} value={expenseForm.installmentCount} onChange={e => setExpenseForm(prev => ({
                 ...prev,
                 installmentCount: e.target.value
               }))} placeholder="2" />
@@ -596,9 +649,10 @@ export function ExpenseManagement({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-
+                  <Button variant="outline" size="sm" onClick={() => startEditExpense(expense)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
                   {expense.status === 'pending' && <Button size="sm" onClick={() => updateExpenseStatus(expense.id, 'paid')}>
-
                       Marcar como Pago
                     </Button>}
                   <Button variant="destructive" size="sm" onClick={() => deleteExpense(expense.id)}>
