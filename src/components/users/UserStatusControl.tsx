@@ -47,7 +47,7 @@ export function UserStatusControl({
         const { error } = await supabase
           .from('profiles')
           .update({ active: !active })
-          .eq('user_id', userId);
+          .eq('id', userId);
 
         if (error) throw error;
 
@@ -87,7 +87,7 @@ export function UserStatusControl({
         const { error } = await supabase
           .from('profiles')
           .update({ active: false })
-          .eq('user_id', userId);
+          .eq('id', userId);
 
         if (error) throw error;
 

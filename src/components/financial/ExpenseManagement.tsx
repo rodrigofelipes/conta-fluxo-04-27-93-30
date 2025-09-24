@@ -246,7 +246,16 @@ export function ExpenseManagement({
           description: "Despesa atualizada com sucesso!"
         });
       } else {
-        const entries: Array<Record<string, any>> = [];
+        const entries: Array<{
+          description: string;
+          amount: number;
+          expense_date: string;
+          category_id?: string;
+          payment_method?: string;
+          status: string;
+          recurrence_type?: string;
+          created_by: string;
+        }> = [];
         if (expenseForm.isInstallment && installmentCount > 1) {
           const totalInCents = Math.round(amountValue * 100);
           const baseAmountInCents = Math.floor(totalInCents / installmentCount);
@@ -260,10 +269,10 @@ export function ExpenseManagement({
               description: expenseForm.description.trim(),
               amount: amountInCents / 100,
               expense_date: dueDate.toISOString().split('T')[0],
-              category_id: expenseForm.category_id || null,
-              payment_method: expenseForm.payment_method || null,
+              category_id: expenseForm.category_id || undefined,
+              payment_method: expenseForm.payment_method || undefined,
               status: expenseForm.status,
-              recurrence_type: expenseForm.recurrence_type,
+              recurrence_type: expenseForm.recurrence_type || undefined,
               created_by: user.id
             });
           }
@@ -273,10 +282,10 @@ export function ExpenseManagement({
             description: expenseForm.description.trim(),
             amount: amountValue,
             expense_date: expenseForm.expense_date,
-            category_id: expenseForm.category_id || null,
-            payment_method: expenseForm.payment_method || null,
+            category_id: expenseForm.category_id || undefined,
+            payment_method: expenseForm.payment_method || undefined,
             status: expenseForm.status,
-            recurrence_type: expenseForm.recurrence_type,
+            recurrence_type: expenseForm.recurrence_type || undefined,
             created_by: user.id
           });
         }

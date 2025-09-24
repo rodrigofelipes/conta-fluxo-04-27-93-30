@@ -518,10 +518,8 @@ export default function Chat() {
       // Forçar refresh completo das mensagens e contatos
       await loadWhatsAppContacts({ silent: false });
       
-      // Aguardar um pouco antes de recarregar mensagens
-      setTimeout(async () => {
-        await loadMessages(contactId);
-      }, 500);
+      // Não recarregar mensagens pois foram deletadas
+      // O selectedContact continua o mesmo, mas sem mensagens
       
     } catch (error) {
       console.error("Erro ao apagar conversas:", error);
