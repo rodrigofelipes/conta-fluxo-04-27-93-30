@@ -325,7 +325,7 @@ export default function Agenda() {
       const mappedAgenda =
         (agendaData?.map(item => ({
           ...item,
-          data_fim: item.data_fim || item.data,
+          data_fim: item.data, // Usar data como data_fim se não existir
           cliente: item.cliente?.trim().length ? item.cliente : INTERNAL_MEETING_PLACEHOLDER,
           creator_name: profilesMap.get(item.created_by) || 'Usuário desconhecido',
           attendees_display: getAttendeesDisplay(item.collaborators_ids || [], colaboradoresData || [])

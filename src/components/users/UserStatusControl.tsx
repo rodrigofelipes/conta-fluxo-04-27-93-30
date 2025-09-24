@@ -41,19 +41,43 @@ export function UserStatusControl({
       }
 
       setLoading(true);
+      console.log('Tentando alterar status do usuário:', { userId, userType, active });
 
       if (userType === 'system_user') {
-        // Desativar/ativar usuário do sistema
+        // Primeiro, vamos verificar se o usuário existe
+        const { data: existingUser, error: checkError } = await supabase
+          .from('profiles')
+          .select('id, user_id, active, name')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        console.log('Usuário encontrado:', existingUser);
+        
+        if (checkError) {
+          console.error('Erro ao verificar usuário:', checkError);
+          throw checkError;
+        }
+        
+        if (!existingUser) {
+          throw new Error('Usuário não encontrado no sistema.');
+        }
+
+        // Agora atualizar o status
+        const newActiveStatus = !active;
+        console.log('Atualizando para:', newActiveStatus);
+        
         const { data, error } = await supabase
           .from('profiles')
-          .update({ active: !active })
+          .update({ active: newActiveStatus })
           .eq('user_id', userId)
-          .select('id, active')
+          .select('id, active, name')
           .maybeSingle();
+
+        console.log('Resultado da atualização:', { data, error });
 
         if (error) throw error;
         if (!data) {
-          throw new Error('Usuário não encontrado para atualização.');
+          throw new Error('Falha ao atualizar o status do usuário.');
         }
 
         toast({
@@ -72,10 +96,10 @@ export function UserStatusControl({
 
       onUpdate();
     } catch (error) {
-      console.error('Erro ao alterar status:', error);
+      console.error('Erro completo ao alterar status:', error);
       toast({
         title: "Erro",
-        description: "Erro ao alterar status do usuário",
+        description: error instanceof Error ? error.message : "Erro ao alterar status do usuário",
         variant: "destructive"
       });
     } finally {
