@@ -13,22 +13,35 @@ interface UserStatusControlProps {
   name: string;
   onUpdate: () => void;
   canDelete?: boolean;
+  canToggleStatus?: boolean;
+  disabledReason?: string;
 }
 
-export function UserStatusControl({ 
-  userId, 
-  userType, 
-  active = true, 
-  name, 
+export function UserStatusControl({
+  userId,
+  userType,
+  active = true,
+  name,
   onUpdate,
-  canDelete = false 
+  canDelete = false,
+  canToggleStatus = true,
+  disabledReason
 }: UserStatusControlProps) {
   const [loading, setLoading] = useState(false);
 
   const toggleUserStatus = async () => {
     try {
+      if (!canToggleStatus) {
+        toast({
+          title: "Sem permissão",
+          description: disabledReason || "Você não tem permissão para alterar o status deste usuário.",
+          variant: "destructive"
+        });
+        return;
+      }
+
       setLoading(true);
-      
+
       if (userType === 'system_user') {
         // Desativar/ativar usuário do sistema
         const { error } = await supabase
@@ -121,39 +134,56 @@ export function UserStatusControl({
 
       {/* Toggle Status Button (só para usuários do sistema) */}
       {userType === 'system_user' && (
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={loading}
-            >
-              {active ? (
-                <UserX className="w-3 h-3 mr-1" />
-              ) : (
-                <UserCheck className="w-3 h-3 mr-1" />
-              )}
-              {active ? "Desativar" : "Ativar"}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                {active ? "Desativar" : "Ativar"} usuário
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                Tem certeza que deseja {active ? "desativar" : "ativar"} o usuário "{name}"?
-                {active && " Usuários desativados não conseguem fazer login no sistema."}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={toggleUserStatus}>
+        canToggleStatus ? (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading}
+              >
+                {active ? (
+                  <UserX className="w-3 h-3 mr-1" />
+                ) : (
+                  <UserCheck className="w-3 h-3 mr-1" />
+                )}
                 {active ? "Desativar" : "Ativar"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {active ? "Desativar" : "Ativar"} usuário
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  Tem certeza que deseja {active ? "desativar" : "ativar"} o usuário "{name}"?
+                  {active && " Usuários desativados não conseguem fazer login no sistema."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={toggleUserStatus}>
+                  {active ? "Desativar" : "Ativar"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled
+            title={disabledReason || "Você não tem permissão para alterar o status deste usuário."}
+            className="cursor-not-allowed"
+          >
+            {active ? (
+              <UserX className="w-3 h-3 mr-1" />
+            ) : (
+              <UserCheck className="w-3 h-3 mr-1" />
+            )}
+            {active ? "Desativar" : "Ativar"}
+          </Button>
+        )
       )}
 
       {/* Delete Button */}

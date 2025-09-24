@@ -193,11 +193,23 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
 
   // Verificar se é master admin
   const checkMasterAdmin = async () => {
-    if (!user?.id) return;
-    
+    if (!user?.id || user.role !== 'admin') {
+      setIsMasterAdmin(false);
+      return;
+    }
+
     try {
-      // Check if user has admin role
-      setIsMasterAdmin(user?.role === 'admin');
+      const { data, error } = await supabase
+        .from('master_admins')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+
+      setIsMasterAdmin(!!data);
     } catch (error) {
       console.error('Erro ao verificar master admin:', error);
       setIsMasterAdmin(false);
@@ -576,6 +588,21 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
   const renderEntity = (entity: UnifiedEntity) => {
     const isUser = entity.type === 'system_user';
     const isClient = entity.type === 'client';
+    const isCurrentUser = isUser && entity.user_id === user?.id;
+    const isAdminTarget = isUser && entity.role === 'admin';
+    const viewerIsAdmin = user?.role === 'admin';
+    const requiresMasterAdmin = isUser && !isCurrentUser && isAdminTarget && !isMasterAdmin;
+    const canManageStatus = isUser && !isCurrentUser && viewerIsAdmin && (isMasterAdmin || !isAdminTarget);
+    const canManageRoles = isUser && !isCurrentUser && viewerIsAdmin && (isMasterAdmin || !isAdminTarget);
+    const statusDisabledReason = !canManageStatus
+      ? isCurrentUser
+        ? "Você não pode alterar o próprio status."
+        : !viewerIsAdmin
+          ? "Apenas administradores podem alterar status de usuários."
+          : requiresMasterAdmin
+            ? "Apenas Master Admin pode alterar o status de administradores."
+            : undefined
+      : undefined;
 
     return (
       <div key={entity.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors">
@@ -628,7 +655,7 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
         </div>
         
         <div className="flex items-center gap-2">
-          {isUser && entity.user_id !== user?.id && isMasterAdmin && (
+          {isUser && canManageRoles && (
             <Select
               value={entity.role}
               onValueChange={(newRole: Role) => updateUserRole(entity.user_id, newRole)}
@@ -644,15 +671,15 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
               </SelectContent>
             </Select>
           )}
-          {isUser && entity.user_id === user?.id && (
+          {isUser && isCurrentUser && (
             <Badge variant="outline">Você</Badge>
           )}
-          {isUser && !isMasterAdmin && entity.user_id !== user?.id && (
+          {requiresMasterAdmin && (
             <Badge variant="outline" className="text-xs">
               Apenas Master Admin
             </Badge>
           )}
-          
+
           {/* Controle de Status */}
           <UserStatusControl
             userId={isUser ? entity.user_id : entity.id}
@@ -660,6 +687,8 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
             active={isUser ? entity.active : undefined} // Para clientes, não temos campo active
             name={isUser ? entity.full_name : entity.nome}
             onUpdate={fetchAllData}
+            canToggleStatus={canManageStatus}
+            disabledReason={statusDisabledReason}
             canDelete={isMasterAdmin && (isUser ? entity.user_id !== user?.id : true)}
           />
         </div>
