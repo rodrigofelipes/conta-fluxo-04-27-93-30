@@ -11,6 +11,7 @@ import { Plus, DollarSign, Calendar, Tag, Trash2, Pencil } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
 import { toast } from "@/hooks/use-toast";
+import type { Database } from "@/integrations/supabase/types";
 interface FinancialCategory {
   id: string;
   name: string;
@@ -246,16 +247,7 @@ export function ExpenseManagement({
           description: "Despesa atualizada com sucesso!"
         });
       } else {
-        const entries: Array<{
-          description: string;
-          amount: number;
-          expense_date: string;
-          category_id?: string;
-          payment_method?: string;
-          status: string;
-          recurrence_type?: string;
-          created_by: string;
-        }> = [];
+        const entries: Database['public']['Tables']['expenses']['Insert'][] = [];
         if (expenseForm.isInstallment && installmentCount > 1) {
           const totalInCents = Math.round(amountValue * 100);
           const baseAmountInCents = Math.floor(totalInCents / installmentCount);

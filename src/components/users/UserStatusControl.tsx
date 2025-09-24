@@ -44,12 +44,17 @@ export function UserStatusControl({
 
       if (userType === 'system_user') {
         // Desativar/ativar usuário do sistema
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('profiles')
           .update({ active: !active })
-          .eq('id', userId);
+          .eq('user_id', userId)
+          .select('id, active')
+          .maybeSingle();
 
         if (error) throw error;
+        if (!data) {
+          throw new Error('Usuário não encontrado para atualização.');
+        }
 
         toast({
           title: "Sucesso",
@@ -84,12 +89,15 @@ export function UserStatusControl({
 
       if (userType === 'system_user') {
         // Para usuários do sistema, fazer exclusão lógica (desativar)
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('profiles')
           .update({ active: false })
-          .eq('id', userId);
+          .eq('user_id', userId)
+          .select('id')
+          .maybeSingle();
 
         if (error) throw error;
+        if (!data) throw new Error('Usuário não encontrado para desativação.');
 
         toast({
           title: "Sucesso",
