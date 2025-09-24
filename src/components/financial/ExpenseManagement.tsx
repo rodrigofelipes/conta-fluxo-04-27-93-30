@@ -240,9 +240,18 @@ export function ExpenseManagement({
   const deleteExpense = async (id: string) => {
     try {
       const {
+        data,
         error
-      } = await supabase.from('expenses').delete().eq('id', id);
+      } = await supabase.from('expenses').delete().eq('id', id).select('id');
       if (error) throw error;
+      if (!data || data.length === 0) {
+        toast({
+          title: "Erro",
+          description: "Despesa não encontrada ou você não tem permissão para excluir.",
+          variant: "destructive"
+        });
+        return;
+      }
       toast({
         title: "Sucesso",
         description: "Despesa excluída com sucesso!"
