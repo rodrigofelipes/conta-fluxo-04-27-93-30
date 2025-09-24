@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, DollarSign, Calendar, User2, Trash2 } from "lucide-react";
+import { Plus, DollarSign, Calendar, User2, Trash2, Pencil } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/state/auth";
@@ -74,14 +74,17 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [savingIncome, setSavingIncome] = useState(false);
+  const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null);
 
-  const [incomeForm, setIncomeForm] = useState<IncomeFormState>({
+  const createDefaultIncomeForm = (): IncomeFormState => ({
     description: "",
     amount: "",
     transaction_date: new Date().toISOString().split("T")[0],
     client_id: null,
     status: "pending" as IncomeStatus,
   });
+
+  const [incomeForm, setIncomeForm] = useState<IncomeFormState>(createDefaultIncomeForm);
 
   useEffect(() => {
     fetchData();
@@ -145,7 +148,33 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
     return Number(normalized);
   };
 
-  const createIncome = async () => {
+  const handleDialogOpenChange = (open: boolean) => {
+    setDialogOpen(open);
+    if (!open) {
+      setEditingIncomeId(null);
+      setIncomeForm(createDefaultIncomeForm());
+    }
+  };
+
+  const startCreateIncome = () => {
+    setEditingIncomeId(null);
+    setIncomeForm(createDefaultIncomeForm());
+    setDialogOpen(true);
+  };
+
+  const startEditIncome = (income: IncomeRecord) => {
+    setEditingIncomeId(income.id);
+    setIncomeForm({
+      description: income.description,
+      amount: income.amount.toString(),
+      transaction_date: income.transaction_date.split("T")[0],
+      client_id: income.client_id ?? null,
+      status: income.status,
+    });
+    setDialogOpen(true);
+  };
+
+  const saveIncome = async () => {
     if (savingIncome) return;
 
     const amountValue = parseAmount(incomeForm.amount);
@@ -179,38 +208,53 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
 
     try {
       setSavingIncome(true);
-      const { error } = await supabase.from("client_financials").insert({
-        transaction_type: "income",
-        description: incomeForm.description.trim(),
-        amount: amountValue,
-        transaction_date: incomeForm.transaction_date,
-        status: incomeForm.status,
-        client_id: incomeForm.client_id || null,
-        created_by: user.id,
-      });
+      if (editingIncomeId) {
+        const { error } = await supabase
+          .from("client_financials")
+          .update({
+            description: incomeForm.description.trim(),
+            amount: amountValue,
+            transaction_date: incomeForm.transaction_date,
+            status: incomeForm.status,
+            client_id: incomeForm.client_id || null,
+          })
+          .eq("id", editingIncomeId);
 
-      if (error) throw error;
+        if (error) throw error;
 
-      toast({
-        title: "Sucesso",
-        description: "Receita criada com sucesso!",
-      });
+        toast({
+          title: "Sucesso",
+          description: "Receita atualizada com sucesso!",
+        });
+      } else {
+        const { error } = await supabase.from("client_financials").insert({
+          transaction_type: "income",
+          description: incomeForm.description.trim(),
+          amount: amountValue,
+          transaction_date: incomeForm.transaction_date,
+          status: incomeForm.status,
+          client_id: incomeForm.client_id || null,
+          created_by: user.id,
+        });
 
-      setIncomeForm({
-        description: "",
-        amount: "",
-        transaction_date: new Date().toISOString().split("T")[0],
-        client_id: null,
-        status: "pending",
-      });
+        if (error) throw error;
+
+        toast({
+          title: "Sucesso",
+          description: "Receita criada com sucesso!",
+        });
+      }
+
+      setIncomeForm(createDefaultIncomeForm());
+      setEditingIncomeId(null);
       setDialogOpen(false);
       await fetchData();
       onDataChange?.();
     } catch (error) {
-      console.error("Erro ao criar receita:", error);
+      console.error("Erro ao salvar receita:", error);
       toast({
         title: "Erro",
-        description: "Não foi possível criar a receita.",
+        description: "Não foi possível salvar a receita.",
         variant: "destructive",
       });
     } finally {
@@ -338,16 +382,16 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
       </div>
 
       <div className="flex gap-3">
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
           <DialogTrigger asChild>
-            <Button>
+            <Button onClick={startCreateIncome}>
               <Plus className="h-4 w-4 mr-2" />
               Nova Receita
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Criar Nova Receita</DialogTitle>
+              <DialogTitle>{editingIncomeId ? "Editar Receita" : "Criar Nova Receita"}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
@@ -421,8 +465,8 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
                   </SelectContent>
                 </Select>
               </div>
-              <Button onClick={createIncome} className="w-full" disabled={savingIncome}>
-                {savingIncome ? "Salvando..." : "Criar Receita"}
+              <Button onClick={saveIncome} className="w-full" disabled={savingIncome}>
+                {savingIncome ? "Salvando..." : editingIncomeId ? "Salvar Alterações" : "Criar Receita"}
               </Button>
             </div>
           </DialogContent>
@@ -453,6 +497,13 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => startEditIncome(income)}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
                   {income.status !== "paid" && income.status !== "cancelled" && (
                     <Button size="sm" onClick={() => updateIncomeStatus(income.id, "paid")}>
                       Marcar como Recebida
