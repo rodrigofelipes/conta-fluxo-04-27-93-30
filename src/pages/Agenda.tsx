@@ -43,6 +43,31 @@ const formatDateToLocalString = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+const parseDateStringSafely = (value?: string | null) => {
+  if (!value) return null;
+  return new Date(`${value}T12:00:00`);
+};
+
+const formatDisplayDate = (value?: string | null) => {
+  const parsed = parseDateStringSafely(value);
+  if (!parsed) return "";
+  return format(parsed, "dd/MM/yyyy", { locale: ptBR });
+};
+
+const formatDisplayDateRange = (start?: string | null, end?: string | null) => {
+  const startDate = parseDateStringSafely(start);
+  const endDate = parseDateStringSafely(end || start);
+
+  if (!startDate || !endDate) return "";
+
+  const sameDay = format(startDate, "yyyy-MM-dd") === format(endDate, "yyyy-MM-dd");
+  if (sameDay) {
+    return format(startDate, "dd/MM/yyyy", { locale: ptBR });
+  }
+
+  return `${format(startDate, "dd/MM/yyyy", { locale: ptBR })} - ${format(endDate, "dd/MM/yyyy", { locale: ptBR })}`;
+};
+
 // Helper para determinar quem deve aparecer baseado na hierarquia
 const getAttendeesDisplay = (collaboratorsIds: string[], profiles: { id: string; name: string }[]): string => {
   if (!collaboratorsIds || collaboratorsIds.length === 0) return 'Colaborador';
@@ -77,6 +102,7 @@ const agendaFormSchema = z
       required_error: "Selecione um tipo de reunião"
     }),
     data: z.string().min(1, "Selecione uma data"),
+    data_fim: z.string().min(1, "Selecione a data de término"),
     horario: z.string().min(1, "Selecione um horário"),
     horario_fim: z.string().optional(),
     local: z.string().optional(),
@@ -94,6 +120,14 @@ const agendaFormSchema = z
         message: "Selecione um cliente"
       });
     }
+
+    if (data.data && data.data_fim && data.data_fim < data.data) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["data_fim"],
+        message: "Data de término não pode ser anterior à data de início"
+      });
+    }
   });
 
 interface AgendaItem {
@@ -103,6 +137,7 @@ interface AgendaItem {
   cliente: string;
   tipo: "reuniao_cliente" | "visita_obra" | "apresentacao" | "aprovacao" | "medicao";
   data: string;
+  data_fim?: string | null;
   horario: string;
   horario_fim?: string;
   local?: string;
@@ -199,6 +234,7 @@ export default function Agenda() {
       cliente: "",
       tipo: "reuniao_cliente",
       data: "",
+      data_fim: "",
       horario: "",
       horario_fim: "",
       local: "",
@@ -209,6 +245,8 @@ export default function Agenda() {
   });
 
   const isInternalMeeting = form.watch("isInternalMeeting");
+  const startDateValue = form.watch("data");
+  const endDateValue = form.watch("data_fim");
 
   useEffect(() => {
     if (isInternalMeeting) {
@@ -216,6 +254,16 @@ export default function Agenda() {
       form.clearErrors("cliente");
     }
   }, [isInternalMeeting, form]);
+
+  useEffect(() => {
+    if (!startDateValue) {
+      return;
+    }
+
+    if (!endDateValue || endDateValue < startDateValue) {
+      form.setValue("data_fim", startDateValue, { shouldValidate: true });
+    }
+  }, [startDateValue, endDateValue, form]);
 
   const loadData = async () => {
     try {
@@ -277,6 +325,7 @@ export default function Agenda() {
       const mappedAgenda =
         (agendaData?.map(item => ({
           ...item,
+          data_fim: item.data_fim || item.data,
           cliente: item.cliente?.trim().length ? item.cliente : INTERNAL_MEETING_PLACEHOLDER,
           creator_name: profilesMap.get(item.created_by) || 'Usuário desconhecido',
           attendees_display: getAttendeesDisplay(item.collaborators_ids || [], colaboradoresData || [])
@@ -317,6 +366,8 @@ export default function Agenda() {
       // Converter a data para o formato correto evitando problemas de timezone
       const localDate = new Date(values.data + 'T12:00:00');
       const formattedDate = localDate.toISOString().split('T')[0];
+      const localEndDate = new Date(values.data_fim + 'T12:00:00');
+      const formattedEndDate = localEndDate.toISOString().split('T')[0];
 
       const { data, error } = await supabase
         .from('agenda')
@@ -326,6 +377,7 @@ export default function Agenda() {
           cliente: values.isInternalMeeting ? INTERNAL_MEETING_PLACEHOLDER : values.cliente || "",
           tipo: values.tipo,
           data: formattedDate,
+          data_fim: formattedEndDate,
           horario: values.horario,
           horario_fim: values.horario_fim,
           local: values.local,
@@ -339,9 +391,21 @@ export default function Agenda() {
       if (error) throw error;
 
       // Mantém a lista em memória atualizada
+      const attendeesDisplay = getAttendeesDisplay(
+        values.collaborators_ids || [],
+        colaboradores.map(colaborador => ({ id: colaborador.id, name: colaborador.name }))
+      );
+      const newAgendaItem: AgendaItem = {
+        ...(data as AgendaItem),
+        data_fim: (data as AgendaItem).data_fim || formattedEndDate,
+        cliente: values.isInternalMeeting ? INTERNAL_MEETING_PLACEHOLDER : values.cliente || "",
+        attendees_display: attendeesDisplay,
+        creator_name: currentUser?.name || 'Você'
+      };
+
       setAgenda(prev => [
         ...prev,
-        data as AgendaItem
+        newAgendaItem
       ]);
 
       toast({
@@ -355,6 +419,7 @@ export default function Agenda() {
         cliente: "",
         tipo: "reuniao_cliente",
         data: "",
+        data_fim: "",
         horario: "",
         horario_fim: "",
         local: "",
@@ -391,7 +456,9 @@ export default function Agenda() {
   const getItemsForDay = (day: Date) => {
     const dayStr = format(day, "yyyy-MM-dd");
     return agenda.filter(item => {
-      if (item.data !== dayStr) return false;
+      const start = item.data;
+      const end = item.data_fim || item.data;
+      if (dayStr < start || dayStr > end) return false;
       if (sectorFilter === 'todos') return true;
       return item.agenda_type === sectorFilter;
     });
@@ -403,7 +470,10 @@ export default function Agenda() {
   };
 
   const handleItemClick = (item: AgendaItem) => {
-    setSelectedItem(item);
+    setSelectedItem({
+      ...item,
+      data_fim: item.data_fim || item.data
+    });
     setIsDetailDialogOpen(true);
   };
 
@@ -417,8 +487,11 @@ export default function Agenda() {
     .filter((item) => {
       // Filtro por setor (se necessário)
       if (sectorFilter !== 'todos' && item.agenda_type !== sectorFilter) return false;
-      // Apenas hoje e amanhã
-      return item.data === todayStr || item.data === tomorrowStr;
+      const start = item.data;
+      const end = item.data_fim || item.data;
+      const includesToday = start <= todayStr && end >= todayStr;
+      const includesTomorrow = start <= tomorrowStr && end >= tomorrowStr;
+      return includesToday || includesTomorrow;
     })
     // Ordena por data e horário (strings no formato YYYY-MM-DD e HH:mm ordenam corretamente)
     .sort((a, b) => {
@@ -659,13 +732,13 @@ export default function Agenda() {
                     )}
                   />
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
                       name="data"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Data</FormLabel>
+                          <FormLabel>Data de Início</FormLabel>
                           <Popover>
                             <PopoverTrigger asChild>
                               <FormControl>
@@ -677,7 +750,10 @@ export default function Agenda() {
                                   )}
                                 >
                                   {field.value ? (
-                                    format(new Date(field.value + 'T12:00:00'), "PPP", { locale: ptBR })
+                                    (() => {
+                                      const parsed = parseDateStringSafely(field.value);
+                                      return parsed ? format(parsed, "PPP", { locale: ptBR }) : <span>Selecione uma data</span>;
+                                    })()
                                   ) : (
                                     <span>Selecione uma data</span>
                                   )}
@@ -688,15 +764,75 @@ export default function Agenda() {
                             <PopoverContent className="w-auto p-0" align="start">
                               <Calendar
                                 mode="single"
-                                selected={field.value ? new Date(field.value + 'T12:00:00') : undefined}
+                                selected={parseDateStringSafely(field.value) || undefined}
                                 onSelect={(date) => {
                                   if (date) {
-                                    // Formatar a data como YYYY-MM-DD evitando problemas de timezone
                                     const formattedDate = formatDateToLocalString(date);
                                     field.onChange(formattedDate);
                                   }
                                 }}
                                 disabled={(date) => date < new Date("1900-01-01")}
+                                initialFocus
+                                className={cn("p-3 pointer-events-auto")}
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="data_fim"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Data de Término</FormLabel>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  variant={"outline"}
+                                  className={cn(
+                                    "w-full pl-3 text-left font-normal",
+                                    !field.value && "text-muted-foreground"
+                                  )}
+                                >
+                                  {field.value ? (
+                                    (() => {
+                                      const parsed = parseDateStringSafely(field.value);
+                                      return parsed ? format(parsed, "PPP", { locale: ptBR }) : <span>Selecione uma data</span>;
+                                    })()
+                                  ) : (
+                                    <span>Selecione uma data</span>
+                                  )}
+                                  <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <Calendar
+                                mode="single"
+                                selected={parseDateStringSafely(field.value) || undefined}
+                                onSelect={(date) => {
+                                  if (date) {
+                                    const formattedDate = formatDateToLocalString(date);
+                                    field.onChange(formattedDate);
+                                  }
+                                }}
+                                disabled={(date) => {
+                                  const minDate = new Date("1900-01-01");
+                                  if (date < minDate) return true;
+                                  if (startDateValue) {
+                                    const start = parseDateStringSafely(startDateValue);
+                                    if (start) {
+                                      const normalizedStart = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+                                      const normalizedCurrent = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                                      return normalizedCurrent < normalizedStart;
+                                    }
+                                  }
+                                  return false;
+                                }}
                                 initialFocus
                                 className={cn("p-3 pointer-events-auto")}
                               />
@@ -1033,16 +1169,30 @@ export default function Agenda() {
                   </Card>
 
                   {/* Data e Horário */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-4 md:grid-cols-3">
                     <Card className="p-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                           <CalendarIcon className="w-5 h-5 text-primary" />
                         </div>
                         <div>
-                          <p className="text-sm text-muted-foreground">Data</p>
+                          <p className="text-sm text-muted-foreground">Início</p>
                           <p className="font-semibold text-foreground">
-                            {format(new Date(selectedItem.data), "dd/MM/yyyy", { locale: ptBR })}
+                            {formatDisplayDate(selectedItem.data)}
+                          </p>
+                        </div>
+                      </div>
+                    </Card>
+
+                    <Card className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                          <CalendarIcon className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Término</p>
+                          <p className="font-semibold text-foreground">
+                            {formatDisplayDate(selectedItem.data_fim || selectedItem.data)}
                           </p>
                         </div>
                       </div>
@@ -1152,8 +1302,13 @@ export default function Agenda() {
                       </Badge>
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      <span className="font-medium">{item.cliente}</span> • {format(new Date(item.data), "dd/MM/yyyy")} às {item.horario.substring(0, 5)}
-                      {item.horario_fim && ` - ${item.horario_fim.substring(0, 5)}`}
+                      <span className="font-medium">{item.cliente}</span> • {formatDisplayDateRange(item.data, item.data_fim)}
+                      {item.horario && (
+                        <>
+                          {" "}às {item.horario.substring(0, 5)}
+                          {item.horario_fim && ` - ${item.horario_fim.substring(0, 5)}`}
+                        </>
+                      )}
                     </div>
                     <div className="text-xs text-muted-foreground/70 mt-1">
                       Participantes: {item.attendees_display}

@@ -22,6 +22,7 @@ export type Database = {
           created_at: string
           created_by: string
           data: string
+          data_fim: string | null
           descricao: string | null
           horario: string
           horario_fim: string | null
@@ -39,6 +40,7 @@ export type Database = {
           created_at?: string
           created_by: string
           data: string
+          data_fim?: string | null
           descricao?: string | null
           horario: string
           horario_fim?: string | null
@@ -56,6 +58,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           data?: string
+          data_fim?: string | null
           descricao?: string | null
           horario?: string
           horario_fim?: string | null

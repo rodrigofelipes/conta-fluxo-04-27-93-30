@@ -7,6 +7,7 @@ interface AgendaItem {
   titulo: string;
   descricao?: string;
   data: string;
+  data_fim?: string | null;
   horario: string;
   horario_fim?: string;
   tipo: string;
@@ -21,14 +22,27 @@ interface AgendaWidgetProps {
 }
 
 export function AgendaWidget({ meetings, loading }: AgendaWidgetProps) {
-  const formatDate = (dateStr: string) => {
-    // Parse seguro para evitar offset UTC -> local
+  const formatDate = (dateStr?: string | null) => {
+    if (!dateStr) return '';
     const [yearStr, monthStr, dayStr] = dateStr.split('-');
     const year = Number(yearStr);
-    const month = Number(monthStr) - 1; // Date usa 0-11
+    const month = Number(monthStr) - 1;
     const day = Number(dayStr);
     const d = new Date(year, month, day);
     return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  };
+
+  const formatDateRange = (start: string, end?: string | null) => {
+    const endValue = end || start;
+    if (endValue === start) {
+      return formatDate(start);
+    }
+    return `${formatDate(start)} - ${formatDate(endValue)}`;
+  };
+
+  const isWithinRange = (target: string, start: string, end?: string | null) => {
+    const endValue = end || start;
+    return start <= target && endValue >= target;
   };
 
   const getTipoColor = (tipo: string) => {
@@ -81,8 +95,8 @@ export function AgendaWidget({ meetings, loading }: AgendaWidgetProps) {
               tomorrow.setDate(tomorrow.getDate() + 1);
               const tomorrowStr = tomorrow.toISOString().split('T')[0];
 
-              const todayMeetings = meetings.filter(m => m.data === todayStr);
-              const tomorrowMeetings = meetings.filter(m => m.data === tomorrowStr);
+              const todayMeetings = meetings.filter(m => isWithinRange(todayStr, m.data, m.data_fim));
+              const tomorrowMeetings = meetings.filter(m => isWithinRange(tomorrowStr, m.data, m.data_fim));
 
               return (
                 <>
@@ -92,7 +106,7 @@ export function AgendaWidget({ meetings, loading }: AgendaWidgetProps) {
                         <div key={meeting.id} className="flex items-start responsive-gap-sm p-2 sm:p-3 rounded-lg hover:bg-accent/50 transition-colors border border-border/40">
                           <div className="flex-shrink-0 text-center min-w-0">
                             <div className="text-xs sm:text-sm font-medium text-primary">
-                              {formatDate(meeting.data)}
+                              {formatDateRange(meeting.data, meeting.data_fim)}
                             </div>
                           </div>
                           <div className="flex-1 min-w-0">
@@ -150,7 +164,7 @@ export function AgendaWidget({ meetings, loading }: AgendaWidgetProps) {
                         <div key={meeting.id} className="flex items-start responsive-gap-sm p-2 sm:p-3 rounded-lg hover:bg-accent/50 transition-colors border border-border/40">
                           <div className="flex-shrink-0 text-center min-w-0">
                             <div className="text-xs sm:text-sm font-medium text-primary">
-                              {formatDate(meeting.data)}
+                              {formatDateRange(meeting.data, meeting.data_fim)}
                             </div>
                           </div>
                           <div className="flex-1 min-w-0">
