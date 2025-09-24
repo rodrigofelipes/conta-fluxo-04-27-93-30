@@ -58,6 +58,8 @@ BEGIN
     SELECT 1
     FROM public.profiles
     WHERE user_id = auth.uid()
+
       AND role::text IN ('admin', 'supervisor', 'coordenador');
+
 END;
 $$;
