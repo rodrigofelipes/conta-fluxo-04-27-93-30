@@ -18,6 +18,14 @@ interface ClientOption {
 
 type IncomeStatus = "pending" | "paid" | "overdue" | "cancelled";
 
+interface IncomeFormState {
+  description: string;
+  amount: string;
+  transaction_date: string;
+  client_id: string | null;
+  status: IncomeStatus;
+}
+
 interface IncomeRecord {
   id: string;
   description: string;
@@ -47,6 +55,8 @@ const STATUS_VARIANTS: Record<IncomeStatus, "default" | "secondary" | "destructi
   cancelled: "outline",
 };
 
+const NO_CLIENT_SELECT_VALUE = "no-client";
+
 const normalizeStatus = (status?: string | null): IncomeStatus => {
   if (!status) return "pending";
   if (status === "completed") return "paid";
@@ -65,11 +75,11 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [savingIncome, setSavingIncome] = useState(false);
 
-  const [incomeForm, setIncomeForm] = useState({
+  const [incomeForm, setIncomeForm] = useState<IncomeFormState>({
     description: "",
     amount: "",
     transaction_date: new Date().toISOString().split("T")[0],
-    client_id: "",
+    client_id: null,
     status: "pending" as IncomeStatus,
   });
 
@@ -190,7 +200,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
         description: "",
         amount: "",
         transaction_date: new Date().toISOString().split("T")[0],
-        client_id: "",
+        client_id: null,
         status: "pending",
       });
       setDialogOpen(false);
@@ -372,21 +382,26 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
                 </div>
               </div>
               <div>
-                <Label>Cliente</Label>
-                <Select
-                  value={incomeForm.client_id}
-                  onValueChange={(value) => setIncomeForm(prev => ({ ...prev, client_id: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione um cliente (opcional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Sem cliente associado</SelectItem>
-                    {clients.map(client => (
-                      <SelectItem key={client.id} value={client.id}>
-                        {client.name}
-                      </SelectItem>
-                    ))}
+              <Label>Cliente</Label>
+              <Select
+                value={incomeForm.client_id ?? NO_CLIENT_SELECT_VALUE}
+                onValueChange={(value) =>
+                  setIncomeForm(prev => ({
+                    ...prev,
+                    client_id: value === NO_CLIENT_SELECT_VALUE ? null : value,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um cliente (opcional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_CLIENT_SELECT_VALUE}>Sem cliente associado</SelectItem>
+                  {clients.map(client => (
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.name}
+                    </SelectItem>
+                  ))}
                   </SelectContent>
                 </Select>
               </div>

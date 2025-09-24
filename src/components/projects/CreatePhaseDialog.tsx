@@ -15,20 +15,32 @@ interface CreatePhaseDialogProps {
   onPhaseCreated?: () => void;
 }
 
-export function CreatePhaseDialog({ 
-  open, 
-  onOpenChange, 
+type PhaseStatus = "pending" | "in_progress" | "completed" | "cancelled";
+
+interface PhaseFormData {
+  phase_name: string;
+  description: string;
+  allocated_hours: number;
+  status: PhaseStatus;
+  assigned_to: string | null;
+}
+
+const NO_COLLABORATOR_VALUE = "no-collaborator";
+
+export function CreatePhaseDialog({
+  open,
+  onOpenChange,
   projectId,
-  onPhaseCreated 
+  onPhaseCreated
 }: CreatePhaseDialogProps) {
   const [saving, setSaving] = useState(false);
   const [collaborators, setCollaborators] = useState<{id: string, name: string}[]>([]);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<PhaseFormData>({
     phase_name: "",
     description: "",
     allocated_hours: 0,
-    status: "pending" as 'pending' | 'in_progress' | 'completed' | 'cancelled',
-    assigned_to: ""
+    status: "pending",
+    assigned_to: null
   });
 
   useEffect(() => {
@@ -58,7 +70,7 @@ export function CreatePhaseDialog({
       description: "",
       allocated_hours: 0,
       status: "pending",
-      assigned_to: ""
+      assigned_to: null
     });
   };
 
@@ -192,12 +204,20 @@ export function CreatePhaseDialog({
 
           <div className="space-y-2">
             <Label htmlFor="assigned_to">Colaborador Responsável</Label>
-            <Select value={formData.assigned_to} onValueChange={(value) => setFormData(prev => ({ ...prev, assigned_to: value }))}>
+            <Select
+              value={formData.assigned_to ?? NO_COLLABORATOR_VALUE}
+              onValueChange={(value) =>
+                setFormData(prev => ({
+                  ...prev,
+                  assigned_to: value === NO_COLLABORATOR_VALUE ? null : value,
+                }))
+              }
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Selecione um colaborador" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Nenhum</SelectItem>
+                <SelectItem value={NO_COLLABORATOR_VALUE}>Nenhum</SelectItem>
                 {collaborators.map((collaborator) => (
                   <SelectItem key={collaborator.id} value={collaborator.id}>
                     {collaborator.name}
