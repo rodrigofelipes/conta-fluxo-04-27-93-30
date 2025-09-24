@@ -52,6 +52,7 @@ interface AgendaItem {
   titulo: string;
   descricao?: string;
   data: string;
+  data_fim?: string | null;
   horario: string;
   horario_fim?: string;
   tipo: string;
@@ -97,6 +98,11 @@ export function useDashboardData() {
       // Calcular hora atual para filtrar compromissos passados
       const currentTime = now.toTimeString().slice(0, 5); // HH:MM
 
+      const isWithinRange = (target: string, start: string, end?: string | null) => {
+        const endValue = end || start;
+        return start <= target && endValue >= target;
+      };
+
       // Carregar dados básicos
       const [clientsRes, projectsRes, usersRes] = await Promise.all([
         supabase.from('clients').select('id, created_at, name'),
@@ -112,10 +118,10 @@ export function useDashboardData() {
         [agendaRes, financialsRes] = await Promise.all([
           supabase.from('agenda')
             .select(`
-              id, titulo, descricao, data, horario, horario_fim, tipo, cliente, collaborators_ids
+              id, titulo, descricao, data, data_fim, horario, horario_fim, tipo, cliente, collaborators_ids
             `)
-            .gte('data', todayString)
             .lte('data', tomorrowString)
+            .gte('data_fim', todayString)
             .or(`created_by.eq.${user.id},collaborators_ids.cs.{${user.id}}`)
             .order('data, horario', { ascending: true })
             .limit(10),
@@ -129,10 +135,10 @@ export function useDashboardData() {
         // Para usuários não-admin, buscar apenas os compromissos onde é colaborador
         agendaRes = await supabase.from('agenda')
           .select(`
-            id, titulo, descricao, data, horario, horario_fim, tipo, cliente, collaborators_ids
+            id, titulo, descricao, data, data_fim, horario, horario_fim, tipo, cliente, collaborators_ids
           `)
-          .gte('data', todayString)
           .lte('data', tomorrowString)
+          .gte('data_fim', todayString)
           .or(`created_by.eq.${user.id},collaborators_ids.cs.{${user.id}}`)
           .order('data, horario', { ascending: true })
           .limit(10);
@@ -197,26 +203,25 @@ export function useDashboardData() {
 
         // Filtrar compromissos para mostrar apenas futuros
         const filteredMeetings = agendaRes.data.filter(meeting => {
-          const meetingDate = meeting.data;
-          
-          // Garantir que a reunião é de hoje ou amanhã
-          if (meetingDate !== todayString && meetingDate !== tomorrowString) {
+          const includesToday = isWithinRange(todayString, meeting.data, meeting.data_fim);
+          const includesTomorrow = isWithinRange(tomorrowString, meeting.data, meeting.data_fim);
+
+          if (!includesToday && !includesTomorrow) {
             return false;
           }
-          
-          // Para hoje, só mostrar compromissos futuros
-          if (meetingDate === todayString) {
+
+          if (includesToday && meeting.data === todayString) {
             return meeting.horario >= currentTime;
           }
-          
-          // Para amanhã, mostrar todos
-          return meetingDate === tomorrowString;
+
+          return true;
         });
 
         const meetingsWithAttendees = filteredMeetings.map(meeting => ({
           ...meeting,
           created_by_name: 'Colaborador',
-          attendees_display: getAttendeesDisplay(meeting.collaborators_ids || [], collaboratorsProfiles)
+          attendees_display: getAttendeesDisplay(meeting.collaborators_ids || [], collaboratorsProfiles),
+          data_fim: meeting.data_fim || meeting.data
         }));
         setUpcomingMeetings(meetingsWithAttendees);
       }
