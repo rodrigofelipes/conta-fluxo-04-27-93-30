@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Plus, DollarSign, Calendar, Tag, Trash2 } from "lucide-react";
+import { Plus, DollarSign, Calendar, Tag, Trash2, Pencil } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
 import { toast } from "@/hooks/use-toast";
@@ -35,29 +35,35 @@ interface Expense {
 interface ExpenseManagementProps {
   onDataChange?: () => void;
 }
+
 export function ExpenseManagement({
   onDataChange
 }: ExpenseManagementProps) {
   const {
     user
   } = useAuth();
+
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<FinancialCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
   const [savingExpense, setSavingExpense] = useState(false);
+
   const [expenseForm, setExpenseForm] = useState({
+
     description: "",
     amount: "",
     expense_date: new Date().toISOString().split('T')[0],
     category_id: "",
     payment_method: "",
-    status: "pending" as const,
-    recurrence_type: "none" as const,
+    status: "pending",
+    recurrence_type: "none",
     isInstallment: false,
     installmentCount: "1"
   });
+
+
   const [categoryForm, setCategoryForm] = useState({
     name: "",
     category_type: "fixo" as const
@@ -128,6 +134,7 @@ export function ExpenseManagement({
       });
     }
   };
+
   const createExpense = async () => {
     if (savingExpense) return;
     const parseAmount = (value: string) => {
@@ -135,6 +142,7 @@ export function ExpenseManagement({
       const normalized = value.replace(/\./g, '').replace(',', '.');
       return Number(normalized);
     };
+
     const amountValue = parseAmount(expenseForm.amount);
     if (!expenseForm.description.trim() || Number.isNaN(amountValue) || amountValue <= 0) {
       toast({
@@ -161,6 +169,7 @@ export function ExpenseManagement({
       });
       return;
     }
+
     const installmentCount = expenseForm.isInstallment ? parseInt(expenseForm.installmentCount, 10) : 1;
     if (expenseForm.isInstallment && (!installmentCount || installmentCount < 1)) {
       toast({
@@ -181,17 +190,19 @@ export function ExpenseManagement({
           const amountInCents = baseAmountInCents + (i < remainder ? 1 : 0);
           const dueDate = new Date(baseDate);
           dueDate.setMonth(dueDate.getMonth() + i);
+
           entries.push({
-            description: `${expenseForm.description} (Parcela ${i + 1}/${installmentCount})`,
-            amount: amountInCents / 100,
-            expense_date: dueDate.toISOString().split('T')[0],
+            description: expenseForm.description.trim(),
+            amount: amountValue,
+            expense_date: expenseForm.expense_date,
             category_id: expenseForm.category_id || null,
             payment_method: expenseForm.payment_method || null,
             status: expenseForm.status,
-            recurrence_type: 'monthly',
+            recurrence_type: expenseForm.recurrence_type,
             created_by: user.id
           });
         }
+
       } else {
         entries.push({
           description: expenseForm.description,
@@ -223,14 +234,15 @@ export function ExpenseManagement({
         isInstallment: false,
         installmentCount: "1"
       });
+
       setCreateDialogOpen(false);
       await fetchData();
       onDataChange?.();
     } catch (error) {
-      console.error('Erro ao criar despesa:', error);
+      console.error('Erro ao salvar despesa:', error);
       toast({
         title: "Erro",
-        description: "Não foi possível criar a despesa.",
+        description: "Não foi possível salvar a despesa.",
         variant: "destructive"
       });
     } finally {
@@ -308,9 +320,11 @@ export function ExpenseManagement({
   const totalPending = expenses.filter(e => e.status === 'pending').reduce((sum, e) => sum + e.amount, 0);
   const totalPaid = expenses.filter(e => e.status === 'paid').reduce((sum, e) => sum + e.amount, 0);
   const installmentCountNumber = parseInt(expenseForm.installmentCount, 10);
+
   const normalizedAmountPreview = expenseForm.amount ? Number(expenseForm.amount.replace(/\./g, '').replace(',', '.')) : NaN;
   const showInstallmentPreview = expenseForm.isInstallment && installmentCountNumber > 1 && !Number.isNaN(normalizedAmountPreview) && normalizedAmountPreview > 0;
   const perInstallment = showInstallmentPreview ? normalizedAmountPreview / installmentCountNumber : 0;
+
   const firstInstallmentDate = (() => {
     const date = new Date(expenseForm.expense_date);
     return Number.isNaN(date.getTime()) ? null : date;
@@ -379,16 +393,16 @@ export function ExpenseManagement({
 
       {/* Actions */}
       <div className="flex gap-3">
-        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <Dialog open={createDialogOpen} onOpenChange={handleExpenseDialogOpenChange}>
           <DialogTrigger asChild>
-            <Button>
+            <Button onClick={startCreateExpense}>
               <Plus className="h-4 w-4 mr-2" />
               Nova Despesa
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Criar Nova Despesa</DialogTitle>
+              <DialogTitle>{isEditingExpense ? 'Editar Despesa' : 'Criar Nova Despesa'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
@@ -414,6 +428,7 @@ export function ExpenseManagement({
                 }))} />
                 </div>
               </div>
+
               <div className="rounded-lg border bg-muted/50 p-3 flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-medium">Pagamento parcelado</p>
@@ -435,6 +450,7 @@ export function ExpenseManagement({
               }))} placeholder="2" />
                 </div>}
               {showInstallmentPreview && firstInstallmentDate && lastInstallmentDate && <div className="text-xs text-muted-foreground rounded-md border bg-muted/40 p-3">
+
                   <p>
                     Serão criadas <span className="font-medium text-foreground">{installmentCountNumber} parcelas</span> de
                     <span className="font-medium text-foreground"> R$ {perInstallment.toLocaleString('pt-BR', {
@@ -481,9 +497,22 @@ export function ExpenseManagement({
                   </SelectContent>
                 </Select>
               </div>
+              <div>
+                <Label htmlFor="expense_status">Status</Label>
+                <Select value={expenseForm.status} onValueChange={(value) => setExpenseForm(prev => ({ ...prev, status: value as Expense['status'] }))}>
+                  <SelectTrigger id="expense_status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pendente</SelectItem>
+                    <SelectItem value="paid">Pago</SelectItem>
+                    <SelectItem value="cancelled">Cancelado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex gap-2">
-                <Button onClick={createExpense} className="flex-1" disabled={savingExpense}>
-                  {savingExpense ? "Criando..." : "Criar Despesa"}
+                <Button onClick={saveExpense} className="flex-1" disabled={savingExpense}>
+                  {savingExpense ? "Salvando..." : isEditingExpense ? "Salvar Alterações" : "Criar Despesa"}
                 </Button>
               </div>
             </div>
@@ -558,7 +587,9 @@ export function ExpenseManagement({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+
                   {expense.status === 'pending' && <Button size="sm" onClick={() => updateExpenseStatus(expense.id, 'paid')}>
+
                       Marcar como Pago
                     </Button>}
                   <Button variant="destructive" size="sm" onClick={() => deleteExpense(expense.id)}>
