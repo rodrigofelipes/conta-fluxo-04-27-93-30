@@ -214,6 +214,7 @@ export default function Agenda() {
   const [isHolidayDialogOpen, setIsHolidayDialogOpen] = useState(false);
   const [isHolidaySyncDialogOpen, setIsHolidaySyncDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<AgendaItem | null>(null);
+  const [editingItem, setEditingItem] = useState<AgendaItem | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [currentUser, setCurrentUser] = useState<{
     id: string;
@@ -226,23 +227,35 @@ export default function Agenda() {
   // Hook para acessar as cores da paleta selecionada
   const { selectedGradient, gradientOptions } = useGradientDatabase();
 
+  const defaultFormValues: z.infer<typeof agendaFormSchema> = {
+    titulo: "",
+    descricao: "",
+    cliente: "",
+    tipo: "reuniao_cliente",
+    data: "",
+    data_fim: "",
+    horario: "",
+    horario_fim: "",
+    local: "",
+    agenda_type: "compartilhada",
+    collaborators_ids: [],
+    isInternalMeeting: false
+  };
+
   const form = useForm<z.infer<typeof agendaFormSchema>>({
     resolver: zodResolver(agendaFormSchema),
-    defaultValues: {
-      titulo: "",
-      descricao: "",
-      cliente: "",
-      tipo: "reuniao_cliente",
-      data: "",
-      data_fim: "",
-      horario: "",
-      horario_fim: "",
-      local: "",
-      agenda_type: "compartilhada",
-      collaborators_ids: [],
-      isInternalMeeting: false
-    }
+    defaultValues: defaultFormValues
   });
+
+  const resetFormToDefault = () => {
+    form.reset(defaultFormValues);
+    setEditingItem(null);
+  };
+
+  const closeDialog = () => {
+    setIsDialogOpen(false);
+    resetFormToDefault();
+  };
 
   const isInternalMeeting = form.watch("isInternalMeeting");
   const startDateValue = form.watch("data");
@@ -369,69 +382,158 @@ export default function Agenda() {
       const localEndDate = new Date(values.data_fim + 'T12:00:00');
       const formattedEndDate = localEndDate.toISOString().split('T')[0];
 
-      const { data, error } = await supabase
-        .from('agenda')
-        .insert({
-          titulo: values.titulo,
-          descricao: values.descricao,
+      const basePayload = {
+        titulo: values.titulo,
+        descricao: values.descricao,
+        cliente: values.isInternalMeeting ? INTERNAL_MEETING_PLACEHOLDER : values.cliente || "",
+        tipo: values.tipo,
+        data: formattedDate,
+        data_fim: formattedEndDate,
+        horario: values.horario,
+        horario_fim: values.horario_fim,
+        local: values.local,
+        agenda_type: values.agenda_type,
+        collaborators_ids: values.collaborators_ids
+      };
+
+      if (editingItem) {
+        const { data, error } = await supabase
+          .from('agenda')
+          .update(basePayload)
+          .eq('id', editingItem.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        const attendeesDisplay = getAttendeesDisplay(
+          values.collaborators_ids || [],
+          colaboradores.map(colaborador => ({ id: colaborador.id, name: colaborador.name }))
+        );
+
+        const creatorName =
+          colaboradores.find(colaborador => colaborador.user_id === (data as AgendaItem).created_by)?.name ||
+          editingItem.creator_name ||
+          currentUser?.name ||
+          'Usuário desconhecido';
+
+        const updatedAgendaItem: AgendaItem = {
+          ...(data as AgendaItem),
+          data_fim: (data as AgendaItem).data_fim || formattedEndDate,
           cliente: values.isInternalMeeting ? INTERNAL_MEETING_PLACEHOLDER : values.cliente || "",
-          tipo: values.tipo,
-          data: formattedDate,
-          data_fim: formattedEndDate,
-          horario: values.horario,
-          horario_fim: values.horario_fim,
-          local: values.local,
-          agenda_type: values.agenda_type,
-          collaborators_ids: values.collaborators_ids,
-          created_by: user.user.id
-        })
-        .select()
-        .single();
+          attendees_display: attendeesDisplay,
+          creator_name: creatorName
+        };
+
+        setAgenda(prev => prev.map(item => (item.id === editingItem.id ? updatedAgendaItem : item)));
+        setSelectedItem(prev => (prev && prev.id === editingItem.id ? updatedAgendaItem : prev));
+
+        toast({
+          title: "Sucesso!",
+          description: "Agendamento atualizado com sucesso."
+        });
+      } else {
+        const { data, error } = await supabase
+          .from('agenda')
+          .insert({
+            ...basePayload,
+            created_by: user.user.id
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        // Mantém a lista em memória atualizada
+        const attendeesDisplay = getAttendeesDisplay(
+          values.collaborators_ids || [],
+          colaboradores.map(colaborador => ({ id: colaborador.id, name: colaborador.name }))
+        );
+        const newAgendaItem: AgendaItem = {
+          ...(data as AgendaItem),
+          data_fim: (data as AgendaItem).data_fim || formattedEndDate,
+          cliente: values.isInternalMeeting ? INTERNAL_MEETING_PLACEHOLDER : values.cliente || "",
+          attendees_display: attendeesDisplay,
+          creator_name: currentUser?.name || 'Você'
+        };
+
+        setAgenda(prev => [
+          ...prev,
+          newAgendaItem
+        ]);
+
+        toast({
+          title: "Sucesso!",
+          description: "Agendamento criado com sucesso."
+        });
+      }
+
+      closeDialog();
+    } catch (error) {
+      console.error('Erro ao salvar agendamento:', error);
+      toast({
+        title: "Erro",
+        description: editingItem ? "Erro ao atualizar agendamento." : "Erro ao criar agendamento.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (!open) {
+      resetFormToDefault();
+    }
+  };
+
+  const handleEditClick = (item: AgendaItem) => {
+    const isInternal = !item.cliente || item.cliente === INTERNAL_MEETING_PLACEHOLDER;
+
+    form.reset({
+      titulo: item.titulo,
+      descricao: item.descricao || "",
+      cliente: isInternal ? "" : item.cliente,
+      tipo: item.tipo,
+      data: item.data,
+      data_fim: item.data_fim || item.data,
+      horario: item.horario?.substring(0, 5) || "",
+      horario_fim: item.horario_fim ? item.horario_fim.substring(0, 5) : "",
+      local: item.local || "",
+      agenda_type: item.agenda_type,
+      collaborators_ids: item.collaborators_ids || [],
+      isInternalMeeting: isInternal
+    });
+
+    setEditingItem(item);
+    setIsDetailDialogOpen(false);
+    setIsDialogOpen(true);
+  };
+
+  const handleDeleteClick = async (item: AgendaItem) => {
+    const confirmDelete = window.confirm("Tem certeza de que deseja excluir este agendamento?");
+    if (!confirmDelete) return;
+
+    try {
+      const { error } = await supabase
+        .from('agenda')
+        .delete()
+        .eq('id', item.id);
 
       if (error) throw error;
 
-      // Mantém a lista em memória atualizada
-      const attendeesDisplay = getAttendeesDisplay(
-        values.collaborators_ids || [],
-        colaboradores.map(colaborador => ({ id: colaborador.id, name: colaborador.name }))
-      );
-      const newAgendaItem: AgendaItem = {
-        ...(data as AgendaItem),
-        data_fim: (data as AgendaItem).data_fim || formattedEndDate,
-        cliente: values.isInternalMeeting ? INTERNAL_MEETING_PLACEHOLDER : values.cliente || "",
-        attendees_display: attendeesDisplay,
-        creator_name: currentUser?.name || 'Você'
-      };
-
-      setAgenda(prev => [
-        ...prev,
-        newAgendaItem
-      ]);
+      setAgenda(prev => prev.filter(agendaItem => agendaItem.id !== item.id));
+      setSelectedItem(null);
+      setIsDetailDialogOpen(false);
 
       toast({
         title: "Sucesso!",
-        description: "Agendamento criado com sucesso."
-      });
-      setIsDialogOpen(false);
-      form.reset({
-        titulo: "",
-        descricao: "",
-        cliente: "",
-        tipo: "reuniao_cliente",
-        data: "",
-        data_fim: "",
-        horario: "",
-        horario_fim: "",
-        local: "",
-        agenda_type: "compartilhada",
-        collaborators_ids: [],
-        isInternalMeeting: false
+        description: "Agendamento excluído com sucesso."
       });
     } catch (error) {
-      console.error('Erro ao criar agendamento:', error);
+      console.error('Erro ao excluir agendamento:', error);
       toast({
         title: "Erro",
-        description: "Erro ao criar agendamento.",
+        description: "Erro ao excluir agendamento.",
         variant: "destructive"
       });
     }
@@ -567,16 +669,20 @@ export default function Agenda() {
             </Button>
           </div>
           
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <Dialog open={isDialogOpen} onOpenChange={handleDialogOpenChange}>
             <DialogTrigger asChild>
-              <Button size="sm" className="btn-hero flex-shrink-0 min-w-[40px]">
+              <Button
+                size="sm"
+                className="btn-hero flex-shrink-0 min-w-[40px]"
+                onClick={resetFormToDefault}
+              >
                 <Plus className="w-4 h-4" />
                 <span className="hidden sm:inline ml-2">Novo Agendamento</span>
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Novo Agendamento</DialogTitle>
+                <DialogTitle>{editingItem ? "Editar Agendamento" : "Novo Agendamento"}</DialogTitle>
               </DialogHeader>
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -937,11 +1043,11 @@ export default function Agenda() {
                   />
 
                   <div className="flex gap-2 pt-4">
-                    <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} className="flex-1">
+                    <Button type="button" variant="outline" onClick={closeDialog} className="flex-1">
                       Cancelar
                     </Button>
                     <Button type="submit" className="flex-1 btn-hero-static">
-                      Agendar
+                      {editingItem ? "Salvar alterações" : "Agendar"}
                     </Button>
                   </div>
                 </form>
@@ -1249,11 +1355,19 @@ export default function Agenda() {
 
                 {/* Ações */}
                 <div className="flex gap-3 pt-4 border-t">
-                  <Button variant="outline" className="flex-1 h-11">
+                  <Button
+                    variant="outline"
+                    className="flex-1 h-11"
+                    onClick={() => selectedItem && handleEditClick(selectedItem)}
+                  >
                     <Edit className="w-4 h-4 mr-2" />
                     Editar
                   </Button>
-                  <Button variant="outline" className="flex-1 h-11 text-destructive hover:text-destructive">
+                  <Button
+                    variant="outline"
+                    className="flex-1 h-11 text-destructive hover:text-destructive"
+                    onClick={() => selectedItem && handleDeleteClick(selectedItem)}
+                  >
                     <Trash2 className="w-4 h-4 mr-2" />
                     Excluir
                   </Button>
