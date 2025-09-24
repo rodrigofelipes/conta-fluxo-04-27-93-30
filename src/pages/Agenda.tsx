@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,6 +16,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { toast } from "@/hooks/use-toast";
+import { Switch } from "@/components/ui/switch";
 import {
   format,
   addMonths,
@@ -65,22 +66,35 @@ const getAttendeesDisplay = (collaboratorsIds: string[], profiles: { id: string;
   return 'Colaborador';
 };
 
-const agendaFormSchema = z.object({
-  titulo: z.string().min(2, "Título deve ter pelo menos 2 caracteres"),
-  descricao: z.string().optional(),
-  cliente: z.string().min(1, "Selecione um cliente"),
-  tipo: z.enum(["reuniao_cliente", "visita_obra", "apresentacao", "aprovacao", "medicao"], {
-    required_error: "Selecione um tipo de reunião"
-  }),
-  data: z.string().min(1, "Selecione uma data"),
-  horario: z.string().min(1, "Selecione um horário"),
-  horario_fim: z.string().optional(),
-  local: z.string().optional(),
-  agenda_type: z.enum(["pessoal", "compartilhada"], {
-    required_error: "Selecione o setor da agenda"
-  }),
-  collaborators_ids: z.array(z.string()).default([])
-});
+const INTERNAL_MEETING_PLACEHOLDER = "Reunião Interna";
+
+const agendaFormSchema = z
+  .object({
+    titulo: z.string().min(2, "Título deve ter pelo menos 2 caracteres"),
+    descricao: z.string().optional(),
+    cliente: z.string().optional(),
+    tipo: z.enum(["reuniao_cliente", "visita_obra", "apresentacao", "aprovacao", "medicao"], {
+      required_error: "Selecione um tipo de reunião"
+    }),
+    data: z.string().min(1, "Selecione uma data"),
+    horario: z.string().min(1, "Selecione um horário"),
+    horario_fim: z.string().optional(),
+    local: z.string().optional(),
+    agenda_type: z.enum(["pessoal", "compartilhada"], {
+      required_error: "Selecione o setor da agenda"
+    }),
+    collaborators_ids: z.array(z.string()).default([]),
+    isInternalMeeting: z.boolean().default(false)
+  })
+  .superRefine((data, ctx) => {
+    if (!data.isInternalMeeting && (!data.cliente || data.cliente.trim().length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["cliente"],
+        message: "Selecione um cliente"
+      });
+    }
+  });
 
 interface AgendaItem {
   id: string;
@@ -189,9 +203,19 @@ export default function Agenda() {
       horario_fim: "",
       local: "",
       agenda_type: "compartilhada",
-      collaborators_ids: []
+      collaborators_ids: [],
+      isInternalMeeting: false
     }
   });
+
+  const isInternalMeeting = form.watch("isInternalMeeting");
+
+  useEffect(() => {
+    if (isInternalMeeting) {
+      form.setValue("cliente", "");
+      form.clearErrors("cliente");
+    }
+  }, [isInternalMeeting, form]);
 
   const loadData = async () => {
     try {
@@ -253,6 +277,7 @@ export default function Agenda() {
       const mappedAgenda =
         (agendaData?.map(item => ({
           ...item,
+          cliente: item.cliente?.trim().length ? item.cliente : INTERNAL_MEETING_PLACEHOLDER,
           creator_name: profilesMap.get(item.created_by) || 'Usuário desconhecido',
           attendees_display: getAttendeesDisplay(item.collaborators_ids || [], colaboradoresData || [])
         })) as AgendaItem[]) || [];
@@ -298,7 +323,7 @@ export default function Agenda() {
         .insert({
           titulo: values.titulo,
           descricao: values.descricao,
-          cliente: values.cliente,
+          cliente: values.isInternalMeeting ? INTERNAL_MEETING_PLACEHOLDER : values.cliente || "",
           tipo: values.tipo,
           data: formattedDate,
           horario: values.horario,
@@ -324,7 +349,19 @@ export default function Agenda() {
         description: "Agendamento criado com sucesso."
       });
       setIsDialogOpen(false);
-      form.reset();
+      form.reset({
+        titulo: "",
+        descricao: "",
+        cliente: "",
+        tipo: "reuniao_cliente",
+        data: "",
+        horario: "",
+        horario_fim: "",
+        local: "",
+        agenda_type: "compartilhada",
+        collaborators_ids: [],
+        isInternalMeeting: false
+      });
     } catch (error) {
       console.error('Erro ao criar agendamento:', error);
       toast({
@@ -486,14 +523,40 @@ export default function Agenda() {
 
                   <FormField
                     control={form.control}
+                    name="isInternalMeeting"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                        <div className="space-y-0.5">
+                          <FormLabel>Reunião interna</FormLabel>
+                          <FormDescription>
+                            Ative para reuniões sem cliente associado.
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch checked={field.value} onCheckedChange={field.onChange} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
                     name="cliente"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Cliente</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                          disabled={isInternalMeeting}
+                        >
                           <FormControl>
                             <SelectTrigger>
-                              <SelectValue placeholder="Selecione um cliente" />
+                              <SelectValue
+                                placeholder={
+                                  isInternalMeeting ? "Reunião interna (sem cliente)" : "Selecione um cliente"
+                                }
+                              />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -504,6 +567,11 @@ export default function Agenda() {
                             ))}
                           </SelectContent>
                         </Select>
+                        {isInternalMeeting ? (
+                          <FormDescription>
+                            O agendamento será registrado como "{INTERNAL_MEETING_PLACEHOLDER}".
+                          </FormDescription>
+                        ) : null}
                         <FormMessage />
                       </FormItem>
                     )}
