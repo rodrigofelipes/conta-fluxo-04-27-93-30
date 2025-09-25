@@ -2,16 +2,13 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { 
-  Upload, 
-  FileText, 
-  Download, 
-  Calendar, 
+import { Progress } from "@/components/ui/progress";
+import {
+  Upload,
+  FileText,
+  Download,
+  Calendar,
   Trash2,
-  Plus,
-  File,
   Image,
   FileVideo,
   FileArchive
@@ -39,6 +36,7 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   useEffect(() => {
     loadDocuments();
@@ -72,7 +70,15 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
     if (!file || !user) return;
 
     setUploading(true);
-    
+    setUploadProgress(0);
+
+    const progressInterval = globalThis.setInterval(() => {
+      setUploadProgress(prev => {
+        const nextValue = prev + 10;
+        return nextValue >= 90 ? 90 : nextValue;
+      });
+    }, 300);
+
     try {
       // Sanitiza o nome do arquivo para evitar caracteres inválidos no Storage
       const sanitizedFileName = file.name
@@ -113,20 +119,27 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
       // Adicionar o documento à lista
       setDocuments(prev => [docData, ...prev]);
       event.target.value = '';
-      
+
+      setUploadProgress(100);
+
       toast({
         title: "Sucesso",
         description: "Documento enviado com sucesso!"
       });
     } catch (error) {
       console.error('Erro ao enviar documento:', error);
+      setUploadProgress(0);
       toast({
         title: "Erro",
         description: "Erro ao enviar documento. Tente novamente.",
         variant: "destructive"
       });
     } finally {
+      globalThis.clearInterval(progressInterval);
       setUploading(false);
+      globalThis.setTimeout(() => {
+        setUploadProgress(0);
+      }, 500);
     }
   };
 
@@ -262,6 +275,15 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
         </div>
       </CardHeader>
       <CardContent>
+        {(uploading || uploadProgress > 0) && (
+          <div className="mb-4 space-y-2">
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>{uploadProgress === 100 ? 'Finalizando envio...' : 'Enviando documento...'}</span>
+              <span>{uploadProgress}%</span>
+            </div>
+            <Progress value={uploadProgress} />
+          </div>
+        )}
         {documents.length > 0 ? (
           <div className="space-y-3">
             {documents.map(doc => (
