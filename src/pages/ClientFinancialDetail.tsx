@@ -187,7 +187,7 @@ export default function ClientFinancialDetail() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => navigate('/financeiro', { state: { activeTab: 'clientes' } })}
+          onClick={() => navigate('/financeiro', { state: { activeTab: 'clients' } })}
           className="flex items-center gap-2"
         >
           <ArrowLeft className="w-4 h-4" />
