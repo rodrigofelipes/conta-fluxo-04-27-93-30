@@ -11,6 +11,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ArrowLeft, Plus, Phone, Mail, MessageSquare, Calendar, FileText, DollarSign, Building, Upload, Download, X, MapPin, User, Eye, Trash2, CreditCard } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -118,6 +128,10 @@ export default function ClientDetail() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [financials, setFinancials] = useState<Financial[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+
+  const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null);
+  const [isDeleteDocumentDialogOpen, setIsDeleteDocumentDialogOpen] = useState(false);
+  const [isDeletingDocument, setIsDeletingDocument] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('contatos');
@@ -394,27 +408,44 @@ export default function ClientDetail() {
     }
   };
 
-  const handleDeleteDocument = async (doc: Document) => {
-    const confirmDel = window.confirm(`Excluir o documento "${doc.document_name}"?`);
-    if (!confirmDel) return;
+  const openDeleteDocumentDialog = (doc: Document) => {
+    setDocumentToDelete(doc);
+    setIsDeleteDocumentDialogOpen(true);
+  };
+
+  const handleDeleteDocumentDialogChange = (open: boolean) => {
+    setIsDeleteDocumentDialogOpen(open);
+    if (!open) {
+      setDocumentToDelete(null);
+      setIsDeletingDocument(false);
+    }
+  };
+
+  const handleDeleteDocument = async () => {
+    if (!documentToDelete) return;
+    setIsDeletingDocument(true);
     try {
       const { error: storageError } = await supabase
         .storage
         .from('client-documents')
-        .remove([doc.file_path]);
+        .remove([documentToDelete.file_path]);
       if (storageError) throw storageError;
 
       const { error: dbError } = await supabase
         .from('client_documents')
         .delete()
-        .eq('id', doc.id);
+        .eq('id', documentToDelete.id);
       if (dbError) throw dbError;
 
       toast({ title: 'Documento excluído', description: 'O documento foi removido com sucesso.' });
+      setIsDeleteDocumentDialogOpen(false);
+      setDocumentToDelete(null);
       loadClientData();
     } catch (error) {
       console.error(error);
       toast({ title: 'Erro', description: 'Não foi possível excluir o documento.', variant: 'destructive' });
+    } finally {
+      setIsDeletingDocument(false);
     }
   };
 
@@ -781,7 +812,7 @@ export default function ClientDetail() {
                             <Eye className="h-4 w-4 mr-2" />
                             Ver
                           </Button>
-                          <Button variant="destructive" size="sm" className="w-full" onClick={() => handleDeleteDocument(doc)}>
+                          <Button variant="destructive" size="sm" className="w-full" onClick={() => openDeleteDocumentDialog(doc)}>
                             <Trash2 className="h-4 w-4 mr-2" />
                             Excluir
                           </Button>
@@ -1090,6 +1121,28 @@ export default function ClientDetail() {
           <ClientBudgetsTab clientId={id!} onProjectCreated={loadClientData} />
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={isDeleteDocumentDialogOpen} onOpenChange={handleDeleteDocumentDialogChange}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir documento</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o documento{' '}
+              <span className="font-semibold">{documentToDelete?.document_name}</span>? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingDocument}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={handleDeleteDocument}
+              disabled={isDeletingDocument}
+            >
+              {isDeletingDocument ? 'Excluindo...' : 'Excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Project Timeline Dialog */}
       {selectedProjectForTimeline && (
