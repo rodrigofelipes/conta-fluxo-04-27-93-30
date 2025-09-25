@@ -74,11 +74,23 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
     setUploading(true);
     
     try {
+      // Sanitiza o nome do arquivo para evitar caracteres inválidos no Storage
+      const sanitizedFileName = file.name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9.-]/g, '_')
+        .replace(/_{2,}/g, '_')
+        .toLowerCase();
+
       // Upload do arquivo para o Supabase Storage
-      const fileName = `${projectId}/${Date.now()}_${file.name}`;
+      const fileName = `${projectId}/${Date.now()}_${sanitizedFileName}`;
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('project-documents')
-        .upload(fileName, file);
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: file.type || 'application/octet-stream',
+        });
 
       if (uploadError) throw uploadError;
 
