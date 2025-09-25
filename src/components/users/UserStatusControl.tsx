@@ -12,6 +12,7 @@ interface UserStatusControlProps {
   active?: boolean;
   name: string;
   onUpdate: () => void;
+  onStatusChange?: (newActive: boolean) => void;
   canDelete?: boolean;
   canToggleStatus?: boolean;
   disabledReason?: string;
@@ -23,6 +24,7 @@ export function UserStatusControl({
   active = true,
   name,
   onUpdate,
+  onStatusChange,
   canDelete = false,
   canToggleStatus = true,
   disabledReason
@@ -59,8 +61,10 @@ export function UserStatusControl({
 
         toast({
           title: "Sucesso",
-          description: `Usuário ${active ? 'desativado' : 'ativado'} com sucesso`
+          description: `Usuário ${newActiveStatus ? 'ativado' : 'desativado'} com sucesso`
         });
+
+        onStatusChange?.(newActiveStatus);
       } else {
         // Para clientes, não temos campo active, então só permite exclusão
         toast({
