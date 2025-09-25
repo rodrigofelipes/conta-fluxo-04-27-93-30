@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.media-proxy]
 verify_jwt = false
+
+[functions.toggle-user-status]
+verify_jwt = true

@@ -44,40 +44,17 @@ export function UserStatusControl({
       console.log('Tentando alterar status do usuário:', { userId, userType, active });
 
       if (userType === 'system_user') {
-        // Primeiro, vamos verificar se o usuário existe
-        const { data: existingUser, error: checkError } = await supabase
-          .from('profiles')
-          .select('id, user_id, active, name')
-          .eq('user_id', userId)
-          .maybeSingle();
-
-        console.log('Usuário encontrado:', existingUser);
-        
-        if (checkError) {
-          console.error('Erro ao verificar usuário:', checkError);
-          throw checkError;
-        }
-        
-        if (!existingUser) {
-          throw new Error('Usuário não encontrado no sistema.');
-        }
-
-        // Agora atualizar o status
         const newActiveStatus = !active;
-        console.log('Atualizando para:', newActiveStatus);
-        
-        const { data, error } = await supabase
-          .from('profiles')
-          .update({ active: newActiveStatus })
-          .eq('user_id', userId)
-          .select('id, active, name')
-          .maybeSingle();
+        console.log('Atualizando status via Edge Function para:', newActiveStatus);
 
-        console.log('Resultado da atualização:', { data, error });
+        const { data, error } = await supabase.functions.invoke('toggle-user-status', {
+          body: { userId, active: newActiveStatus }
+        });
 
+        console.log('Resultado toggle-user-status:', { data, error });
         if (error) throw error;
-        if (!data) {
-          throw new Error('Falha ao atualizar o status do usuário.');
+        if (!data?.success) {
+          throw new Error('Falha ao alterar status do usuário.');
         }
 
         toast({
