@@ -93,6 +93,12 @@ const getAttendeesDisplay = (collaboratorsIds: string[], profiles: { id: string;
 
 const INTERNAL_MEETING_PLACEHOLDER = "Reunião Interna";
 
+const sanitizeOptionalString = (value?: string | null) => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 const agendaFormSchema = z
   .object({
     titulo: z.string().min(2, "Título deve ter pelo menos 2 caracteres"),
@@ -139,7 +145,7 @@ interface AgendaItem {
   data: string;
   data_fim?: string | null;
   horario: string;
-  horario_fim?: string;
+  horario_fim?: string | null;
   local?: string;
   created_at: string;
   created_by: string;
@@ -383,15 +389,15 @@ export default function Agenda() {
       const formattedEndDate = localEndDate.toISOString().split('T')[0];
 
       const basePayload = {
-        titulo: values.titulo,
-        descricao: values.descricao,
-        cliente: values.isInternalMeeting ? INTERNAL_MEETING_PLACEHOLDER : values.cliente || "",
+        titulo: values.titulo.trim(),
+        descricao: sanitizeOptionalString(values.descricao),
+        cliente: values.isInternalMeeting ? INTERNAL_MEETING_PLACEHOLDER : values.cliente?.trim() || "",
         tipo: values.tipo,
         data: formattedDate,
         data_fim: formattedEndDate,
         horario: values.horario,
-        horario_fim: values.horario_fim,
-        local: values.local,
+        horario_fim: sanitizeOptionalString(values.horario_fim),
+        local: sanitizeOptionalString(values.local),
         agenda_type: values.agenda_type,
         collaborators_ids: values.collaborators_ids
       };
@@ -420,7 +426,7 @@ export default function Agenda() {
         const updatedAgendaItem: AgendaItem = {
           ...(data as AgendaItem),
           data_fim: (data as AgendaItem).data_fim || formattedEndDate,
-          cliente: values.isInternalMeeting ? INTERNAL_MEETING_PLACEHOLDER : values.cliente || "",
+          cliente: values.isInternalMeeting ? INTERNAL_MEETING_PLACEHOLDER : values.cliente?.trim() || "",
           attendees_display: attendeesDisplay,
           creator_name: creatorName
         };
@@ -452,7 +458,7 @@ export default function Agenda() {
         const newAgendaItem: AgendaItem = {
           ...(data as AgendaItem),
           data_fim: (data as AgendaItem).data_fim || formattedEndDate,
-          cliente: values.isInternalMeeting ? INTERNAL_MEETING_PLACEHOLDER : values.cliente || "",
+          cliente: values.isInternalMeeting ? INTERNAL_MEETING_PLACEHOLDER : values.cliente?.trim() || "",
           attendees_display: attendeesDisplay,
           creator_name: currentUser?.name || 'Você'
         };
