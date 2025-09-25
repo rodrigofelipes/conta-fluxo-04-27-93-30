@@ -57,6 +57,34 @@ export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const isAllowedFileType = (file: File) => {
+    const allowedSpecificTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+
+    if (file.type) {
+      if (file.type.startsWith('image/')) return true;
+      if (file.type.startsWith('video/')) return true;
+      if (file.type.startsWith('audio/')) return true;
+      if (allowedSpecificTypes.includes(file.type)) return true;
+    }
+
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (!extension) return false;
+
+    const allowedExtensions = [
+      'jpg', 'jpeg', 'png', 'gif', 'webp',
+      'mp4', 'mov', 'webm',
+      'mp3', 'mpeg', 'wav', 'ogg', 'oga', 'opus', 'm4a', 'aac', 'flac',
+      'pdf', 'doc', 'docx', 'txt'
+    ];
+
+    return allowedExtensions.includes(extension);
+  };
+
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || !user) return;
@@ -72,17 +100,8 @@ export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
         return;
       }
 
-      // Validate file type
-      const allowedTypes = [
-        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-        'video/mp4', 'video/webm', 'video/quicktime',
-        'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/ogg', 'audio/m4a', 'audio/x-m4a', 'audio/mp4', 'audio/aac',
-        'application/pdf', 'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'text/plain'
-      ];
-
-      if (!allowedTypes.includes(file.type)) {
+      // Validate file type using MIME type and file extension fallback
+      if (!isAllowedFileType(file)) {
         toast({
           title: "Tipo de arquivo não suportado",
           description: `${file.name} não é um tipo de arquivo válido.`,
