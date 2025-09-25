@@ -58,6 +58,12 @@ interface ChatAttachment {
   storagePath?: string;
 }
 
+interface ClearConversationResponse {
+  success: boolean;
+  error?: string;
+  failedStorage?: { path: string; error: string }[];
+}
+
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"];
 type ClientContactRow = Database["public"]["Tables"]["client_contacts"]["Row"];
 type MessageAttachmentRow = Database["public"]["Tables"]["message_attachments"]["Row"];
@@ -474,10 +480,10 @@ export default function Chat() {
   const handleClearConversation = useCallback(async () => {
     if (!selectedContact) return;
 
-    const contactId = selectedContact.id;
     setIsClearingConversation(true);
 
     try {
+
       const { data: messageRows, error: messageError } = await supabase
         .from("client_contacts")
         .select("id")
@@ -517,20 +523,25 @@ export default function Chat() {
           .delete()
           .in("message_id", messageIds);
 
-        if (attachmentsError) throw attachmentsError;
+
+      if (error) {
+        throw error;
       }
 
-      const { error: deleteMessagesError } = await supabase
-        .from("client_contacts")
-        .delete()
-        .eq("client_id", contactId)
-        .eq("contact_type", "whatsapp");
+      if (!data?.success) {
+        const failedStorageMessage = Array.isArray(data?.failedStorage) && data.failedStorage.length > 0
+          ? "Não foi possível remover alguns arquivos do armazenamento."
+          : null;
 
-      if (deleteMessagesError) throw deleteMessagesError;
+        throw new Error(
+          typeof data?.error === "string" && data.error.trim()
+            ? data.error
+            : failedStorageMessage || "Falha ao apagar o histórico deste contato.",
+        );
+      }
 
-      // Limpar cache local e estado
       setMessages([]);
-      const readMessagesKey = `read_messages_${contactId}`;
+      const readMessagesKey = `read_messages_${selectedContact.id}`;
       localStorage.removeItem(readMessagesKey);
 
       toast({
@@ -538,12 +549,7 @@ export default function Chat() {
         description: `O histórico com ${selectedContact.name} foi removido.`,
       });
 
-      // Forçar refresh completo das mensagens e contatos
       await loadWhatsAppContacts({ silent: false });
-      
-      // Não recarregar mensagens pois foram deletadas
-      // O selectedContact continua o mesmo, mas sem mensagens
-      
     } catch (error) {
       console.error("Erro ao apagar conversas:", error);
       toast({
@@ -557,7 +563,7 @@ export default function Chat() {
     } finally {
       setIsClearingConversation(false);
     }
-  }, [selectedContact, toast, loadWhatsAppContacts, loadMessages]);
+  }, [selectedContact, toast, loadWhatsAppContacts]);
 
   // -------- Enviar Mensagem --------
   const removePendingAttachment = (attachmentId: string) => {
