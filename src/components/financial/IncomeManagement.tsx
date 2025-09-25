@@ -302,15 +302,15 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
 
   const deleteIncome = async (id: string) => {
     try {
-      const { data, error } = await supabase
+      const { error, count } = await supabase
         .from("client_financials")
-        .delete()
+        .delete({ count: "exact" })
         .eq("id", id)
-        .select("id");
+        .eq("transaction_type", "income");
 
       if (error) throw error;
 
-      if (!data || data.length === 0) {
+      if (!count) {
         toast({
           title: "Erro",
           description: "Receita não encontrada ou você não tem permissão para excluir.",
