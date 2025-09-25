@@ -134,13 +134,25 @@ export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
       const fileExt = file.name.split('.').pop();
       const fileName = `${user?.id}/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
 
-      // Upload file to Supabase Storage
+      // Upload file to Supabase Storage with progress tracking
       const { data, error } = await supabase.storage
         .from('chat-files')
         .upload(fileName, file, {
           cacheControl: '3600',
           upsert: false,
           contentType: file.type || undefined,
+          onUploadProgress: (event) => {
+            if (!event.total) return;
+
+            const progressValue = Math.round((event.loaded / event.total) * 100);
+            setUploadingFiles(prev =>
+              prev.map(f =>
+                f.id === fileId
+                  ? { ...f, progress: Math.min(Math.max(progressValue, 0), 100) }
+                  : f
+              )
+            );
+          },
         });
 
       if (error) throw error;
