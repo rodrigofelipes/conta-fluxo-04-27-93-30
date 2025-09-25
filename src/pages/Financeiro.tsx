@@ -348,6 +348,24 @@ const normalizeExpenseStatus = (status?: string | null): ManualExpenseStatus => 
   return "pending";
 };
 
+const normalizeCategoryLabel = (label?: string | null) => {
+  if (!label) return "Sem categoria";
+  const trimmed = label.trim();
+  return trimmed.length > 0 ? trimmed : "Sem categoria";
+};
+
+const normalizeSearchValue = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+
+const manualCategoryTypeLabels: Record<ManualExpenseCategory["category_type"], string> = {
+  previsao_custo: "Previsão de Custo",
+  variavel: "Variável",
+  fixo: "Fixo",
+};
+
 const categorias = {
   income: [
     "Honorários de Projeto",
@@ -633,16 +651,16 @@ export default function Financeiro() {
       other: "Sem categoria",
     };
 
-    return (categoryKey: string | null | undefined): string | null => {
-      if (!categoryKey) return null;
+    return (categoryKey: string | null | undefined): string => {
+      if (!categoryKey) return "Sem categoria";
 
       const normalizedKey = categoryKey.trim();
-      if (!normalizedKey) return null;
+      if (!normalizedKey) return "Sem categoria";
 
       const categoryFromRegistry = categoryNameById.get(normalizedKey);
-      if (categoryFromRegistry) return categoryFromRegistry;
+      if (categoryFromRegistry) return normalizeCategoryLabel(categoryFromRegistry);
 
-      return defaultLabels[normalizedKey] ?? normalizedKey;
+      return normalizeCategoryLabel(defaultLabels[normalizedKey] ?? normalizedKey);
     };
   }, [categoryNameById]);
 
@@ -657,7 +675,7 @@ export default function Financeiro() {
         date: t.transaction_date,
         status: t.status,
         origin: "client",
-        category: getTransactionCategoryLabel(t.transaction_category) ?? "Sem categoria",
+        category: getTransactionCategoryLabel(t.transaction_category),
       }));
 
       const expenseRecords = manualExpenses.map<OverviewRecord>(expense => ({
@@ -668,7 +686,7 @@ export default function Financeiro() {
         date: expense.expense_date,
         status: expense.status,
         origin: "operational",
-        category: expense.category?.name ?? null,
+        category: normalizeCategoryLabel(expense.category?.name),
         categoryType: expense.category?.category_type,
       }));
 
@@ -683,39 +701,56 @@ export default function Financeiro() {
     const unique = new Set<string>();
 
     overviewRecords.forEach(record => {
-      const label = record.category ? record.category.trim() : "";
-      const normalized = label.length > 0 ? label : "Sem categoria";
-      unique.add(normalized);
+      unique.add(normalizeCategoryLabel(record.category));
     });
 
+    categories.forEach(category => {
+      unique.add(normalizeCategoryLabel(category.name));
+    });
+
+    unique.add("Sem categoria");
+
     return Array.from(unique).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [overviewRecords]);
+  }, [overviewRecords, categories]);
 
   const filteredOverviewRecords = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
+    const rawTerm = searchTerm.trim();
+    const normalizedTerm = normalizeSearchValue(rawTerm);
 
     return overviewRecords.filter(record => {
       const matchesType = typeFilter === "all" || record.type === typeFilter;
       const matchesStatus = statusFilter === "all" || record.status === statusFilter;
       const matchesOrigin = originFilter === "all" || record.origin === originFilter;
-      const rawCategory = record.category ? record.category.trim() : "";
-      const recordCategory = rawCategory.length > 0 ? rawCategory : "Sem categoria";
+      const recordCategory = normalizeCategoryLabel(record.category);
       const matchesCategory = categoryFilter === "all" || recordCategory === categoryFilter;
 
-      if (!term) {
+      if (!normalizedTerm) {
         return matchesType && matchesStatus && matchesOrigin && matchesCategory;
       }
 
-      const searchFields = [
+      const searchFields: string[] = [
         record.description,
         recordCategory,
         record.status,
+        getStatusLabel(record.status),
+        record.origin,
         record.origin === "client" ? "clientes" : "operacional",
+        record.type,
         record.type === "income" ? "receita" : "despesa",
         record.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
+        record.amount.toFixed(2),
       ];
 
-      const matchesTerm = searchFields.some(field => field.toLowerCase().includes(term));
+      if (record.categoryType) {
+        searchFields.push(
+          record.categoryType,
+          manualCategoryTypeLabels[record.categoryType]
+        );
+      }
+
+      const matchesTerm = searchFields.some(field =>
+        normalizeSearchValue(String(field)).includes(normalizedTerm)
+      );
 
       return matchesType && matchesStatus && matchesOrigin && matchesCategory && matchesTerm;
     });
