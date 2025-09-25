@@ -10,6 +10,7 @@ import { Plus, DollarSign, Calendar, User2, Trash2, Pencil, Tag } from "lucide-r
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/state/auth";
+import { Switch } from "@/components/ui/switch";
 
 interface ClientOption {
   id: string;
@@ -33,6 +34,9 @@ interface IncomeFormState {
   client_id?: string;
   status: IncomeStatus;
   category_id: string;
+  isInstallment: boolean;
+  installmentCount: string;
+  recurrence_type: "none" | "monthly" | "quarterly" | "yearly";
 }
 
 interface IncomeRecord {
@@ -44,6 +48,7 @@ interface IncomeRecord {
   client_id?: string | null;
   client_name?: string | null;
   category_id?: string | null;
+  recurrence_type?: string | null;
   created_at: string;
 }
 
@@ -100,6 +105,9 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
     client_id: undefined,
     status: "pending" as IncomeStatus,
     category_id: legacyCategories[0]?.id ?? "",
+    isInstallment: false,
+    installmentCount: "1",
+    recurrence_type: "none",
   });
 
   const [incomeForm, setIncomeForm] = useState<IncomeFormState>(createDefaultIncomeForm);
@@ -114,7 +122,9 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
       const [incomesRes, clientsRes] = await Promise.all([
         supabase
           .from("client_financials")
-          .select("id, description, amount, transaction_date, status, client_id, transaction_category, created_at")
+          .select(
+            "id, description, amount, transaction_date, status, client_id, transaction_category, created_at, recurrence_type",
+          )
           .eq("transaction_type", "income")
           .order("transaction_date", { ascending: false }),
         supabase
@@ -144,6 +154,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
           client_id: clientId,
           client_name: clientId ? clientMap.get(clientId) ?? null : null,
           category_id: categoryId,
+          recurrence_type: income.recurrence_type ? String(income.recurrence_type) : null,
           created_at: String(income.created_at),
         };
       });
@@ -195,6 +206,9 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
       client_id: income.client_id ?? undefined,
       status: income.status,
       category_id: validCategoryId,
+      isInstallment: false,
+      installmentCount: "1",
+      recurrence_type: (income.recurrence_type as IncomeFormState["recurrence_type"]) || "none",
     });
     setDialogOpen(true);
   };
@@ -249,6 +263,19 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
       return;
     }
 
+    const installmentCount = !editingIncomeId && incomeForm.isInstallment ? parseInt(incomeForm.installmentCount, 10) : 1;
+
+    if (!editingIncomeId && incomeForm.isInstallment && (!installmentCount || installmentCount < 1)) {
+      toast({
+        title: "Erro",
+        description: "Informe um número válido de parcelas.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const recurrenceTypeForInsert = !editingIncomeId && incomeForm.isInstallment && installmentCount > 1 ? "monthly" : "none";
+
     try {
       setSavingIncome(true);
       if (editingIncomeId) {
@@ -261,6 +288,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
             status: incomeForm.status,
             client_id: incomeForm.client_id,
             transaction_category: incomeForm.category_id,
+            recurrence_type: incomeForm.recurrence_type,
           })
           .eq("id", editingIncomeId);
 
@@ -271,22 +299,64 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
           description: "Receita atualizada com sucesso!",
         });
       } else {
-        const { error } = await supabase.from("client_financials").insert({
-          transaction_type: "income",
-          description: incomeForm.description.trim(),
-          amount: amountValue,
-          transaction_date: incomeForm.transaction_date,
-          status: incomeForm.status,
-          client_id: incomeForm.client_id,
-          transaction_category: incomeForm.category_id,
-          created_by: user.id,
-        });
+        const entries: {
+          transaction_type: "income";
+          description: string;
+          amount: number;
+          transaction_date: string;
+          status: IncomeStatus;
+          client_id: string;
+          transaction_category: string;
+          created_by: string;
+          recurrence_type: IncomeFormState["recurrence_type"];
+        }[] = [];
+
+        if (incomeForm.isInstallment && installmentCount > 1 && incomeForm.client_id) {
+          const totalInCents = Math.round(amountValue * 100);
+          const baseAmountInCents = Math.floor(totalInCents / installmentCount);
+          const remainder = totalInCents % installmentCount;
+
+          for (let i = 0; i < installmentCount; i += 1) {
+            const amountInCents = baseAmountInCents + (i < remainder ? 1 : 0);
+            const dueDate = new Date(incomeDate);
+            dueDate.setMonth(dueDate.getMonth() + i);
+
+            entries.push({
+              transaction_type: "income",
+              description: incomeForm.description.trim(),
+              amount: amountInCents / 100,
+              transaction_date: dueDate.toISOString().split("T")[0],
+              status: incomeForm.status,
+              client_id: incomeForm.client_id,
+              transaction_category: incomeForm.category_id,
+              created_by: user.id,
+              recurrence_type: recurrenceTypeForInsert,
+            });
+          }
+        } else if (incomeForm.client_id) {
+          entries.push({
+            transaction_type: "income",
+            description: incomeForm.description.trim(),
+            amount: amountValue,
+            transaction_date: incomeForm.transaction_date,
+            status: incomeForm.status,
+            client_id: incomeForm.client_id,
+            transaction_category: incomeForm.category_id,
+            created_by: user.id,
+            recurrence_type: recurrenceTypeForInsert,
+          });
+        }
+
+        const { error } = await supabase.from("client_financials").insert(entries);
 
         if (error) throw error;
 
         toast({
           title: "Sucesso",
-          description: "Receita criada com sucesso!",
+          description:
+            incomeForm.isInstallment && installmentCount > 1
+              ? `${installmentCount} parcelas criadas com sucesso!`
+              : "Receita criada com sucesso!",
         });
       }
 
@@ -398,6 +468,23 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
     [incomes],
   );
 
+  const normalizedAmountPreview = parseAmount(incomeForm.amount);
+  const installmentCountNumber = parseInt(incomeForm.installmentCount, 10);
+  const showInstallmentPreview =
+    incomeForm.isInstallment &&
+    installmentCountNumber > 1 &&
+    !Number.isNaN(normalizedAmountPreview) &&
+    normalizedAmountPreview > 0;
+  const perInstallment = showInstallmentPreview ? normalizedAmountPreview / installmentCountNumber : 0;
+
+  const basePreviewDate = new Date(incomeForm.transaction_date);
+  const hasValidPreviewDate = !Number.isNaN(basePreviewDate.getTime());
+  const firstInstallmentDate = showInstallmentPreview && hasValidPreviewDate ? basePreviewDate : null;
+  const lastInstallmentDate = showInstallmentPreview && hasValidPreviewDate ? new Date(basePreviewDate) : null;
+  if (lastInstallmentDate) {
+    lastInstallmentDate.setMonth(lastInstallmentDate.getMonth() + installmentCountNumber - 1);
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -499,6 +586,68 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
                   />
                 </div>
               </div>
+              <div className="rounded-lg border bg-muted/50 p-3 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium">Recebimento parcelado</p>
+                  <p className="text-xs text-muted-foreground">
+                    Habilite para dividir o valor em parcelas mensais automáticas.
+                  </p>
+                </div>
+                <Switch
+                  disabled={Boolean(editingIncomeId)}
+                  checked={incomeForm.isInstallment}
+                  onCheckedChange={checked =>
+                    setIncomeForm(prev => ({
+                      ...prev,
+                      isInstallment: checked,
+                      recurrence_type: checked ? "monthly" : "none",
+                      installmentCount: checked
+                        ? prev.installmentCount === "1"
+                          ? "2"
+                          : prev.installmentCount
+                        : "1",
+                    }))
+                  }
+                />
+              </div>
+              {incomeForm.isInstallment && (
+                <div>
+                  <Label htmlFor="income_installment_count">Número de Parcelas</Label>
+                  <Input
+                    id="income_installment_count"
+                    type="number"
+                    min={1}
+                    disabled={Boolean(editingIncomeId)}
+                    value={incomeForm.installmentCount}
+                    onChange={(event) =>
+                      setIncomeForm(prev => ({
+                        ...prev,
+                        installmentCount: event.target.value,
+                      }))
+                    }
+                    placeholder="2"
+                  />
+                </div>
+              )}
+              {showInstallmentPreview && firstInstallmentDate && lastInstallmentDate && (
+                <div className="text-xs text-muted-foreground rounded-md border bg-muted/40 p-3">
+                  <p>
+                    Serão criadas <span className="font-medium text-foreground">{installmentCountNumber} parcelas</span> de
+                    <span className="font-medium text-foreground">
+                      {" "}R$ {perInstallment.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                    .
+                  </p>
+                  <p>
+                    Recebimentos de {firstInstallmentDate.toLocaleDateString("pt-BR")} até
+                    {" "}
+                    {lastInstallmentDate.toLocaleDateString("pt-BR")}.
+                  </p>
+                </div>
+              )}
               <div>
                 <Label htmlFor="income_category">Categoria</Label>
                 <Select
