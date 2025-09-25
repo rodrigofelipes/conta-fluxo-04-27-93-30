@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Clock, Search, Filter, FolderOpen } from "lucide-react";
@@ -37,6 +36,7 @@ export function UserPhasesView() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [activeTimers, setActiveTimers] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -92,9 +92,24 @@ export function UserPhasesView() {
         query = query.eq('assigned_to', currentProfile.id);
       }
 
+      if (currentProfile.role === 'user') {
+        query = query.eq('status', 'in_progress');
+      }
+
       const { data, error } = await query;
 
       if (error) throw error;
+
+      setUserRole(prevRole => {
+        if (currentProfile.role === 'user') {
+          if (prevRole !== 'user') {
+            setStatusFilter('in_progress');
+          }
+        } else if (prevRole === 'user') {
+          setStatusFilter('all');
+        }
+        return currentProfile.role;
+      });
 
       const phasesData = (data || []).map(phase => ({
         ...phase,
@@ -151,9 +166,9 @@ export function UserPhasesView() {
     return phases.filter(p => p.status === status).length;
   };
 
-  const activePhasesCount = phases.filter(p => 
-    ['pending', 'in_progress'].includes(p.status)
-  ).length;
+  const activePhasesCount = userRole === 'user'
+    ? phases.filter(p => p.status === 'in_progress').length
+    : phases.filter(p => ['pending', 'in_progress'].includes(p.status)).length;
 
   if (loading) {
     return (
@@ -219,7 +234,11 @@ export function UserPhasesView() {
                 className="pl-10"
               />
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select
+              value={statusFilter}
+              onValueChange={setStatusFilter}
+              disabled={userRole === 'user'}
+            >
               <SelectTrigger className="w-full sm:w-48">
                 <div className="flex items-center gap-2">
                   <Filter className="h-4 w-4" />
@@ -230,15 +249,19 @@ export function UserPhasesView() {
                 <SelectItem value="all">
                   Todos ({getStatusCount("all")})
                 </SelectItem>
-                <SelectItem value="pending">
-                  Pendentes ({getStatusCount("pending")})
-                </SelectItem>
+                {userRole !== 'user' && (
+                  <SelectItem value="pending">
+                    Pendentes ({getStatusCount("pending")})
+                  </SelectItem>
+                )}
                 <SelectItem value="in_progress">
                   Em Andamento ({getStatusCount("in_progress")})
                 </SelectItem>
-                <SelectItem value="completed">
-                  Concluídas ({getStatusCount("completed")})
-                </SelectItem>
+                {userRole !== 'user' && (
+                  <SelectItem value="completed">
+                    Concluídas ({getStatusCount("completed")})
+                  </SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>

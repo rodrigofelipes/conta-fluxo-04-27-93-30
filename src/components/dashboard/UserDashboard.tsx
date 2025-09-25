@@ -25,8 +25,8 @@ export function UserDashboard({ userName }: UserDashboardProps) {
   const navigate = useNavigate();
   const { phases, dailyHours, loading } = useUserProjects();
 
-  const activePhasesCount = phases.filter(phase => 
-    phase.status === 'in_progress' || phase.status === 'pending'
+  const activePhasesCount = phases.filter(phase =>
+    phase.status === 'in_progress'
   ).length;
 
   const quickActions = [
