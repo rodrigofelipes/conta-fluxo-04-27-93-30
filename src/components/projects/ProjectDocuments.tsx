@@ -2,7 +2,10 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+omponents/ui/alert-dialog";
+
 import { Progress } from "@/components/ui/progress";
+
 import {
   Upload,
   FileText,
@@ -36,7 +39,9 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+
   const [uploadProgress, setUploadProgress] = useState(0);
+
 
   useEffect(() => {
     loadDocuments();
@@ -209,8 +214,11 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
     }
   };
 
-  const handleDelete = async (document: ProjectDocument) => {
-    if (!confirm(`Tem certeza que deseja excluir "${document.document_name}"?`)) return;
+  const handleDelete = async () => {
+    if (!documentToDelete) return;
+
+    setDeleting(true);
+    const document = documentToDelete;
 
     try {
       // Deletar do storage
@@ -230,11 +238,13 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
 
       // Remover da lista
       setDocuments(prev => prev.filter(doc => doc.id !== document.id));
-      
+
       toast({
         title: "Sucesso",
         description: "Documento excluído com sucesso!"
       });
+
+      setDocumentToDelete(null);
     } catch (error) {
       console.error('Erro ao excluir documento:', error);
       toast({
@@ -242,12 +252,15 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
         description: "Erro ao excluir documento. Tente novamente.",
         variant: "destructive"
       });
+    } finally {
+      setDeleting(false);
     }
   };
 
   if (loading) return <div className="p-6 text-center">Carregando documentos...</div>;
 
   return (
+
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
@@ -333,18 +346,82 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
             <p className="text-sm text-muted-foreground mb-4">
               Adicione documentos relacionados ao projeto como plantas, contratos, fotos, etc.
             </p>
+
             <Button
               variant="outline"
+              size="sm"
               onClick={() => globalThis.document.getElementById('document-upload')?.click()}
               disabled={uploading}
               className="gap-2"
             >
               <Upload className="h-4 w-4" />
-              {uploading ? 'Enviando...' : 'Adicionar Primeiro Documento'}
+              {uploading ? 'Enviando...' : 'Adicionar Documento'}
             </Button>
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </CardHeader>
+        <CardContent>
+          {documents.length > 0 ? (
+            <div className="space-y-3">
+              {documents.map(doc => (
+                <div key={doc.id} className="flex items-center justify-between p-4 border border-border/50 rounded-lg hover:border-primary/30 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-muted rounded-lg">
+                      {getDocumentIcon(doc.document_type)}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-medium text-sm">{doc.document_name}</h4>
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span>{formatFileSize(doc.file_size)}</span>
+                        <div className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {new Date(doc.created_at).toLocaleDateString('pt-BR')}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDownload(doc)}
+                      className="p-2"
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setDocumentToDelete(doc)}
+                      className="p-2 text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                <FileText className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="font-medium mb-2">Nenhum documento anexado</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Adicione documentos relacionados ao projeto como plantas, contratos, fotos, etc.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => globalThis.document.getElementById('document-upload')?.click()}
+                disabled={uploading}
+                className="gap-2"
+              >
+                <Upload className="h-4 w-4" />
+                {uploading ? 'Enviando...' : 'Adicionar Primeiro Documento'}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </>
   );
 }
