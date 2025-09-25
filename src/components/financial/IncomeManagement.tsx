@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, DollarSign, Calendar, User2, Trash2, Pencil } from "lucide-react";
+import { Plus, DollarSign, Calendar, User2, Trash2, Pencil, Tag } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/state/auth";
@@ -18,12 +18,33 @@ interface ClientOption {
 
 type IncomeStatus = "pending" | "paid" | "overdue" | "cancelled";
 
+interface FinancialCategory {
+  id: string;
+  name: string;
+  category_type: "previsao_custo" | "variavel" | "fixo";
+}
+
+const CATEGORY_LABELS: Record<FinancialCategory["category_type"], string> = {
+  previsao_custo: "Previsão de Custo",
+  variavel: "Variável",
+  fixo: "Fixo",
+};
+
+const LEGACY_CATEGORY_LABELS: Record<string, string> = {
+  receivable: "A Receber",
+  payable: "A Pagar",
+  project: "Projeto",
+  fixed_expense: "Despesa Fixa",
+  variable_expense: "Despesa Variável",
+};
+
 interface IncomeFormState {
   description: string;
   amount: string;
   transaction_date: string;
   client_id: string | null;
   status: IncomeStatus;
+  category_id: string;
 }
 
 interface IncomeRecord {
@@ -34,6 +55,7 @@ interface IncomeRecord {
   status: IncomeStatus;
   client_id?: string | null;
   client_name?: string | null;
+  category_id?: string | null;
   created_at: string;
 }
 
@@ -71,6 +93,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
   const { user } = useAuth();
   const [incomes, setIncomes] = useState<IncomeRecord[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
+  const [categories, setCategories] = useState<FinancialCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [savingIncome, setSavingIncome] = useState(false);
@@ -82,6 +105,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
     transaction_date: new Date().toISOString().split("T")[0],
     client_id: null,
     status: "pending" as IncomeStatus,
+    category_id: "",
   });
 
   const [incomeForm, setIncomeForm] = useState<IncomeFormState>(createDefaultIncomeForm);
@@ -93,20 +117,26 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [incomesRes, clientsRes] = await Promise.all([
+      const [incomesRes, clientsRes, categoriesRes] = await Promise.all([
         supabase
           .from("client_financials")
-          .select("id, description, amount, transaction_date, status, client_id, created_at")
+          .select("id, description, amount, transaction_date, status, client_id, transaction_category, created_at")
           .eq("transaction_type", "income")
           .order("transaction_date", { ascending: false }),
         supabase
           .from("clients")
           .select("id, name")
           .order("name"),
+        supabase
+          .from("financial_categories")
+          .select("id, name, category_type")
+          .order("category_type", { ascending: true })
+          .order("name", { ascending: true }),
       ]);
 
       if (incomesRes.error) throw incomesRes.error;
       if (clientsRes.error) throw clientsRes.error;
+      if (categoriesRes.error) throw categoriesRes.error;
 
       const clientOptions: ClientOption[] = (clientsRes.data ?? []).map((client: any) => ({
         id: String(client.id),
@@ -114,8 +144,15 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
       }));
       const clientMap = new Map(clientOptions.map(client => [client.id, client.name]));
 
+      const categoryOptions: FinancialCategory[] = (categoriesRes.data ?? []).map((category: any) => ({
+        id: String(category.id),
+        name: String(category.name),
+        category_type: category.category_type as FinancialCategory["category_type"],
+      }));
+
       const normalizedIncomes: IncomeRecord[] = (incomesRes.data || []).map((income: any) => {
         const clientId = income.client_id ? String(income.client_id) : null;
+        const categoryId = income.transaction_category ? String(income.transaction_category) : null;
         return {
           id: String(income.id),
           description: String(income.description),
@@ -124,12 +161,14 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
           status: normalizeStatus(income.status),
           client_id: clientId,
           client_name: clientId ? clientMap.get(clientId) ?? null : null,
+          category_id: categoryId,
           created_at: String(income.created_at),
         };
       });
 
       setIncomes(normalizedIncomes);
       setClients(clientOptions);
+      setCategories(categoryOptions);
     } catch (error) {
       console.error("Erro ao carregar receitas:", error);
       toast({
@@ -158,18 +197,26 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
 
   const startCreateIncome = () => {
     setEditingIncomeId(null);
-    setIncomeForm(createDefaultIncomeForm());
+    const defaultForm = createDefaultIncomeForm();
+    if (categories.length > 0) {
+      defaultForm.category_id = categories[0].id;
+    }
+    setIncomeForm(defaultForm);
     setDialogOpen(true);
   };
 
   const startEditIncome = (income: IncomeRecord) => {
     setEditingIncomeId(income.id);
+    const validCategoryId = income.category_id && categories.some(category => category.id === income.category_id)
+      ? income.category_id
+      : "";
     setIncomeForm({
       description: income.description,
       amount: income.amount.toString(),
       transaction_date: income.transaction_date.split("T")[0],
       client_id: income.client_id ?? null,
       status: income.status,
+      category_id: validCategoryId,
     });
     setDialogOpen(true);
   };
@@ -182,6 +229,15 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
       toast({
         title: "Erro",
         description: "Informe uma descrição e um valor válido.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!incomeForm.category_id) {
+      toast({
+        title: "Erro",
+        description: "Selecione uma categoria para a receita.",
         variant: "destructive",
       });
       return;
@@ -217,6 +273,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
             transaction_date: incomeForm.transaction_date,
             status: incomeForm.status,
             client_id: incomeForm.client_id || null,
+            transaction_category: incomeForm.category_id,
           })
           .eq("id", editingIncomeId);
 
@@ -234,6 +291,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
           transaction_date: incomeForm.transaction_date,
           status: incomeForm.status,
           client_id: incomeForm.client_id || null,
+          transaction_category: incomeForm.category_id,
           created_by: user.id,
         });
 
@@ -323,6 +381,21 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
       });
     }
   };
+
+  const categoriesById = useMemo(() => new Map(categories.map(category => [category.id, category])), [categories]);
+
+  const getIncomeCategoryLabel = useMemo(
+    () =>
+      (categoryId: string | null | undefined): string | null => {
+        if (!categoryId) return null;
+        const category = categoriesById.get(categoryId);
+        if (category) {
+          return `${category.name} (${CATEGORY_LABELS[category.category_type]})`;
+        }
+        return LEGACY_CATEGORY_LABELS[categoryId] ?? "Categoria removida";
+      },
+    [categoriesById]
+  );
 
   const totalPending = useMemo(
     () => incomes.filter(income => income.status === "pending").reduce((sum, income) => sum + income.amount, 0),
@@ -436,11 +509,35 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
                 </div>
               </div>
               <div>
-              <Label>Cliente</Label>
-              <Select
-                value={incomeForm.client_id ?? NO_CLIENT_SELECT_VALUE}
-                onValueChange={(value) =>
-                  setIncomeForm(prev => ({
+                <Label htmlFor="income_category">Categoria</Label>
+                <Select
+                  value={incomeForm.category_id}
+                  onValueChange={(value) => setIncomeForm(prev => ({ ...prev, category_id: value }))}
+                  disabled={categories.length === 0}
+                >
+                  <SelectTrigger id="income_category">
+                    <SelectValue placeholder="Selecione uma categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map(category => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.name} ({CATEGORY_LABELS[category.category_type]})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {categories.length === 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Cadastre categorias na seção de categorias financeiras abaixo.
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label>Cliente</Label>
+                <Select
+                  value={incomeForm.client_id ?? NO_CLIENT_SELECT_VALUE}
+                  onValueChange={(value) =>
+                    setIncomeForm(prev => ({
                     ...prev,
                     client_id: value === NO_CLIENT_SELECT_VALUE ? null : value,
                   }))
@@ -500,6 +597,16 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
                     {income.client_name && (
                       <Badge variant="outline">{income.client_name}</Badge>
                     )}
+                    {(() => {
+                      const categoryLabel = getIncomeCategoryLabel(income.category_id);
+                      if (!categoryLabel) return null;
+                      return (
+                        <Badge variant="outline" className="flex items-center gap-1">
+                          <Tag className="h-3 w-3" />
+                          {categoryLabel}
+                        </Badge>
+                      );
+                    })()}
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <span>R$ {income.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
