@@ -18,6 +18,16 @@ import * as z from "zod";
 import { toast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
+import {
   format,
   addMonths,
   startOfMonth,
@@ -221,6 +231,9 @@ export default function Agenda() {
   const [isHolidaySyncDialogOpen, setIsHolidaySyncDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<AgendaItem | null>(null);
   const [editingItem, setEditingItem] = useState<AgendaItem | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<AgendaItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [currentUser, setCurrentUser] = useState<{
     id: string;
@@ -515,26 +528,44 @@ export default function Agenda() {
     setIsDialogOpen(true);
   };
 
-  const handleDeleteClick = async (item: AgendaItem) => {
-    const confirmDelete = window.confirm("Tem certeza de que deseja excluir este agendamento?");
-    if (!confirmDelete) return;
+  const handleDeleteClick = (item: AgendaItem) => {
+    setItemToDelete(item);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeleteDialogOpenChange = (open: boolean) => {
+    if (!open && !isDeleting) {
+      setItemToDelete(null);
+    }
+    setIsDeleteDialogOpen(open);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return;
 
     try {
+      setIsDeleting(true);
+
       const { error } = await supabase
         .from('agenda')
         .delete()
-        .eq('id', item.id);
+        .eq('id', itemToDelete.id);
 
       if (error) throw error;
 
-      setAgenda(prev => prev.filter(agendaItem => agendaItem.id !== item.id));
-      setSelectedItem(null);
-      setIsDetailDialogOpen(false);
+      setAgenda(prev => prev.filter(agendaItem => agendaItem.id !== itemToDelete.id));
+      if (selectedItem?.id === itemToDelete.id) {
+        setSelectedItem(null);
+        setIsDetailDialogOpen(false);
+      }
 
       toast({
         title: "Sucesso!",
         description: "Agendamento excluído com sucesso."
       });
+
+      setIsDeleteDialogOpen(false);
+      setItemToDelete(null);
     } catch (error) {
       console.error('Erro ao excluir agendamento:', error);
       toast({
@@ -542,6 +573,8 @@ export default function Agenda() {
         description: "Erro ao excluir agendamento.",
         variant: "destructive"
       });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -1383,6 +1416,32 @@ export default function Agenda() {
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={handleDeleteDialogOpenChange}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir agendamento</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza de que deseja excluir este agendamento? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                if (!isDeleting) {
+                  handleConfirmDelete();
+                }
+              }}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? 'Excluindo...' : 'Excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Lista de próximos agendamentos (AGORA APENAS HOJE E AMANHÃ) */}
       <Card className="border-primary/20 shadow-sm">
