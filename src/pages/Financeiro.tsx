@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -378,6 +379,7 @@ const categorias = {
 };
 
 export default function Financeiro() {
+  const location = useLocation();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -389,6 +391,13 @@ export default function Financeiro() {
   const [activeTab, setActiveTab] = useState("overview");
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState("");
+
+  useEffect(() => {
+    const state = location.state as { activeTab?: string } | null;
+    if (state?.activeTab && state.activeTab !== activeTab) {
+      setActiveTab(state.activeTab);
+    }
+  }, [location.state, activeTab]);
 
   const form = useForm<z.infer<typeof transactionFormSchema>>({
     resolver: zodResolver(transactionFormSchema),
