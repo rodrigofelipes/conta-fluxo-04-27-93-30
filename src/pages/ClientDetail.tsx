@@ -333,7 +333,11 @@ export default function ClientDetail() {
       const { data: storageData, error: storageError } = await supabase
         .storage
         .from('client-documents')
-        .upload(fileName, file);
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: file.type || 'application/octet-stream',
+        });
       if (storageError) throw storageError;
 
       const { error: insertError } = await supabase.from('client_documents').insert({
