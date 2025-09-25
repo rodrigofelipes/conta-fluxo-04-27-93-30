@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,11 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Plus, DollarSign, Calendar, Tag, Trash2, Pencil } from "lucide-react";
+import { Plus, DollarSign, Calendar, Tag, Trash2, Pencil, ChevronDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
 import { toast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 interface FinancialCategory {
   id: string;
   name: string;
@@ -32,6 +33,7 @@ interface Expense {
   status: 'pending' | 'paid' | 'cancelled';
   recurrence_type?: 'none' | 'monthly' | 'yearly';
   category?: FinancialCategory;
+  created_at: string;
 }
 interface ExpenseManagementProps {
   onDataChange?: () => void;
@@ -78,6 +80,7 @@ export function ExpenseManagement({
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
   const [expenseForm, setExpenseForm] = useState<ExpenseFormState>(getInitialExpenseForm);
+  const [openInstallmentGroups, setOpenInstallmentGroups] = useState<Record<string, boolean>>({});
 
   const resetExpenseDialog = () => {
     setIsEditingExpense(false);
@@ -229,6 +232,9 @@ export function ExpenseManagement({
       });
       return;
     }
+    const recurrenceTypeForInsert = !isEditingExpense && expenseForm.isInstallment && installmentCount > 1
+      ? 'monthly'
+      : 'none';
     try {
       setSavingExpense(true);
       if (isEditingExpense && editingExpenseId) {
@@ -264,7 +270,7 @@ export function ExpenseManagement({
               category_id: expenseForm.category_id || undefined,
               payment_method: expenseForm.payment_method || undefined,
               status: expenseForm.status,
-              recurrence_type: expenseForm.recurrence_type || undefined,
+              recurrence_type: recurrenceTypeForInsert,
               created_by: user.id
             });
           }
@@ -277,7 +283,7 @@ export function ExpenseManagement({
             category_id: expenseForm.category_id || undefined,
             payment_method: expenseForm.payment_method || undefined,
             status: expenseForm.status,
-            recurrence_type: expenseForm.recurrence_type || undefined,
+            recurrence_type: recurrenceTypeForInsert,
             created_by: user.id
           });
         }
@@ -380,6 +386,132 @@ export function ExpenseManagement({
         return 'outline';
     }
   };
+  const formatCurrency = (value: number) =>
+    value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  const formatDate = (value: string) => {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '--';
+    return parsed.toLocaleDateString('pt-BR');
+  };
+
+  type StatusBadgeVariant = ReturnType<typeof getStatusBadgeVariant>;
+
+  const getGroupStatusInfo = (installments: Expense[]): { label: string; variant: StatusBadgeVariant } => {
+    const hasPending = installments.some(item => item.status === 'pending');
+    const hasPaid = installments.some(item => item.status === 'paid');
+    const hasCancelled = installments.some(item => item.status === 'cancelled');
+
+    if (hasPending && !hasPaid && !hasCancelled) {
+      return { label: 'Pendente', variant: getStatusBadgeVariant('pending') };
+    }
+
+    if (!hasPending && hasPaid && !hasCancelled) {
+      return { label: 'Pago', variant: getStatusBadgeVariant('paid') };
+    }
+
+    if (!hasPending && !hasPaid && hasCancelled) {
+      return { label: 'Cancelado', variant: getStatusBadgeVariant('cancelled') };
+    }
+
+    if (hasPending && hasPaid) {
+      return { label: 'Em andamento', variant: 'outline' };
+    }
+
+    if (hasCancelled && hasPaid) {
+      return { label: 'Pago/Cancelado', variant: 'outline' };
+    }
+
+    return { label: 'Parcelado', variant: 'outline' };
+  };
+
+  type ExpenseListItem =
+    | { type: 'single'; expense: Expense }
+    | {
+        type: 'installment';
+        key: string;
+        description: string;
+        expenses: Expense[];
+        totalAmount: number;
+        firstDueDate: string;
+        lastDueDate: string;
+        category?: FinancialCategory;
+        payment_method?: string;
+        statusInfo: { label: string; variant: StatusBadgeVariant };
+        pendingCount: number;
+        paidCount: number;
+        cancelledCount: number;
+      };
+
+  const expenseItems = useMemo<ExpenseListItem[]>(() => {
+    const groups = new Map<string, Expense[]>();
+
+    expenses.forEach(expense => {
+      if (expense.recurrence_type === 'monthly') {
+        const key = `${expense.description}|${expense.created_at}`;
+        const existing = groups.get(key) ?? [];
+        existing.push(expense);
+        groups.set(key, existing);
+      }
+    });
+
+    const items: ExpenseListItem[] = [];
+    const seenGroups = new Set<string>();
+
+    expenses.forEach(expense => {
+      if (expense.recurrence_type === 'monthly') {
+        const key = `${expense.description}|${expense.created_at}`;
+        if (seenGroups.has(key)) {
+          return;
+        }
+        seenGroups.add(key);
+
+        const installments = groups.get(key) ?? [expense];
+        const sortedInstallments = [...installments].sort(
+          (a, b) => new Date(a.expense_date).getTime() - new Date(b.expense_date).getTime()
+        );
+        const totalAmount = sortedInstallments.reduce((sum, item) => sum + item.amount, 0);
+
+        items.push({
+          type: 'installment',
+          key,
+          description: expense.description,
+          expenses: sortedInstallments,
+          totalAmount,
+          firstDueDate: sortedInstallments[0]?.expense_date ?? expense.expense_date,
+          lastDueDate:
+            sortedInstallments[sortedInstallments.length - 1]?.expense_date ?? expense.expense_date,
+          category: expense.category,
+          payment_method: expense.payment_method,
+          statusInfo: getGroupStatusInfo(sortedInstallments),
+          pendingCount: sortedInstallments.filter(item => item.status === 'pending').length,
+          paidCount: sortedInstallments.filter(item => item.status === 'paid').length,
+          cancelledCount: sortedInstallments.filter(item => item.status === 'cancelled').length,
+        });
+      } else {
+        items.push({ type: 'single', expense });
+      }
+    });
+
+    return items;
+  }, [expenses]);
+
+  useEffect(() => {
+    setOpenInstallmentGroups(prev => {
+      const validKeys = new Set(
+        expenseItems.filter(item => item.type === 'installment').map(item => item.key)
+      );
+
+      const next: Record<string, boolean> = {};
+      validKeys.forEach(key => {
+        if (prev[key]) {
+          next[key] = true;
+        }
+      });
+
+      return next;
+    });
+  }, [expenseItems]);
   const totalPending = expenses.filter(e => e.status === 'pending').reduce((sum, e) => sum + e.amount, 0);
   const totalPaid = expenses.filter(e => e.status === 'paid').reduce((sum, e) => sum + e.amount, 0);
   const installmentCountNumber = parseInt(expenseForm.installmentCount, 10);
@@ -499,11 +631,20 @@ export function ExpenseManagement({
                     Habilite para dividir o valor em parcelas mensais automáticas.
                   </p>
                 </div>
-                <Switch disabled={isEditingExpense} checked={expenseForm.isInstallment} onCheckedChange={checked => setExpenseForm(prev => ({
-                ...prev,
-                isInstallment: checked,
-                installmentCount: checked ? prev.installmentCount === "1" ? "2" : prev.installmentCount : "1"
-              }))} />
+                <Switch
+                  disabled={isEditingExpense}
+                  checked={expenseForm.isInstallment}
+                  onCheckedChange={checked => setExpenseForm(prev => ({
+                    ...prev,
+                    isInstallment: checked,
+                    recurrence_type: checked ? 'monthly' : 'none',
+                    installmentCount: checked
+                      ? prev.installmentCount === "1"
+                        ? "2"
+                        : prev.installmentCount
+                      : "1"
+                  }))}
+                />
               </div>
               {expenseForm.isInstallment && <div>
                   <Label htmlFor="installment_count">Número de Parcelas</Label>
@@ -629,41 +770,146 @@ export function ExpenseManagement({
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {expenses.map(expense => <div key={expense.id} className="flex items-center justify-between p-4 border rounded-lg">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h4 className="font-medium">{expense.description}</h4>
-                    <Badge variant={getStatusBadgeVariant(expense.status)}>
-                      {expense.status === 'pending' ? 'Pendente' : expense.status === 'paid' ? 'Pago' : 'Cancelado'}
-                    </Badge>
-                    {expense.recurrence_type === 'monthly' && <Badge variant="outline">Parcelado</Badge>}
-                    {expense.category && <Badge variant={getCategoryTypeBadgeVariant(expense.category.category_type)}>
-                        {expense.category.name}
-                      </Badge>}
+            {expenseItems.map(item => {
+              if (item.type === 'single') {
+                const expense = item.expense;
+                return (
+                  <div
+                    key={`single-${expense.id}`}
+                    className="flex flex-col gap-4 rounded-lg border p-4 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div className="flex-1">
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <h4 className="font-medium">{expense.description}</h4>
+                        <Badge variant={getStatusBadgeVariant(expense.status)}>
+                          {expense.status === 'pending'
+                            ? 'Pendente'
+                            : expense.status === 'paid'
+                              ? 'Pago'
+                              : 'Cancelado'}
+                        </Badge>
+                        {expense.category && (
+                          <Badge variant={getCategoryTypeBadgeVariant(expense.category.category_type)}>
+                            {expense.category.name}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                        <span>{formatCurrency(expense.amount)}</span>
+                        <span>{formatDate(expense.expense_date)}</span>
+                        {expense.payment_method && <span>{expense.payment_method}</span>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => startEditExpense(expense)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      {expense.status === 'pending' && (
+                        <Button size="sm" onClick={() => updateExpenseStatus(expense.id, 'paid')}>
+                          Marcar como Pago
+                        </Button>
+                      )}
+                      <Button variant="destructive" size="sm" onClick={() => deleteExpense(expense.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span>R$ {expense.amount.toLocaleString('pt-BR', {
-                    minimumFractionDigits: 2
-                  })}</span>
-                    <span>{new Date(expense.expense_date).toLocaleDateString('pt-BR')}</span>
-                    {expense.payment_method && <span>{expense.payment_method}</span>}
+                );
+              }
+
+              const isOpen = Boolean(openInstallmentGroups[item.key]);
+
+              return (
+                <Collapsible
+                  key={`group-${item.key}`}
+                  open={isOpen}
+                  onOpenChange={open =>
+                    setOpenInstallmentGroups(prev => ({
+                      ...prev,
+                      [item.key]: open,
+                    }))
+                  }
+                >
+                  <div className="rounded-lg border">
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex w-full flex-col gap-3 p-4 text-left transition-colors hover:bg-muted/40"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="font-medium">{item.description}</h4>
+                            <Badge variant="outline">Parcelado ({item.expenses.length}x)</Badge>
+                            <Badge variant={item.statusInfo.variant}>{item.statusInfo.label}</Badge>
+                            {item.category && (
+                              <Badge variant={getCategoryTypeBadgeVariant(item.category.category_type)}>
+                                {item.category.name}
+                              </Badge>
+                            )}
+                          </div>
+                          <ChevronDown
+                            className={`h-4 w-4 shrink-0 transition-transform ${isOpen ? '-rotate-180' : 'rotate-0'}`}
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                          <span>Total: {formatCurrency(item.totalAmount)}</span>
+                          <span>
+                            {formatDate(item.firstDueDate)} - {formatDate(item.lastDueDate)}
+                          </span>
+                          {item.pendingCount > 0 && <span>{item.pendingCount} pendente(s)</span>}
+                          {item.paidCount > 0 && <span>{item.paidCount} pago(s)</span>}
+                          {item.cancelledCount > 0 && <span>{item.cancelledCount} cancelado(s)</span>}
+                        </div>
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-3 border-t p-4">
+                      {item.expenses.map((installment, index) => (
+                        <div
+                          key={`${item.key}-${installment.id}`}
+                          className="flex flex-col gap-3 rounded-md border p-3 md:flex-row md:items-center md:justify-between"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-medium">
+                                Parcela {index + 1} de {item.expenses.length}
+                              </p>
+                              <Badge variant={getStatusBadgeVariant(installment.status)}>
+                                {installment.status === 'pending'
+                                  ? 'Pendente'
+                                  : installment.status === 'paid'
+                                    ? 'Pago'
+                                    : 'Cancelado'}
+                              </Badge>
+                            </div>
+                            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                              <span>Valor: {formatCurrency(installment.amount)}</span>
+                              <span>Vencimento: {formatDate(installment.expense_date)}</span>
+                              {installment.payment_method && <span>{installment.payment_method}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" onClick={() => startEditExpense(installment)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            {installment.status === 'pending' && (
+                              <Button size="sm" onClick={() => updateExpenseStatus(installment.id, 'paid')}>
+                                Marcar como Pago
+                              </Button>
+                            )}
+                            <Button variant="destructive" size="sm" onClick={() => deleteExpense(installment.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </CollapsibleContent>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => startEditExpense(expense)}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  {expense.status === 'pending' && <Button size="sm" onClick={() => updateExpenseStatus(expense.id, 'paid')}>
-                      Marcar como Pago
-                    </Button>}
-                  <Button variant="destructive" size="sm" onClick={() => deleteExpense(expense.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>)}
-            {expenses.length === 0 && <div className="text-center py-8 text-muted-foreground">
-                Nenhuma despesa encontrada
-              </div>}
+                </Collapsible>
+              );
+            })}
+            {expenseItems.length === 0 && (
+              <div className="py-8 text-center text-muted-foreground">Nenhuma despesa encontrada</div>
+            )}
           </div>
         </CardContent>
       </Card>
