@@ -30,7 +30,6 @@ import { toast } from "@/hooks/use-toast";
 import { format, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
-import { UnifiedFinancialTab } from "@/components/financial/UnifiedFinancialTab";
 import { ClientFinancialTab } from "@/components/financial/ClientFinancialTab";
 import { ExpenseManagement } from "@/components/financial/ExpenseManagement";
 import { IncomeManagement } from "@/components/financial/IncomeManagement";
@@ -299,19 +298,6 @@ interface BankAccount {
   balance: number;
 }
 
-interface Installment {
-  id: string;
-  client_id: string;
-  client_name?: string;
-  installment_number: number;
-  total_installments: number;
-  amount: number;
-  due_date: string;
-  status: 'pending' | 'paid' | 'overdue' | 'cancelled';
-  payment_date?: string;
-  payment_method?: string;
-}
-
 interface HorasColaborador {
   id: string;
   nome: string;
@@ -380,18 +366,20 @@ const categorias = {
   ]
 };
 
+const FINANCE_TABS = ["overview", "clients", "fluxo", "relatorios", "cadastro"] as const;
+type FinanceTab = (typeof FINANCE_TABS)[number];
+
 export default function Financeiro() {
   const location = useLocation();
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
-  const [installments, setInstallments] = useState<Installment[]>([]);
   const [horasColaboradores, setHorasColaboradores] = useState<HorasColaborador[]>([]);
   const [manualExpenses, setManualExpenses] = useState<ManualExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState<FinanceTab>("overview");
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -399,8 +387,17 @@ export default function Financeiro() {
     const state = location.state as { activeTab?: string } | null;
 
     if (state?.activeTab) {
-      setActiveTab((currentTab) => (state.activeTab === currentTab ? currentTab : state.activeTab));
+      const tabFromState = state.activeTab;
+      const isValidTab = (value: string): value is FinanceTab =>
+        FINANCE_TABS.includes(value as FinanceTab);
+
+      if (isValidTab(tabFromState)) {
+        setActiveTab(currentTab => (tabFromState === currentTab ? currentTab : tabFromState));
+        return;
+      }
     }
+
+    setActiveTab("overview");
   }, [location.state]);
 
 
@@ -439,12 +436,6 @@ export default function Financeiro() {
         .order('name');
       if (bankAccountsError) throw bankAccountsError;
 
-      const { data: installmentsData, error: installmentsError } = await supabase
-        .from('payment_installments')
-        .select('*')
-        .order('due_date', { ascending: true });
-      if (installmentsError) throw installmentsError;
-
       const { data: expensesData, error: expensesError } = await supabase
         .from('expenses')
         .select(`
@@ -472,12 +463,6 @@ export default function Financeiro() {
         recurrence_type: (t.recurrence_type || "none") as "none" | "monthly" | "quarterly" | "yearly"
       }));
 
-      const processedInstallments = (installmentsData ?? []).map((i: any) => ({
-        ...i,
-        client_name: clientMap.get(i.client_id) || 'Cliente não encontrado',
-        status: i.status as 'pending' | 'paid' | 'overdue' | 'cancelled'
-      }));
-
       const mappedExpenses: ManualExpense[] = (expensesData ?? []).map((expense: any) => ({
         id: String(expense.id),
         description: String(expense.description),
@@ -498,7 +483,6 @@ export default function Financeiro() {
       setTransactions(processedTransactions);
       setClients(clientsData || []);
       setBankAccounts(bankAccountsData || []);
-      setInstallments(processedInstallments);
       setManualExpenses(mappedExpenses);
     } catch (error) {
       console.error('Erro ao carregar dados financeiros:', error);
@@ -513,8 +497,6 @@ export default function Financeiro() {
   };
 
   useEffect(() => { loadData(); }, []);
-
-  const handleInstallmentCreated = () => { loadData(); };
 
   const onSubmit = async (values: z.infer<typeof transactionFormSchema>) => {
     try {
@@ -677,9 +659,8 @@ export default function Financeiro() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
 
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-          <TabsTrigger value="unified">Contas e Parcelas</TabsTrigger>
           <TabsTrigger value="clients">Clientes</TabsTrigger>
           <TabsTrigger value="fluxo">Fluxo de Caixa</TabsTrigger>
           <TabsTrigger value="relatorios">Relatórios</TabsTrigger>
@@ -873,16 +854,6 @@ export default function Financeiro() {
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
-
-        {/* Unificado */}
-        <TabsContent value="unified">
-          <UnifiedFinancialTab 
-            transactions={transactions}
-            clients={clients}
-            installments={installments}
-            onInstallmentCreated={handleInstallmentCreated}
-          />
         </TabsContent>
 
         {/* Clientes */}
