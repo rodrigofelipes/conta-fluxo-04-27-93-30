@@ -605,6 +605,37 @@ export default function Financeiro() {
     }
   };
 
+  const categoryNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    categories.forEach(category => {
+      map.set(category.id, category.name);
+    });
+    return map;
+  }, [categories]);
+
+  const getTransactionCategoryLabel = useMemo(() => {
+    const defaultLabels: Record<string, string> = {
+      receivable: "A Receber",
+      payable: "A Pagar",
+      project: "Projeto",
+      fixed_expense: "Despesa Fixa",
+      variable_expense: "Despesa Variável",
+      other: "Sem categoria",
+    };
+
+    return (categoryKey: string | null | undefined): string | null => {
+      if (!categoryKey) return null;
+
+      const normalizedKey = categoryKey.trim();
+      if (!normalizedKey) return null;
+
+      const categoryFromRegistry = categoryNameById.get(normalizedKey);
+      if (categoryFromRegistry) return categoryFromRegistry;
+
+      return defaultLabels[normalizedKey] ?? normalizedKey;
+    };
+  }, [categoryNameById]);
+
   const overviewRecords = useMemo<OverviewRecord[]>(() => {
     const transactionRecords = transactions
       .filter(t => t.transaction_type === "income" || t.transaction_type === "expense")
@@ -616,27 +647,27 @@ export default function Financeiro() {
         date: t.transaction_date,
         status: t.status,
         origin: "client",
-        category: t.transaction_category,
+        category: getTransactionCategoryLabel(t.transaction_category) ?? "Sem categoria",
       }));
 
-    const expenseRecords = manualExpenses.map<OverviewRecord>(expense => ({
-      id: expense.id,
-      type: "expense",
-      description: expense.description,
-      amount: expense.amount,
-      date: expense.expense_date,
-      status: expense.status,
-      origin: "operational",
-      category: expense.category?.name ?? null,
-      categoryType: expense.category?.category_type,
-    }));
+      const expenseRecords = manualExpenses.map<OverviewRecord>(expense => ({
+        id: expense.id,
+        type: "expense",
+        description: expense.description,
+        amount: expense.amount,
+        date: expense.expense_date,
+        status: expense.status,
+        origin: "operational",
+        category: expense.category?.name ?? null,
+        categoryType: expense.category?.category_type,
+      }));
 
     return [...transactionRecords, ...expenseRecords].sort((a, b) => {
       const dateA = new Date(a.date).getTime();
       const dateB = new Date(b.date).getTime();
       return dateB - dateA;
     });
-  }, [transactions, manualExpenses]);
+  }, [transactions, manualExpenses, getTransactionCategoryLabel]);
 
   const filteredOverviewRecords = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
