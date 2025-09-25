@@ -338,6 +338,10 @@ interface OverviewRecord {
   categoryType?: ManualExpenseCategory["category_type"]; // only for expenses
 }
 
+type OverviewTypeFilter = "all" | OverviewRecord["type"];
+type OverviewStatusFilter = "all" | "paid" | "pending" | "overdue" | "cancelled";
+type OverviewOriginFilter = "all" | OverviewRecord["origin"];
+
 const normalizeExpenseStatus = (status?: string | null): ManualExpenseStatus => {
   if (status === "paid") return "paid";
   if (status === "cancelled") return "cancelled";
@@ -385,6 +389,10 @@ export default function Financeiro() {
   const [activeTab, setActiveTab] = useState<FinanceTab>("overview");
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState("");
+  const [typeFilter, setTypeFilter] = useState<OverviewTypeFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<OverviewStatusFilter>("all");
+  const [originFilter, setOriginFilter] = useState<OverviewOriginFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
 
   useEffect(() => {
     const state = location.state as { activeTab?: string } | null;
@@ -671,23 +679,62 @@ export default function Financeiro() {
     });
   }, [transactions, manualExpenses, getTransactionCategoryLabel]);
 
+  const overviewCategories = useMemo(() => {
+    const unique = new Set<string>();
+
+    overviewRecords.forEach(record => {
+      const label = record.category ? record.category.trim() : "";
+      const normalized = label.length > 0 ? label : "Sem categoria";
+      unique.add(normalized);
+    });
+
+    return Array.from(unique).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [overviewRecords]);
+
   const filteredOverviewRecords = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    if (!term) return overviewRecords;
 
     return overviewRecords.filter(record => {
+      const matchesType = typeFilter === "all" || record.type === typeFilter;
+      const matchesStatus = statusFilter === "all" || record.status === statusFilter;
+      const matchesOrigin = originFilter === "all" || record.origin === originFilter;
+      const rawCategory = record.category ? record.category.trim() : "";
+      const recordCategory = rawCategory.length > 0 ? rawCategory : "Sem categoria";
+      const matchesCategory = categoryFilter === "all" || recordCategory === categoryFilter;
+
+      if (!term) {
+        return matchesType && matchesStatus && matchesOrigin && matchesCategory;
+      }
+
       const searchFields = [
         record.description,
-        record.category ?? "",
+        recordCategory,
         record.status,
         record.origin === "client" ? "clientes" : "operacional",
         record.type === "income" ? "receita" : "despesa",
         record.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
       ];
 
-      return searchFields.some(field => field.toLowerCase().includes(term));
+      const matchesTerm = searchFields.some(field => field.toLowerCase().includes(term));
+
+      return matchesType && matchesStatus && matchesOrigin && matchesCategory && matchesTerm;
     });
-  }, [overviewRecords, searchTerm]);
+  }, [overviewRecords, searchTerm, typeFilter, statusFilter, originFilter, categoryFilter]);
+
+  const resetOverviewFilters = () => {
+    setTypeFilter("all");
+    setStatusFilter("all");
+    setOriginFilter("all");
+    setCategoryFilter("all");
+    setSearchTerm("");
+  };
+
+  const hasActiveOverviewFilters =
+    typeFilter !== "all" ||
+    statusFilter !== "all" ||
+    originFilter !== "all" ||
+    categoryFilter !== "all" ||
+    searchTerm.trim().length > 0;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -779,14 +826,73 @@ export default function Financeiro() {
       </div>
 
           <Card className="card-elevated">
-            <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <CardTitle>Movimentações Financeiras</CardTitle>
-              <Input
-                placeholder="Buscar por descrição, status ou categoria"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                className="w-full md:w-72"
-              />
+            <CardHeader className="space-y-4">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <CardTitle>Movimentações Financeiras</CardTitle>
+                <Input
+                  placeholder="Buscar por descrição, status ou categoria"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  className="w-full md:w-72"
+                />
+              </div>
+
+              <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
+                <Select value={typeFilter} onValueChange={value => setTypeFilter(value as OverviewTypeFilter)}>
+                  <SelectTrigger className="w-full md:w-44">
+                    <SelectValue placeholder="Tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os tipos</SelectItem>
+                    <SelectItem value="income">Receitas</SelectItem>
+                    <SelectItem value="expense">Despesas</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={statusFilter} onValueChange={value => setStatusFilter(value as OverviewStatusFilter)}>
+                  <SelectTrigger className="w-full md:w-44">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os status</SelectItem>
+                    <SelectItem value="paid">Pagas</SelectItem>
+                    <SelectItem value="pending">Pendentes</SelectItem>
+                    <SelectItem value="overdue">Em atraso</SelectItem>
+                    <SelectItem value="cancelled">Canceladas</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={originFilter} onValueChange={value => setOriginFilter(value as OverviewOriginFilter)}>
+                  <SelectTrigger className="w-full md:w-44">
+                    <SelectValue placeholder="Origem" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as origens</SelectItem>
+                    <SelectItem value="client">Clientes</SelectItem>
+                    <SelectItem value="operational">Operacional</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={categoryFilter} onValueChange={value => setCategoryFilter(value)}>
+                  <SelectTrigger className="w-full md:w-56">
+                    <SelectValue placeholder="Categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as categorias</SelectItem>
+                    {overviewCategories.map(category => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {hasActiveOverviewFilters && (
+                  <Button variant="ghost" size="sm" onClick={resetOverviewFilters} className="md:ml-auto">
+                    Limpar filtros
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               {filteredOverviewRecords.length > 0 ? (
