@@ -12,7 +12,8 @@ serve(async (req) => {
   }
 
   try {
-    if (req.method !== "GET") {
+    const allowedMethods = new Set(["GET", "POST"]);
+    if (!allowedMethods.has(req.method)) {
       return new Response(JSON.stringify({ error: "Method not allowed" }), {
         status: 405,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
