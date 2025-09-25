@@ -2,10 +2,17 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/lib/supabase";
 
 export type Role = "admin" | "user" | "supervisor" | "coordenador";
 export type Setor = "PESSOAL" | "FISCAL" | "CONTABIL" | "PLANEJAMENTO" | "TODOS";
+
+const INACTIVE_USER_ERROR_CODE = "USER_INACTIVE";
+
+type ProfileData = {
+  name: string | null;
+  role: Role | null;
+  active: boolean | null;
+};
 
 export interface User { 
   id: string; 
@@ -33,23 +40,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
 
-  const fetchUserRole = async (userId: string): Promise<Role> => {
+  const getProfileData = async (userId: string): Promise<ProfileData | null> => {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('role')
+        .select('name, role, active')
         .eq('user_id', userId)
-        .single();
-      
+        .maybeSingle();
+
       if (error) {
-        console.warn('Error fetching user role:', error);
-        return 'user';
+        console.error('Erro ao buscar dados do perfil:', error);
+        return null;
       }
-      
-      return (data?.role as Role) || 'user';
+
+      if (!data) {
+        return null;
+      }
+
+      return {
+        name: data.name ?? null,
+        role: (data.role as Role | null) ?? null,
+        active: data.active ?? null
+      };
     } catch (error) {
-      console.warn('Error fetching user role:', error);
-      return 'user';
+      console.error('Erro inesperado ao buscar dados do perfil:', error);
+      return null;
     }
   };
 
@@ -58,8 +73,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return 'CONTABIL';
   };
 
-  const checkIfMasterAdmin = async (userId: string): Promise<boolean> => {
+  const checkIfMasterAdmin = async (userId: string, profileData?: ProfileData | null): Promise<boolean> => {
     try {
+      if (profileData) {
+        return profileData.role === 'admin' && (profileData.name === 'Débora' || profileData.name === 'Olevate');
+      }
+
       const { data, error } = await supabase
         .from('profiles')
         .select('name, role')
@@ -75,21 +94,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const createUserFromSupabaseUser = async (sUser: any): Promise<User> => {
-    const role = await fetchUserRole(sUser.id);
+    const profileData = await getProfileData(sUser.id);
+
+    if (profileData?.active === false) {
+      const inactiveError = new Error(INACTIVE_USER_ERROR_CODE);
+      (inactiveError as Error & { code?: string }).code = INACTIVE_USER_ERROR_CODE;
+      throw inactiveError;
+    }
+
+    const role: Role = profileData?.role ?? 'user';
     const setor = role === 'admin' ? await fetchUserSetor(sUser.id) : null;
-    const isMasterAdmin = role === 'admin' ? await checkIfMasterAdmin(sUser.id) : false;
-    
+    const isMasterAdmin = role === 'admin' ? await checkIfMasterAdmin(sUser.id, profileData) : false;
+
     // Fetch the actual name from profiles table instead of user_metadata
     let profileName = sUser.user_metadata?.name || sUser.user_metadata?.full_name || sUser.email || "Usuário";
     try {
-      const { data: profileData, error } = await supabase
-        .from('profiles')
-        .select('name')
-        .eq('user_id', sUser.id)
-        .single();
-      
-      if (!error && profileData) {
+      if (profileData?.name) {
         profileName = profileData.name;
+      } else {
+        const { data: fetchedProfile, error } = await supabase
+          .from('profiles')
+          .select('name')
+          .eq('user_id', sUser.id)
+          .single();
+
+        if (!error && fetchedProfile) {
+          profileName = fetchedProfile.name;
+        }
       }
     } catch (error) {
       console.warn('Error fetching profile name:', error);
@@ -105,12 +136,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   };
 
+  const clearStoredUser = () => {
+    setUser(null);
+    localStorage.removeItem("cc_auth_user");
+  };
+
+  const handleInactiveUser = async () => {
+    await supabase.auth.signOut();
+    clearStoredUser();
+  };
+
+  const isInactiveUserError = (error: unknown) => {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const code = (error as Error & { code?: string }).code;
+    return code === INACTIVE_USER_ERROR_CODE || error.message === INACTIVE_USER_ERROR_CODE;
+  };
+
   const refreshUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      const mappedUser = await createUserFromSupabaseUser(session.user);
-      setUser(mappedUser);
-      localStorage.setItem("cc_auth_user", JSON.stringify(mappedUser));
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session?.user) {
+        try {
+          const mappedUser = await createUserFromSupabaseUser(session.user);
+          setUser(mappedUser);
+          localStorage.setItem("cc_auth_user", JSON.stringify(mappedUser));
+        } catch (error) {
+          if (isInactiveUserError(error)) {
+            await handleInactiveUser();
+          } else {
+            throw error;
+          }
+        }
+      } else {
+        clearStoredUser();
+      }
+    } catch (error) {
+      console.error('Error refreshing user:', error);
     }
   };
 
@@ -136,39 +201,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setUser(mappedUser);
               localStorage.setItem("cc_auth_user", JSON.stringify(mappedUser));
             } catch (error) {
-              console.error('Error creating user from Supabase user:', error);
-              // Set basic user info even if role fetching fails
-              // Try to get name from profiles even in error case
-              let fallbackName = sUser.user_metadata?.name || sUser.user_metadata?.full_name || sUser.email || "Usuário";
-              try {
-                const { data: profileData } = await supabase
-                  .from('profiles')
-                  .select('name')
-                  .eq('user_id', sUser.id)
-                  .single();
+              if (isInactiveUserError(error)) {
+                await handleInactiveUser();
+              } else {
+                console.error('Error creating user from Supabase user:', error);
+                // Set basic user info even if role fetching fails
+                // Try to get name from profiles even in error case
+                let fallbackName = sUser.user_metadata?.name || sUser.user_metadata?.full_name || sUser.email || "Usuário";
+                try {
+                  const { data: profileData } = await supabase
+                    .from('profiles')
+                    .select('name')
+                    .eq('user_id', sUser.id)
+                    .single();
 
-                if (profileData) {
-                  fallbackName = profileData.name;
+                  if (profileData) {
+                    fallbackName = profileData.name;
+                  }
+                } catch (profileError) {
+                  console.warn('Error fetching profile name in fallback:', profileError);
                 }
-              } catch (profileError) {
-                console.warn('Error fetching profile name in fallback:', profileError);
-              }
 
-              setUser({
-                id: sUser.id,
-                email: sUser.email || "",
-                name: fallbackName as string,
-                username: (sUser.user_metadata?.username || fallbackName || sUser.email?.split('@')[0] || "usuario") as string,
-                role: 'user' as Role
-              });
+                setUser({
+                  id: sUser.id,
+                  email: sUser.email || "",
+                  name: fallbackName as string,
+                  username: (sUser.user_metadata?.username || fallbackName || sUser.email?.split('@')[0] || "usuario") as string,
+                  role: 'user' as Role
+                });
+              }
             } finally {
               resolve();
             }
           }, 0);
         });
       } else {
-        setUser(null);
-        localStorage.removeItem("cc_auth_user");
+        clearStoredUser();
         return Promise.resolve();
       }
     };
@@ -206,13 +274,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login: AuthContextProps["login"] = async (emailOrUsername, password) => {
     try {
       console.log('Tentando login com:', emailOrUsername);
-      
+
+      const inactiveUserMessage = "Usuário desativado. Entre em contato com o administrador.";
+
+      const validateActiveUser = async (userId?: string | null) => {
+        if (!userId) {
+          return { ok: true as const };
+        }
+
+        const profileData = await getProfileData(userId);
+
+        if (profileData?.active === false) {
+          await handleInactiveUser();
+          return { ok: false as const, error: inactiveUserMessage };
+        }
+
+        return { ok: true as const };
+      };
+
       // If it contains @, it's an email, proceed normally
       if (emailOrUsername.includes('@')) {
         console.log('Login via email:', emailOrUsername);
-        const { error } = await supabase.auth.signInWithPassword({ 
-          email: emailOrUsername, 
-          password 
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: emailOrUsername,
+          password
         });
         if (error) {
           console.error('Erro login email:', error);
@@ -221,9 +306,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           return { ok: false, error: error.message };
         }
+
+        const validation = await validateActiveUser(data.user?.id);
+        if (!validation.ok) {
+          return validation;
+        }
+
         return { ok: true };
       }
-      
+
       // Se não contém @, é um nome de usuário
       console.log('Login via username, buscando email para:', emailOrUsername);
       const { data: emailResult, error: functionError } = await supabase
@@ -234,7 +325,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!functionError && emailResult) {
         console.log('Tentando login com email encontrado:', emailResult);
         // Encontrou o email do usuário, tentar fazer login
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email: emailResult,
           password
         });
@@ -245,6 +336,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           return { ok: false, error: error.message };
         }
+
+        const validation = await validateActiveUser(data.user?.id);
+        if (!validation.ok) {
+          return validation;
+        }
+
         return { ok: true };
       }
       
@@ -301,8 +398,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout: AuthContextProps["logout"] = async () => {
     await supabase.auth.signOut();
-    setUser(null);
-    localStorage.removeItem("cc_auth_user");
+    clearStoredUser();
   };
 
   const verifyUserCredentials: AuthContextProps["verifyUserCredentials"] = async (username, email) => {
