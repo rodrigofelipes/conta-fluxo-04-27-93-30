@@ -30,7 +30,7 @@ interface IncomeFormState {
   description: string;
   amount: string;
   transaction_date: string;
-  client_id: string | null;
+  client_id?: string;
   status: IncomeStatus;
   category_id: string;
 }
@@ -65,8 +65,6 @@ const STATUS_VARIANTS: Record<IncomeStatus, "default" | "secondary" | "destructi
   cancelled: "outline",
 };
 
-const NO_CLIENT_SELECT_VALUE = "no-client";
-
 const normalizeStatus = (status?: string | null): IncomeStatus => {
   if (!status) return "pending";
   if (status === "completed") return "paid";
@@ -99,7 +97,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
     description: "",
     amount: "",
     transaction_date: new Date().toISOString().split("T")[0],
-    client_id: null,
+    client_id: undefined,
     status: "pending" as IncomeStatus,
     category_id: legacyCategories[0]?.id ?? "",
   });
@@ -194,7 +192,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
       description: income.description,
       amount: income.amount.toString(),
       transaction_date: income.transaction_date.split("T")[0],
-      client_id: income.client_id ?? null,
+      client_id: income.client_id ?? undefined,
       status: income.status,
       category_id: validCategoryId,
     });
@@ -218,6 +216,15 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
       toast({
         title: "Erro",
         description: "Selecione uma categoria para a receita.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!incomeForm.client_id) {
+      toast({
+        title: "Erro",
+        description: "Selecione um cliente para a receita.",
         variant: "destructive",
       });
       return;
@@ -252,7 +259,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
             amount: amountValue,
             transaction_date: incomeForm.transaction_date,
             status: incomeForm.status,
-            client_id: incomeForm.client_id || null,
+            client_id: incomeForm.client_id,
             transaction_category: incomeForm.category_id,
           })
           .eq("id", editingIncomeId);
@@ -270,7 +277,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
           amount: amountValue,
           transaction_date: incomeForm.transaction_date,
           status: incomeForm.status,
-          client_id: incomeForm.client_id || null,
+          client_id: incomeForm.client_id,
           transaction_category: incomeForm.category_id,
           created_by: user.id,
         });
@@ -512,24 +519,36 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
               <div>
                 <Label>Cliente</Label>
                 <Select
-                  value={incomeForm.client_id ?? NO_CLIENT_SELECT_VALUE}
+                  value={incomeForm.client_id ?? undefined}
                   onValueChange={(value) =>
                     setIncomeForm(prev => ({
                       ...prev,
-                      client_id: value === NO_CLIENT_SELECT_VALUE ? null : value,
+                      client_id: value,
                     }))
                   }
+                  disabled={clients.length === 0}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione um cliente (opcional)" />
+                    <SelectValue
+                      placeholder={
+                        clients.length === 0
+                          ? "Nenhum cliente cadastrado"
+                          : "Selecione um cliente"
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={NO_CLIENT_SELECT_VALUE}>Sem cliente associado</SelectItem>
-                    {clients.map(client => (
-                      <SelectItem key={client.id} value={client.id}>
-                        {client.name}
+                    {clients.length === 0 ? (
+                      <SelectItem value="no-client" disabled>
+                        Cadastre um cliente primeiro
                       </SelectItem>
-                    ))}
+                    ) : (
+                      clients.map(client => (
+                        <SelectItem key={client.id} value={client.id}>
+                          {client.name}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
