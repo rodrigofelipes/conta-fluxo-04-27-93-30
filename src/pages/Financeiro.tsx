@@ -377,6 +377,7 @@ export default function Financeiro() {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [horasColaboradores, setHorasColaboradores] = useState<HorasColaborador[]>([]);
   const [manualExpenses, setManualExpenses] = useState<ManualExpense[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<FinanceTab>("overview");
@@ -451,6 +452,13 @@ export default function Financeiro() {
         .order('expense_date', { ascending: false });
       if (expensesError) throw expensesError;
 
+      const { data: categoriesData, error: categoriesError } = await supabase
+        .from('financial_categories')
+        .select('id, name, category_type, created_at, updated_at')
+        .order('category_type', { ascending: true })
+        .order('name', { ascending: true });
+      if (categoriesError) throw categoriesError;
+
       const clientMap = new Map<string, string>();
       (clientsData ?? []).forEach(client => clientMap.set(client.id, client.name));
 
@@ -484,6 +492,14 @@ export default function Financeiro() {
       setClients(clientsData || []);
       setBankAccounts(bankAccountsData || []);
       setManualExpenses(mappedExpenses);
+      const mappedCategories: Category[] = (categoriesData ?? []).map((category: any) => ({
+        id: String(category.id),
+        name: String(category.name),
+        type: category.category_type as Category['type'],
+        created_at: String(category.created_at),
+        updated_at: category.updated_at ? String(category.updated_at) : null,
+      }));
+      setCategories(mappedCategories);
     } catch (error) {
       console.error('Erro ao carregar dados financeiros:', error);
       toast({
