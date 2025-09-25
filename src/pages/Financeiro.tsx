@@ -398,10 +398,10 @@ export default function Financeiro() {
   useEffect(() => {
     const state = location.state as { activeTab?: string } | null;
 
-    if (state?.activeTab && state.activeTab !== activeTab) {
-      setActiveTab(state.activeTab);
+    if (state?.activeTab) {
+      setActiveTab((currentTab) => (state.activeTab === currentTab ? currentTab : state.activeTab));
     }
-  }, [location.state, activeTab]);
+  }, [location.state]);
 
 
   const form = useForm<z.infer<typeof transactionFormSchema>>({
