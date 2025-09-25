@@ -113,13 +113,25 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
     try {
       setLoading(true);
       
-      // Buscar usuários do sistema (incluindo campo active)
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      // Buscar usuários do sistema (incluindo inativos) via Edge Function
+      const { data: profilesResponse, error: profilesError } = await supabase
+        .functions.invoke('list-system-users');
 
       if (profilesError) throw profilesError;
+      if (!profilesResponse?.success) {
+        throw new Error(profilesResponse?.error || 'Falha ao carregar usuários do sistema');
+      }
+
+      const profiles = (profilesResponse?.profiles ?? []) as Array<{
+        id: string;
+        user_id: string;
+        name: string | null;
+        email: string | null;
+        telefone?: string | null;
+        role: string;
+        created_at: string;
+        active: boolean | null;
+      }>;
 
       // Buscar clientes
       const { data: clients, error: clientsError } = await supabase
