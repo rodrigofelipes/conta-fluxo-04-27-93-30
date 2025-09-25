@@ -3,6 +3,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
 
 import {
   Upload,
@@ -38,6 +48,9 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [documentToDelete, setDocumentToDelete] = useState<ProjectDocument | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const [uploadProgress, setUploadProgress] = useState(0);
 
@@ -249,6 +262,31 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
         description: "Erro ao excluir documento. Tente novamente.",
         variant: "destructive"
       });
+      throw error;
+    }
+  };
+
+  const openDeleteDialog = (document: ProjectDocument) => {
+    setDocumentToDelete(document);
+    setDeleteDialogOpen(true);
+  };
+
+  const closeDeleteDialog = () => {
+    setDeleteDialogOpen(false);
+    setDocumentToDelete(null);
+    setDeleteLoading(false);
+  };
+
+  const confirmDeleteDocument = async () => {
+    if (!documentToDelete) return;
+
+    setDeleteLoading(true);
+    try {
+      await handleDelete(documentToDelete);
+      closeDeleteDialog();
+    } catch (error) {
+      console.error('Erro ao confirmar exclusão:', error);
+      setDeleteLoading(false);
     }
   };
 
@@ -326,7 +364,7 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleDelete(doc)}
+                    onClick={() => openDeleteDialog(doc)}
                     className="p-2 text-red-600 hover:text-red-700"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -357,6 +395,29 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
           </div>
         )}
       </CardContent>
+      <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          closeDeleteDialog();
+        }
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir documento</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza de que deseja excluir o documento{' '}
+              <span className="font-semibold">{documentToDelete?.document_name}</span>? Essa ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={closeDeleteDialog} disabled={deleteLoading}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteDocument} disabled={deleteLoading}>
+              {deleteLoading ? 'Excluindo...' : 'Excluir' }
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
