@@ -51,13 +51,14 @@ export function useUserProjects() {
       // Primeiro, buscar o profile_id do usuário
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('id')
+        .select('id, role')
         .eq('user_id', user.id)
         .maybeSingle();
 
       if (profileError) throw profileError;
 
       let profileId = profileData?.id;
+      let profileRole = profileData?.role as string | undefined;
       if (!profileId) {
         console.warn('Profile não encontrado para o usuário, criando um novo...');
         // Tentar criar o profile
@@ -81,8 +82,9 @@ export function useUserProjects() {
           console.error('Não foi possível criar o profile do usuário');
           return;
         }
-        
+
         profileId = newProfile.id;
+        profileRole = 'user';
       }
 
       // Only fetch projects for non-user roles
@@ -137,7 +139,7 @@ export function useUserProjects() {
       }
 
       // Buscar todas as etapas atribuídas ao usuário
-      const { data: phasesData, error: phasesError } = await supabase
+      let phasesQuery = supabase
         .from('project_phases')
         .select(`
           id,
@@ -148,8 +150,15 @@ export function useUserProjects() {
           project:projects(id, title)
         `)
         .eq('assigned_to', profileId)
-        .in('status', ['pending', 'in_progress'])
         .order('created_at', { ascending: false });
+
+      if (user?.role === 'user' || profileRole === 'user') {
+        phasesQuery = phasesQuery.eq('status', 'in_progress');
+      } else {
+        phasesQuery = phasesQuery.in('status', ['pending', 'in_progress']);
+      }
+
+      const { data: phasesData, error: phasesError } = await phasesQuery;
 
       if (phasesError) throw phasesError;
 
