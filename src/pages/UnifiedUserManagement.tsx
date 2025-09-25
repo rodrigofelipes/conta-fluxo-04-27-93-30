@@ -687,6 +687,16 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
             active={isUser ? entity.active : undefined} // Para clientes, não temos campo active
             name={isUser ? entity.full_name : entity.nome}
             onUpdate={fetchAllData}
+            onStatusChange={(newStatus) => {
+              if (entity.type !== 'system_user') return;
+
+              setEntities(prev => prev.map(item => {
+                if (item.type === 'system_user' && item.user_id === entity.user_id) {
+                  return { ...item, active: newStatus };
+                }
+                return item;
+              }));
+            }}
             canToggleStatus={canManageStatus}
             disabledReason={statusDisabledReason}
             canDelete={isMasterAdmin && (isUser ? entity.user_id !== user?.id : true)}
