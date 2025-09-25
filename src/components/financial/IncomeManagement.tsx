@@ -18,18 +18,6 @@ interface ClientOption {
 
 type IncomeStatus = "pending" | "paid" | "overdue" | "cancelled";
 
-interface FinancialCategory {
-  id: string;
-  name: string;
-  category_type: "previsao_custo" | "variavel" | "fixo";
-}
-
-const CATEGORY_LABELS: Record<FinancialCategory["category_type"], string> = {
-  previsao_custo: "Previsão de Custo",
-  variavel: "Variável",
-  fixo: "Fixo",
-};
-
 const LEGACY_CATEGORY_LABELS: Record<string, string> = {
   receivable: "A Receber",
   payable: "A Pagar",
@@ -93,11 +81,19 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
   const { user } = useAuth();
   const [incomes, setIncomes] = useState<IncomeRecord[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
-  const [categories, setCategories] = useState<FinancialCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [savingIncome, setSavingIncome] = useState(false);
   const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null);
+
+  const legacyCategories = useMemo(
+    () =>
+      Object.entries(LEGACY_CATEGORY_LABELS).map(([id, name]) => ({
+        id,
+        name,
+      })),
+    [],
+  );
 
   const createDefaultIncomeForm = (): IncomeFormState => ({
     description: "",
@@ -105,7 +101,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
     transaction_date: new Date().toISOString().split("T")[0],
     client_id: null,
     status: "pending" as IncomeStatus,
-    category_id: "",
+    category_id: legacyCategories[0]?.id ?? "",
   });
 
   const [incomeForm, setIncomeForm] = useState<IncomeFormState>(createDefaultIncomeForm);
@@ -117,7 +113,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [incomesRes, clientsRes, categoriesRes] = await Promise.all([
+      const [incomesRes, clientsRes] = await Promise.all([
         supabase
           .from("client_financials")
           .select("id, description, amount, transaction_date, status, client_id, transaction_category, created_at")
@@ -127,28 +123,16 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
           .from("clients")
           .select("id, name")
           .order("name"),
-        supabase
-          .from("financial_categories")
-          .select("id, name, category_type")
-          .order("category_type", { ascending: true })
-          .order("name", { ascending: true }),
       ]);
 
       if (incomesRes.error) throw incomesRes.error;
       if (clientsRes.error) throw clientsRes.error;
-      if (categoriesRes.error) throw categoriesRes.error;
 
       const clientOptions: ClientOption[] = (clientsRes.data ?? []).map((client: any) => ({
         id: String(client.id),
         name: String(client.name),
       }));
       const clientMap = new Map(clientOptions.map(client => [client.id, client.name]));
-
-      const categoryOptions: FinancialCategory[] = (categoriesRes.data ?? []).map((category: any) => ({
-        id: String(category.id),
-        name: String(category.name),
-        category_type: category.category_type as FinancialCategory["category_type"],
-      }));
 
       const normalizedIncomes: IncomeRecord[] = (incomesRes.data || []).map((income: any) => {
         const clientId = income.client_id ? String(income.client_id) : null;
@@ -168,7 +152,6 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
 
       setIncomes(normalizedIncomes);
       setClients(clientOptions);
-      setCategories(categoryOptions);
     } catch (error) {
       console.error("Erro ao carregar receitas:", error);
       toast({
@@ -198,16 +181,13 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
   const startCreateIncome = () => {
     setEditingIncomeId(null);
     const defaultForm = createDefaultIncomeForm();
-    if (categories.length > 0) {
-      defaultForm.category_id = categories[0].id;
-    }
     setIncomeForm(defaultForm);
     setDialogOpen(true);
   };
 
   const startEditIncome = (income: IncomeRecord) => {
     setEditingIncomeId(income.id);
-    const validCategoryId = income.category_id && categories.some(category => category.id === income.category_id)
+    const validCategoryId = income.category_id && legacyCategories.some(category => category.id === income.category_id)
       ? income.category_id
       : "";
     setIncomeForm({
@@ -382,15 +362,18 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
     }
   };
 
-  const categoriesById = useMemo(() => new Map(categories.map(category => [category.id, category])), [categories]);
+  const categoriesById = useMemo(
+    () => new Map(legacyCategories.map(category => [category.id, category.name])),
+    [legacyCategories],
+  );
 
   const getIncomeCategoryLabel = useMemo(
     () =>
       (categoryId: string | null | undefined): string | null => {
         if (!categoryId) return null;
-        const category = categoriesById.get(categoryId);
-        if (category) {
-          return `${category.name} (${CATEGORY_LABELS[category.category_type]})`;
+        const categoryName = categoriesById.get(categoryId);
+        if (categoryName) {
+          return categoryName;
         }
         return LEGACY_CATEGORY_LABELS[categoryId] ?? "Categoria removida";
       },
@@ -513,24 +496,18 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
                 <Select
                   value={incomeForm.category_id}
                   onValueChange={(value) => setIncomeForm(prev => ({ ...prev, category_id: value }))}
-                  disabled={categories.length === 0}
                 >
                   <SelectTrigger id="income_category">
                     <SelectValue placeholder="Selecione uma categoria" />
                   </SelectTrigger>
                   <SelectContent>
-                    {categories.map(category => (
+                    {legacyCategories.map(category => (
                       <SelectItem key={category.id} value={category.id}>
-                        {category.name} ({CATEGORY_LABELS[category.category_type]})
+                        {category.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {categories.length === 0 && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Cadastre categorias na seção de categorias financeiras abaixo.
-                  </p>
-                )}
               </div>
               <div>
                 <Label>Cliente</Label>
@@ -538,21 +515,21 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
                   value={incomeForm.client_id ?? NO_CLIENT_SELECT_VALUE}
                   onValueChange={(value) =>
                     setIncomeForm(prev => ({
-                    ...prev,
-                    client_id: value === NO_CLIENT_SELECT_VALUE ? null : value,
-                  }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um cliente (opcional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_CLIENT_SELECT_VALUE}>Sem cliente associado</SelectItem>
-                  {clients.map(client => (
-                    <SelectItem key={client.id} value={client.id}>
-                      {client.name}
-                    </SelectItem>
-                  ))}
+                      ...prev,
+                      client_id: value === NO_CLIENT_SELECT_VALUE ? null : value,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um cliente (opcional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_CLIENT_SELECT_VALUE}>Sem cliente associado</SelectItem>
+                    {clients.map(client => (
+                      <SelectItem key={client.id} value={client.id}>
+                        {client.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
