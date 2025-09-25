@@ -219,6 +219,13 @@ const tiposReuniao = [
   }
 ];
 
+const locaisReuniao = [
+  { value: "Sala de reunião", label: "Sala de reunião" },
+  { value: "Sala 5º andar", label: "Sala 5º andar" },
+  { value: "Sala Olevate", label: "Sala Olevate" },
+  { value: "Sala Débora", label: "Sala Débora" }
+];
+
 export default function Agenda() {
   const [agenda, setAgenda] = useState<AgendaItem[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -825,6 +832,31 @@ export default function Agenda() {
 
                   <FormField
                     control={form.control}
+                    name="local"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Local</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value || undefined}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione o local" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {locaisReuniao.map(local => (
+                              <SelectItem key={local.value} value={local.value}>
+                                {local.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
                     name="agenda_type"
                     render={({ field }) => (
                       <FormItem>
@@ -1052,20 +1084,6 @@ export default function Agenda() {
                       )}
                     />
                   </div>
-
-                  <FormField
-                    control={form.control}
-                    name="local"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Local</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Ex: Escritório, Rua das Flores 123..." {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
 
                   <FormField
                     control={form.control}
