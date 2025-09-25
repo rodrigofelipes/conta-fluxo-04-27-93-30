@@ -377,7 +377,9 @@ export default function Financeiro() {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [horasColaboradores, setHorasColaboradores] = useState<HorasColaborador[]>([]);
   const [manualExpenses, setManualExpenses] = useState<ManualExpense[]>([]);
-  const [financialCategories, setFinancialCategories] = useState<Category[]>([]);
+
+  const [categories, setCategories] = useState<Category[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<FinanceTab>("overview");
@@ -499,7 +501,9 @@ export default function Financeiro() {
         created_at: String(category.created_at),
         updated_at: category.updated_at ? String(category.updated_at) : null,
       }));
-      setFinancialCategories(mappedCategories);
+
+      setCategories(mappedCategories);
+
     } catch (error) {
       console.error('Erro ao carregar dados financeiros:', error);
       toast({
