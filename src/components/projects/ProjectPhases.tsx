@@ -7,6 +7,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Edit, Trash2, DollarSign, CheckCircle, Clock, AlertCircle, UserPlus, User, FileText, TrendingUp } from "lucide-react";
@@ -74,6 +84,9 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
   const [saving, setSaving] = useState(false);
   const [selectedPhaseForAssignment, setSelectedPhaseForAssignment] = useState<ProjectPhase | null>(null);
   const [isAssignmentDialogOpen, setIsAssignmentDialogOpen] = useState(false);
+  const [phaseToDelete, setPhaseToDelete] = useState<ProjectPhase | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletingPhase, setDeletingPhase] = useState(false);
 
   const [formData, setFormData] = useState({
     phase_name: "",
@@ -260,14 +273,15 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
     }
   };
 
-  const handleDeletePhase = async (phaseId: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta fase?')) return;
+  const handleDeletePhase = async () => {
+    if (!phaseToDelete) return;
 
+    setDeletingPhase(true);
     try {
       const { error } = await supabase
         .from('project_phases')
         .delete()
-        .eq('id', phaseId);
+        .eq('id', phaseToDelete.id);
 
       if (error) throw error;
 
@@ -285,7 +299,16 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
         description: "Não foi possível excluir a fase",
         variant: "destructive"
       });
+    } finally {
+      setDeletingPhase(false);
+      setIsDeleteDialogOpen(false);
+      setPhaseToDelete(null);
     }
+  };
+
+  const openDeleteDialog = (phase: ProjectPhase) => {
+    setPhaseToDelete(phase);
+    setIsDeleteDialogOpen(true);
   };
 
   const openAssignmentDialog = (phase: ProjectPhase) => {
@@ -557,10 +580,10 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
                       >
                         <Edit className="w-4 h-4" />
                       </Button>
-                      <Button 
-                        variant="ghost" 
+                      <Button
+                        variant="ghost"
                         size="sm"
-                        onClick={() => handleDeletePhase(phase.id)}
+                        onClick={() => openDeleteDialog(phase)}
                         className="text-destructive hover:text-destructive"
                         title="Excluir fase"
                       >
@@ -616,6 +639,35 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
         } : null}
         onAssignmentUpdate={handleAssignmentUpdate}
       />
+
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={(open) => {
+          setIsDeleteDialogOpen(open);
+          if (!open) {
+            setPhaseToDelete(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir fase</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir a fase "{phaseToDelete?.phase_name ?? 'selecionada'}"? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingPhase}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeletePhase}
+              disabled={deletingPhase}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingPhase ? 'Excluindo...' : 'Excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
