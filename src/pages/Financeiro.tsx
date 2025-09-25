@@ -609,11 +609,11 @@ export default function Financeiro() {
 
   const categoryNameById = useMemo(() => {
     const map = new Map<string, string>();
-    financialCategories.forEach(category => {
+    categories.forEach(category => {
       map.set(category.id, category.name);
     });
     return map;
-  }, [financialCategories]);
+  }, [categories]);
 
   const getTransactionCategoryLabel = useMemo(() => {
     const defaultLabels: Record<string, string> = {
