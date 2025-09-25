@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { MapPin, Users, Eye, Clock, Settings, Edit, Save, X } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { ProjectPhases } from "@/components/projects/ProjectPhases";
+import { ProjectDocuments } from "@/components/projects/ProjectDocuments";
 import { useAuth } from "@/state/auth";
 
 interface Project {
@@ -442,6 +443,9 @@ export default function ProjectDetail() {
           console.log('Fases do projeto foram alteradas');
         }}
       />
+
+      {/* Documentos do Projeto */}
+      <ProjectDocuments projectId={project.id} />
 
       {/* Card de Status (apenas para supervisores e admins) */}
       {canChangeStatus && (
