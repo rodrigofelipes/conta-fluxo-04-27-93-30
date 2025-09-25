@@ -483,12 +483,46 @@ export default function Chat() {
     setIsClearingConversation(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke<ClearConversationResponse>(
-        "whatsapp-clear-history",
-        {
-          body: { clientId: selectedContact.id },
-        },
-      );
+
+      const { data: messageRows, error: messageError } = await supabase
+        .from("client_contacts")
+        .select("id")
+        .eq("client_id", contactId)
+        .eq("contact_type", "whatsapp");
+
+      if (messageError) throw messageError;
+
+      const messageIds = (messageRows ?? []).map((row) => row.id);
+
+      if (messageIds.length > 0) {
+        const {
+          data: attachmentsToDelete,
+          error: fetchAttachmentsError,
+        } = await supabase
+          .from("message_attachments")
+          .select("file_path")
+          .in("message_id", messageIds);
+
+        if (fetchAttachmentsError) throw fetchAttachmentsError;
+
+        const storagePaths = (attachmentsToDelete ?? [])
+          .map((attachment) => attachment.file_path)
+          .filter((path): path is string => Boolean(path));
+
+        if (storagePaths.length > 0) {
+          const uniquePaths = Array.from(new Set(storagePaths));
+          const { error: storageError } = await supabase.storage
+            .from("chat-files")
+            .remove(uniquePaths);
+
+          if (storageError) throw storageError;
+        }
+
+        const { error: attachmentsError } = await supabase
+          .from("message_attachments")
+          .delete()
+          .in("message_id", messageIds);
+
 
       if (error) {
         throw error;
