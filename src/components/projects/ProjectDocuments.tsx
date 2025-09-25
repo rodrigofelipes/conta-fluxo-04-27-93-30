@@ -2,8 +2,6 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-omponents/ui/alert-dialog";
-
 import { Progress } from "@/components/ui/progress";
 
 import {
@@ -14,7 +12,8 @@ import {
   Trash2,
   Image,
   FileVideo,
-  FileArchive
+  FileArchive,
+  FileAudio
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -150,14 +149,17 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
 
   const getDocumentType = (fileName: string): string => {
     const extension = fileName.split('.').pop()?.toLowerCase();
-    
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension || '')) return 'image';
-    if (['pdf'].includes(extension || '')) return 'pdf';
-    if (['doc', 'docx'].includes(extension || '')) return 'document';
-    if (['xls', 'xlsx'].includes(extension || '')) return 'spreadsheet';
-    if (['mp4', 'avi', 'mov'].includes(extension || '')) return 'video';
-    if (['zip', 'rar', '7z'].includes(extension || '')) return 'archive';
-    
+
+    if (!extension) return 'other';
+
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension)) return 'image';
+    if (extension === 'pdf') return 'pdf';
+    if (['doc', 'docx'].includes(extension)) return 'document';
+    if (['xls', 'xlsx'].includes(extension)) return 'spreadsheet';
+    if (['mp4', 'avi', 'mov'].includes(extension)) return 'video';
+    if (['mp3', 'wav', 'ogg', 'oga', 'opus', 'm4a', 'aac', 'flac'].includes(extension)) return 'audio';
+    if (['zip', 'rar', '7z'].includes(extension)) return 'archive';
+
     return 'other';
   };
 
@@ -167,6 +169,8 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
         return <Image className="h-5 w-5 text-green-600" />;
       case 'video':
         return <FileVideo className="h-5 w-5 text-purple-600" />;
+      case 'audio':
+        return <FileAudio className="h-5 w-5 text-amber-600" />;
       case 'archive':
         return <FileArchive className="h-5 w-5 text-orange-600" />;
       default:
@@ -274,6 +278,7 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
             disabled={uploading}
             className="hidden"
             id="document-upload"
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar,.7z,.txt"
           />
           <Button
             variant="outline"
