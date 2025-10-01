@@ -125,18 +125,9 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
       const [incomesRes, clientsRes, categoriesRes] = await Promise.all([
         supabase
           .from("client_financials")
-          .select(`
-            id, 
-            description, 
-            amount, 
-            transaction_date, 
-            status, 
-            client_id, 
-            transaction_category, 
-            created_at, 
-            recurrence_type,
-            category:financial_categories(id, name, category_type)
-          `)
+          .select(
+            `id, description, amount, transaction_date, status, client_id, transaction_category, created_at, recurrence_type`,
+          )
           .eq("transaction_type", "income")
           .order("transaction_date", { ascending: false }),
         supabase
@@ -159,9 +150,15 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
       }));
       const clientMap = new Map(clientOptions.map(client => [client.id, client.name]));
 
+      const categoriesData = (categoriesRes.data as FinancialCategory[] | null) ?? [];
+      const categoriesMap = new Map(
+        categoriesData.map((category) => [String(category.id), category]),
+      );
+
       const normalizedIncomes: IncomeRecord[] = (incomesRes.data || []).map((income: any) => {
         const clientId = income.client_id ? String(income.client_id) : null;
         const categoryId = income.transaction_category ? String(income.transaction_category) : null;
+        const incomeCategory = categoryId ? categoriesMap.get(categoryId) : undefined;
         return {
           id: String(income.id),
           description: String(income.description),
@@ -171,11 +168,13 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
           client_id: clientId,
           client_name: clientId ? clientMap.get(clientId) ?? null : null,
           category_id: categoryId,
-          category: income.category ? {
-            id: income.category.id,
-            name: income.category.name,
-            category_type: income.category.category_type
-          } : undefined,
+          category: incomeCategory
+            ? {
+                id: incomeCategory.id,
+                name: incomeCategory.name,
+                category_type: incomeCategory.category_type,
+              }
+            : undefined,
           recurrence_type: income.recurrence_type ? String(income.recurrence_type) : null,
           created_at: String(income.created_at),
         };
@@ -183,7 +182,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
 
       setIncomes(normalizedIncomes);
       setClients(clientOptions);
-      setCategories(categoriesRes.data as FinancialCategory[] || []);
+      setCategories(categoriesData);
     } catch (error) {
       console.error("Erro ao carregar receitas:", error);
       toast({
