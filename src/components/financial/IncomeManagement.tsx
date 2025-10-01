@@ -17,15 +17,19 @@ interface ClientOption {
   name: string;
 }
 
-type IncomeStatus = "pending" | "paid" | "overdue" | "cancelled";
+interface FinancialCategory {
+  id: string;
+  name: string;
+  category_type: 'previsao_custo' | 'variavel' | 'fixo';
+}
 
-const LEGACY_CATEGORY_LABELS: Record<string, string> = {
-  receivable: "A Receber",
-  payable: "A Pagar",
-  project: "Projeto",
-  fixed_expense: "Despesa Fixa",
-  variable_expense: "Despesa Variável",
+const CATEGORY_LABELS: Record<FinancialCategory['category_type'], string> = {
+  previsao_custo: 'Previsão de Custo',
+  variavel: 'Variável',
+  fixo: 'Fixo',
 };
+
+type IncomeStatus = "pending" | "paid" | "overdue" | "cancelled";
 
 interface IncomeFormState {
   description: string;
@@ -48,6 +52,7 @@ interface IncomeRecord {
   client_id?: string | null;
   client_name?: string | null;
   category_id?: string | null;
+  category?: FinancialCategory;
   recurrence_type?: string | null;
   created_at: string;
 }
@@ -84,19 +89,17 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
   const { user } = useAuth();
   const [incomes, setIncomes] = useState<IncomeRecord[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
+  const [categories, setCategories] = useState<FinancialCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [savingIncome, setSavingIncome] = useState(false);
   const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null);
+  const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
 
-  const legacyCategories = useMemo(
-    () =>
-      Object.entries(LEGACY_CATEGORY_LABELS).map(([id, name]) => ({
-        id,
-        name,
-      })),
-    [],
-  );
+  const [categoryForm, setCategoryForm] = useState({
+    name: "",
+    category_type: "fixo" as const
+  });
 
   const createDefaultIncomeForm = (): IncomeFormState => ({
     description: "",
@@ -104,7 +107,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
     transaction_date: new Date().toISOString().split("T")[0],
     client_id: undefined,
     status: "pending" as IncomeStatus,
-    category_id: legacyCategories[0]?.id ?? "",
+    category_id: "",
     isInstallment: false,
     installmentCount: "1",
     recurrence_type: "none",
@@ -119,22 +122,36 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [incomesRes, clientsRes] = await Promise.all([
+      const [incomesRes, clientsRes, categoriesRes] = await Promise.all([
         supabase
           .from("client_financials")
-          .select(
-            "id, description, amount, transaction_date, status, client_id, transaction_category, created_at, recurrence_type",
-          )
+          .select(`
+            id, 
+            description, 
+            amount, 
+            transaction_date, 
+            status, 
+            client_id, 
+            transaction_category, 
+            created_at, 
+            recurrence_type,
+            category:financial_categories(id, name, category_type)
+          `)
           .eq("transaction_type", "income")
           .order("transaction_date", { ascending: false }),
         supabase
           .from("clients")
           .select("id, name")
           .order("name"),
+        supabase
+          .from('financial_categories')
+          .select('*')
+          .order('category_type', { ascending: true })
       ]);
 
       if (incomesRes.error) throw incomesRes.error;
       if (clientsRes.error) throw clientsRes.error;
+      if (categoriesRes.error) throw categoriesRes.error;
 
       const clientOptions: ClientOption[] = (clientsRes.data ?? []).map((client: any) => ({
         id: String(client.id),
@@ -154,6 +171,11 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
           client_id: clientId,
           client_name: clientId ? clientMap.get(clientId) ?? null : null,
           category_id: categoryId,
+          category: income.category ? {
+            id: income.category.id,
+            name: income.category.name,
+            category_type: income.category.category_type
+          } : undefined,
           recurrence_type: income.recurrence_type ? String(income.recurrence_type) : null,
           created_at: String(income.created_at),
         };
@@ -161,6 +183,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
 
       setIncomes(normalizedIncomes);
       setClients(clientOptions);
+      setCategories(categoriesRes.data as FinancialCategory[] || []);
     } catch (error) {
       console.error("Erro ao carregar receitas:", error);
       toast({
@@ -196,7 +219,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
 
   const startEditIncome = (income: IncomeRecord) => {
     setEditingIncomeId(income.id);
-    const validCategoryId = income.category_id && legacyCategories.some(category => category.id === income.category_id)
+    const validCategoryId = income.category_id && categories.some(category => category.id === income.category_id)
       ? income.category_id
       : "";
     setIncomeForm({
@@ -440,9 +463,46 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
     }
   };
 
+  const createCategory = async () => {
+    if (!categoryForm.name.trim()) {
+      toast({
+        title: "Erro",
+        description: "Nome da categoria é obrigatório.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from('financial_categories').insert({
+        name: categoryForm.name,
+        category_type: categoryForm.category_type,
+        created_by: user?.id
+      });
+      if (error) throw error;
+      toast({
+        title: "Sucesso",
+        description: "Categoria criada com sucesso!"
+      });
+      setCategoryForm({
+        name: "",
+        category_type: "fixo"
+      });
+      setCreateCategoryOpen(false);
+      await fetchData();
+    } catch (error) {
+      console.error('Erro ao criar categoria:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível criar a categoria.",
+        variant: "destructive"
+      });
+    }
+  };
+
   const categoriesById = useMemo(
-    () => new Map(legacyCategories.map(category => [category.id, category.name])),
-    [legacyCategories],
+    () => new Map(categories.map(category => [category.id, category.name])),
+    [categories],
   );
 
   const getIncomeCategoryLabel = useMemo(
@@ -453,10 +513,24 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
         if (categoryName) {
           return categoryName;
         }
-        return LEGACY_CATEGORY_LABELS[categoryId] ?? "Categoria removida";
+        return "Categoria removida";
       },
     [categoriesById]
   );
+
+  const getCategoryTypeBadgeVariant = (type: FinancialCategory['category_type']) => {
+
+    switch (type) {
+      case 'previsao_custo':
+        return 'default';
+      case 'variavel':
+        return 'secondary';
+      case 'fixo':
+        return 'outline';
+      default:
+        return 'secondary';
+    }
+  };
 
   const totalPending = useMemo(
     () => incomes.filter(income => income.status === "pending").reduce((sum, income) => sum + income.amount, 0),
@@ -649,7 +723,52 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
                 </div>
               )}
               <div>
-                <Label htmlFor="income_category">Categoria</Label>
+                <div className="flex items-center justify-between mb-2">
+                  <Label htmlFor="income_category">Categoria</Label>
+                  <Dialog open={createCategoryOpen} onOpenChange={setCreateCategoryOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
+                        <Plus className="h-3 w-3 mr-1" />
+                        Nova
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Criar Nova Categoria</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="category_name">Nome da Categoria</Label>
+                          <Input
+                            id="category_name"
+                            value={categoryForm.name}
+                            onChange={e => setCategoryForm(prev => ({ ...prev, name: e.target.value }))}
+                            placeholder="Nome da categoria"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="category_type">Tipo</Label>
+                          <Select
+                            value={categoryForm.category_type}
+                            onValueChange={(value: any) => setCategoryForm(prev => ({ ...prev, category_type: value }))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="previsao_custo">Previsão de Custo</SelectItem>
+                              <SelectItem value="variavel">Variável</SelectItem>
+                              <SelectItem value="fixo">Fixo</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button onClick={createCategory} className="w-full">
+                          Criar Categoria
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
                 <Select
                   value={incomeForm.category_id}
                   onValueChange={(value) => setIncomeForm(prev => ({ ...prev, category_id: value }))}
@@ -657,10 +776,10 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
                   <SelectTrigger id="income_category">
                     <SelectValue placeholder="Selecione uma categoria" />
                   </SelectTrigger>
-                  <SelectContent>
-                    {legacyCategories.map(category => (
+                  <SelectContent className="z-50 bg-popover">
+                    {categories.map(category => (
                       <SelectItem key={category.id} value={category.id}>
-                        {category.name}
+                        {category.name} ({CATEGORY_LABELS[category.category_type]})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -743,16 +862,11 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
                     {income.client_name && (
                       <Badge variant="outline">{income.client_name}</Badge>
                     )}
-                    {(() => {
-                      const categoryLabel = getIncomeCategoryLabel(income.category_id);
-                      if (!categoryLabel) return null;
-                      return (
-                        <Badge variant="outline" className="flex items-center gap-1">
-                          <Tag className="h-3 w-3" />
-                          {categoryLabel}
-                        </Badge>
-                      );
-                    })()}
+                    {income.category && (
+                      <Badge variant={getCategoryTypeBadgeVariant(income.category.category_type)}>
+                        {income.category.name}
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <span>R$ {income.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
