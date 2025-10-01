@@ -192,11 +192,12 @@ export default function ClientDetail() {
       if (clientError) throw clientError;
       setClient(clientData);
 
-      // 2) Contatos com nome de quem registrou
+      // 2) Contatos com nome de quem registrou (excluindo mensagens automáticas do chat)
       const { data: contactsData } = await supabase
         .from('client_contacts')
         .select('*')
         .eq('client_id', id)
+        .not('subject', 'ilike', '%Mensagem%via WhatsApp%')
         .order('contact_date', { ascending: false });
 
       const createdByIds = [...new Set(contactsData?.map(c => c.created_by).filter(Boolean) || [])];
