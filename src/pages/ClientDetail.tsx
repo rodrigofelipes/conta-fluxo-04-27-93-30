@@ -1134,7 +1134,7 @@ export default function ClientDetail() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeletingDocument}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              variant="destructive"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={handleDeleteDocument}
               disabled={isDeletingDocument}
             >

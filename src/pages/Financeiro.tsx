@@ -790,7 +790,7 @@ export default function Financeiro() {
         subtitle="Gestão financeira completa do escritório de arquitetura"
       />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as FinanceTab)} className="space-y-6">
 
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview">Visão Geral</TabsTrigger>
