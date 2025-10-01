@@ -3,7 +3,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 
-export type Role = "admin" | "user" | "supervisor" | "coordenador";
+export type Role = "admin" | "user" | "supervisor" | "coordenador" | "marketing";
 export type Setor = "PESSOAL" | "FISCAL" | "CONTABIL" | "PLANEJAMENTO" | "TODOS";
 
 const INACTIVE_USER_ERROR_CODE = "USER_INACTIVE";

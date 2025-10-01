@@ -10,18 +10,28 @@ import { toast } from "@/hooks/use-toast";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 
-interface CreatePhaseDialogProps {
+interface EditPhaseDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  projectId: string;
-  onPhaseCreated?: () => void;
+  phase: {
+    id: string;
+    phase_name: string;
+    description?: string;
+    allocated_hours: number;
+    status: string;
+    assigned_to?: string;
+    priority?: string;
+    due_date?: string;
+  };
+  onPhaseUpdated?: () => void;
 }
 
 type PhaseStatus = "pending" | "in_progress" | "completed" | "cancelled";
+type Priority = "baixa" | "media" | "alta" | "urgente";
 
 interface PhaseFormData {
   phase_name: string;
@@ -29,18 +39,18 @@ interface PhaseFormData {
   allocated_hours: number;
   status: PhaseStatus;
   assigned_to: string | null;
-  priority: "baixa" | "media" | "alta" | "urgente";
+  priority: Priority;
   due_date: Date | null;
 }
 
 const NO_COLLABORATOR_VALUE = "no-collaborator";
 
-export function CreatePhaseDialog({
+export function EditPhaseDialog({
   open,
   onOpenChange,
-  projectId,
-  onPhaseCreated
-}: CreatePhaseDialogProps) {
+  phase,
+  onPhaseUpdated
+}: EditPhaseDialogProps) {
   const [saving, setSaving] = useState(false);
   const [collaborators, setCollaborators] = useState<{id: string, name: string}[]>([]);
   const [formData, setFormData] = useState<PhaseFormData>({
@@ -54,10 +64,19 @@ export function CreatePhaseDialog({
   });
 
   useEffect(() => {
-    if (open) {
+    if (open && phase) {
+      setFormData({
+        phase_name: phase.phase_name || "",
+        description: phase.description || "",
+        allocated_hours: phase.allocated_hours || 0,
+        status: (phase.status as PhaseStatus) || "pending",
+        assigned_to: phase.assigned_to || null,
+        priority: (phase.priority as Priority) || "media",
+        due_date: phase.due_date ? parseISO(phase.due_date) : null
+      });
       loadCollaborators();
     }
-  }, [open]);
+  }, [open, phase]);
 
   const loadCollaborators = async () => {
     try {
@@ -72,18 +91,6 @@ export function CreatePhaseDialog({
     } catch (error) {
       console.error('Erro ao carregar colaboradores:', error);
     }
-  };
-
-  const resetForm = () => {
-    setFormData({
-      phase_name: "",
-      description: "",
-      allocated_hours: 0,
-      status: "pending",
-      assigned_to: null,
-      priority: "media",
-      due_date: null
-    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -101,49 +108,34 @@ export function CreatePhaseDialog({
     try {
       setSaving(true);
 
-      // Obter o próximo order_index
-      const { data: existingPhases } = await supabase
-        .from('project_phases')
-        .select('order_index')
-        .eq('project_id', projectId)
-        .order('order_index', { ascending: false })
-        .limit(1);
-
-      const nextOrderIndex = existingPhases && existingPhases.length > 0 
-        ? existingPhases[0].order_index + 1 
-        : 1;
-
       const { error } = await supabase
         .from('project_phases')
-        .insert({
-          project_id: projectId,
+        .update({
           phase_name: formData.phase_name.trim(),
           description: formData.description.trim() || null,
           allocated_hours: formData.allocated_hours,
           status: formData.status,
-          order_index: nextOrderIndex,
-          executed_hours: 0,
           assigned_to: formData.assigned_to || null,
           priority: formData.priority,
           due_date: formData.due_date ? format(formData.due_date, 'yyyy-MM-dd') : null
-        });
+        })
+        .eq('id', phase.id);
 
       if (error) throw error;
 
       toast({
         title: "Sucesso",
-        description: "Fase criada com sucesso!"
+        description: "Fase atualizada com sucesso!"
       });
 
-      resetForm();
       onOpenChange(false);
-      onPhaseCreated?.();
+      onPhaseUpdated?.();
 
     } catch (error) {
-      console.error('Erro ao criar fase:', error);
+      console.error('Erro ao atualizar fase:', error);
       toast({
         title: "Erro",
-        description: "Não foi possível criar a fase",
+        description: "Não foi possível atualizar a fase",
         variant: "destructive"
       });
     } finally {
@@ -151,18 +143,11 @@ export function CreatePhaseDialog({
     }
   };
 
-  const handleOpenChange = (open: boolean) => {
-    if (!open) {
-      resetForm();
-    }
-    onOpenChange(open);
-  };
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Nova Etapa do Projeto</DialogTitle>
+          <DialogTitle>Editar Etapa</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -293,7 +278,7 @@ export function CreatePhaseDialog({
               Cancelar
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? "Criando..." : "Criar Etapa"}
+              {saving ? "Salvando..." : "Salvar Alterações"}
             </Button>
           </div>
         </form>

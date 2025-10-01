@@ -1,13 +1,18 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Clock, Search, Filter, FolderOpen, User, CheckCircle, AlertCircle } from "lucide-react";
+import { Clock, Search, Filter, FolderOpen, User, CheckCircle, AlertCircle, Edit, Calendar as CalendarIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
 import { toast } from "@/hooks/use-toast";
 import { PageHeader } from "@/components/ui/page-header";
+import { PriorityBadge, type Priority } from "@/components/projects/PriorityBadge";
+import { EditPhaseDialog } from "@/components/projects/EditPhaseDialog";
+import { format, parseISO } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 interface CoordinatorPhase {
   id: string;
@@ -18,6 +23,8 @@ interface CoordinatorPhase {
   executed_hours: number;
   assigned_to: string;
   supervised_by?: string;
+  priority?: Priority;
+  due_date?: string;
   assigned_profile?: { name: string; };
   supervisor_profile?: { name: string; };
   project: {
@@ -34,6 +41,7 @@ export default function CoordinatorPhases() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("in_progress");
+  const [editingPhase, setEditingPhase] = useState<CoordinatorPhase | null>(null);
 
   useEffect(() => {
     loadAllPhases();
@@ -47,11 +55,13 @@ export default function CoordinatorPhases() {
       const { data, error } = await supabase
         .from('project_phases')
         .select(`
-          id, phase_name, description, status, allocated_hours, executed_hours, assigned_to, supervised_by,
+          id, phase_name, description, status, allocated_hours, executed_hours, assigned_to, supervised_by, priority, due_date,
           assigned_profile:profiles!assigned_to(name),
           supervisor_profile:profiles!supervised_by(name),
           project:projects(id, title, status, client:clients(name))
         `)
+        .order('priority', { ascending: false })
+        .order('due_date', { ascending: true, nullsFirst: false })
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -59,6 +69,7 @@ export default function CoordinatorPhases() {
       const phasesData = (data || []).map(phase => ({
         ...phase,
         status: phase.status as CoordinatorPhase['status'],
+        priority: phase.priority as Priority,
         project: Array.isArray(phase.project) ? phase.project[0] : phase.project
       }));
 
@@ -164,18 +175,34 @@ export default function CoordinatorPhases() {
             <Card key={phase.id} className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <div className="space-y-1">
-                    <CardTitle className="text-lg flex items-center gap-2">
+                  <div className="space-y-1 flex-1">
+                    <CardTitle className="text-lg flex items-center gap-2 flex-wrap">
                       {getStatusIcon(phase.status)}
                       {phase.phase_name}
+                      {phase.priority && <PriorityBadge priority={phase.priority} />}
                     </CardTitle>
                     <div className="text-sm text-muted-foreground">
                       {phase.project?.title} • {phase.project?.client?.name}
                     </div>
+                    {phase.due_date && (
+                      <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                        <CalendarIcon className="h-3 w-3" />
+                        Entrega: {format(parseISO(phase.due_date), "PPP", { locale: ptBR })}
+                      </div>
+                    )}
                   </div>
-                  <Badge className={getStatusColor(phase.status)}>
-                    {getStatusLabel(phase.status)}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge className={getStatusColor(phase.status)}>
+                      {getStatusLabel(phase.status)}
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEditingPhase(phase)}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
@@ -215,6 +242,15 @@ export default function CoordinatorPhases() {
             <p className="text-muted-foreground">Tente ajustar os filtros para encontrar as etapas que procura.</p>
           </CardContent>
         </Card>
+      )}
+
+      {editingPhase && (
+        <EditPhaseDialog
+          open={!!editingPhase}
+          onOpenChange={(open) => !open && setEditingPhase(null)}
+          phase={editingPhase}
+          onPhaseUpdated={loadAllPhases}
+        />
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 import { useMemo, useEffect } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
-import { Home, Calendar, Users, Building2, DollarSign, Settings, LogOut, Shield, UserCog, MessageSquare, FolderOpen, BarChart3, BookOpen } from "lucide-react";
+import { Home, Calendar, Users, Building2, DollarSign, Settings, LogOut, Shield, UserCog, MessageSquare, FolderOpen, BarChart3, BookOpen, Megaphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -55,6 +55,10 @@ const nav: NavItem[] = [{
   icon: DollarSign,
   adminOnly: true
 }, {
+  to: "/marketing",
+  label: "Marketing",
+  icon: Megaphone
+}, {
   to: "/rules-features",
   label: "Regras e Funcionalidades",
   icon: BookOpen
@@ -108,7 +112,8 @@ export default function AppLayout() {
         n.to !== "/clients" && 
         n.to !== "/chat" &&
         n.to !== "/projects" &&
-        n.to !== "/reports"
+        n.to !== "/reports" &&
+        n.to !== "/marketing"
       );
     } else if (user?.role === "admin") {
       // Remove user-specific projects tab for admins
@@ -120,14 +125,24 @@ export default function AppLayout() {
         n.to !== "/clients" &&
         n.to !== "/projects" &&
         n.to !== "/reports" &&
-        n.to !== "/chat"
+        n.to !== "/chat" &&
+        n.to !== "/marketing"
       );
     } else if (user?.role === "supervisor") {
       // Supervisores: access to projects, reports, chat, clients but not financeiro, users, coordinator-phases
       filteredNav = filteredNav.filter(n => 
         n.to !== "/user-projects" && 
         n.to !== "/financeiro" && 
-        n.to !== "/coordinator-phases"
+        n.to !== "/coordinator-phases" &&
+        n.to !== "/marketing"
+      );
+    } else if (user?.role === "marketing") {
+      // Marketing: acesso limitado a dashboard, agenda, configurações e marketing
+      filteredNav = filteredNav.filter(n => 
+        n.to === "/dashboard" ||
+        n.to === "/agenda" ||
+        n.to === "/settings" ||
+        n.to === "/marketing"
       );
     }
 
@@ -143,6 +158,10 @@ export default function AppLayout() {
       if (n.to === "/coordinator-phases") {
         // Coordinator phases are only accessible to coordenador
         return user?.role === "coordenador";
+      }
+      if (n.to === "/marketing") {
+        // Marketing page is only accessible to marketing role
+        return user?.role === "marketing" || user?.role === "admin";
       }
       return true;
     });

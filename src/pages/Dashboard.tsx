@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useAuth } from "@/state/auth";
 import { AdminDashboard } from "@/components/dashboard/AdminDashboard";
 import { SupervisorDashboard } from "@/components/dashboard/SupervisorDashboard";
+import { CoordinatorDashboard } from "@/components/dashboard/CoordinatorDashboard";
 import { UserDashboard } from "@/components/dashboard/UserDashboard";
 
 export default function Dashboard() {
@@ -23,8 +24,18 @@ export default function Dashboard() {
       return <AdminDashboard userName={userName} />;
     
     case 'supervisor':
-    case 'coordenador':
       return <SupervisorDashboard userName={userName} />;
+    
+    case 'coordenador':
+      return <CoordinatorDashboard userName={userName} />;
+    
+    case 'marketing':
+      return (
+        <div className="p-6">
+          <h1 className="text-2xl font-bold mb-4">Dashboard Marketing</h1>
+          <p className="text-muted-foreground">Bem-vindo à área de marketing!</p>
+        </div>
+      );
     
     case 'user':
     default:

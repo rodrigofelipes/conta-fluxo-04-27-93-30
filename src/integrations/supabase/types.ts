@@ -590,17 +590,62 @@ export type Database = {
         }
         Relationships: []
       }
+      meeting_minutes: {
+        Row: {
+          content: string
+          created_at: string
+          created_by: string
+          id: string
+          meeting_id: string
+          updated_at: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          created_by: string
+          id?: string
+          meeting_id: string
+          updated_at?: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          meeting_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_minutes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "meeting_minutes_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meetings: {
         Row: {
           client_id: string | null
           created_at: string
           created_by: string | null
           description: string | null
+          distance_km: number | null
           end_date: string
+          external_location: boolean | null
           id: string
           meeting_type: Database["public"]["Enums"]["meeting_type"]
           start_date: string
           title: string
+          travel_cost: number | null
           updated_at: string
         }
         Insert: {
@@ -608,11 +653,14 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          distance_km?: number | null
           end_date: string
+          external_location?: boolean | null
           id?: string
           meeting_type?: Database["public"]["Enums"]["meeting_type"]
           start_date: string
           title: string
+          travel_cost?: number | null
           updated_at?: string
         }
         Update: {
@@ -620,11 +668,14 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          distance_km?: number | null
           end_date?: string
+          external_location?: boolean | null
           id?: string
           meeting_type?: Database["public"]["Enums"]["meeting_type"]
           start_date?: string
           title?: string
+          travel_cost?: number | null
           updated_at?: string
         }
         Relationships: [
@@ -846,10 +897,12 @@ export type Database = {
           created_at: string
           created_by: string | null
           description: string | null
+          due_date: string | null
           executed_hours: number | null
           id: string
           order_index: number
           phase_name: string
+          priority: string | null
           project_id: string
           status: string
           supervised_by: string | null
@@ -862,10 +915,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          due_date?: string | null
           executed_hours?: number | null
           id?: string
           order_index?: number
           phase_name: string
+          priority?: string | null
           project_id: string
           status?: string
           supervised_by?: string | null
@@ -878,10 +933,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          due_date?: string | null
           executed_hours?: number | null
           id?: string
           order_index?: number
           phase_name?: string
+          priority?: string | null
           project_id?: string
           status?: string
           supervised_by?: string | null
@@ -980,6 +1037,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      system_config: {
+        Row: {
+          config_key: string
+          config_value: string
+          created_at: string
+          description: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          config_key: string
+          config_value: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          config_key?: string
+          config_value?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       system_settings: {
         Row: {
@@ -1276,7 +1360,7 @@ export type Database = {
         | "concluído"
       task_priority: "baixa" | "média" | "alta" | "urgente"
       task_status: "pendente" | "em_andamento" | "concluída"
-      user_role: "admin" | "supervisor" | "user" | "coordenador"
+      user_role: "admin" | "supervisor" | "user" | "coordenador" | "marketing"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1421,7 +1505,7 @@ export const Constants = {
       ],
       task_priority: ["baixa", "média", "alta", "urgente"],
       task_status: ["pendente", "em_andamento", "concluída"],
-      user_role: ["admin", "supervisor", "user", "coordenador"],
+      user_role: ["admin", "supervisor", "user", "coordenador", "marketing"],
     },
   },
 } as const
