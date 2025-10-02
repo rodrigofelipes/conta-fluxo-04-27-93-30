@@ -126,7 +126,10 @@ const agendaFormSchema = z
       required_error: "Selecione o setor da agenda"
     }),
     collaborators_ids: z.array(z.string()).default([]),
-    isInternalMeeting: z.boolean().default(false)
+    isInternalMeeting: z.boolean().default(false),
+    external_location: z.boolean().default(false),
+    distance_km: z.number().optional(),
+    travel_cost: z.number().optional()
   })
   .superRefine((data, ctx) => {
     if (!data.isInternalMeeting && (!data.cliente || data.cliente.trim().length === 0)) {
@@ -164,6 +167,9 @@ interface AgendaItem {
   collaborators_ids: string[];
   creator_name?: string;
   attendees_display?: string;
+  external_location?: boolean;
+  distance_km?: number;
+  travel_cost?: number;
 }
 
 interface Holiday {
@@ -265,7 +271,10 @@ export default function Agenda() {
     local: "",
     agenda_type: "compartilhada",
     collaborators_ids: [],
-    isInternalMeeting: false
+    isInternalMeeting: false,
+    external_location: false,
+    distance_km: 0,
+    travel_cost: 0
   };
 
   const form = useForm<z.infer<typeof agendaFormSchema>>({
@@ -284,6 +293,7 @@ export default function Agenda() {
   };
 
   const isInternalMeeting = form.watch("isInternalMeeting");
+  const isExternalLocation = form.watch("external_location");
   const startDateValue = form.watch("data");
   const endDateValue = form.watch("data_fim");
 
@@ -419,7 +429,10 @@ export default function Agenda() {
         horario_fim: sanitizeOptionalString(values.horario_fim),
         local: sanitizeOptionalString(values.local),
         agenda_type: values.agenda_type,
-        collaborators_ids: values.collaborators_ids
+        collaborators_ids: values.collaborators_ids,
+        external_location: values.external_location || false,
+        distance_km: values.external_location ? (values.distance_km || 0) : 0,
+        travel_cost: values.external_location ? (values.travel_cost || 0) : 0
       };
 
       if (editingItem) {
@@ -527,7 +540,10 @@ export default function Agenda() {
       local: item.local || "",
       agenda_type: item.agenda_type,
       collaborators_ids: item.collaborators_ids || [],
-      isInternalMeeting: isInternal
+      isInternalMeeting: isInternal,
+      external_location: item.external_location || false,
+      distance_km: item.distance_km || 0,
+      travel_cost: item.travel_cost || 0
     });
 
     setEditingItem(item);
@@ -854,6 +870,73 @@ export default function Agenda() {
                       </FormItem>
                     )}
                   />
+
+                  <FormField
+                    control={form.control}
+                    name="external_location"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base">Local Externo</FormLabel>
+                          <FormDescription>
+                            Ative se a reunião será em local externo ao escritório
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  {isExternalLocation && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="distance_km"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Distância (km)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                placeholder="0.0"
+                                {...field}
+                                onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="travel_cost"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Custo de Deslocamento (R$)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                {...field}
+                                onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
 
                   <FormField
                     control={form.control}

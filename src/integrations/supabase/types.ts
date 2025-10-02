@@ -24,12 +24,15 @@ export type Database = {
           data: string
           data_fim: string | null
           descricao: string | null
+          distance_km: number | null
+          external_location: boolean | null
           horario: string
           horario_fim: string | null
           id: string
           local: string | null
           tipo: string
           titulo: string
+          travel_cost: number | null
           updated_at: string
           visibility: string | null
         }
@@ -42,12 +45,15 @@ export type Database = {
           data: string
           data_fim?: string | null
           descricao?: string | null
+          distance_km?: number | null
+          external_location?: boolean | null
           horario: string
           horario_fim?: string | null
           id?: string
           local?: string | null
           tipo: string
           titulo: string
+          travel_cost?: number | null
           updated_at?: string
           visibility?: string | null
         }
@@ -60,12 +66,15 @@ export type Database = {
           data?: string
           data_fim?: string | null
           descricao?: string | null
+          distance_km?: number | null
+          external_location?: boolean | null
           horario?: string
           horario_fim?: string | null
           id?: string
           local?: string | null
           tipo?: string
           titulo?: string
+          travel_cost?: number | null
           updated_at?: string
           visibility?: string | null
         }
