@@ -296,6 +296,7 @@ export default function Agenda() {
   const isExternalLocation = form.watch("external_location");
   const startDateValue = form.watch("data");
   const endDateValue = form.watch("data_fim");
+  const distanceKm = form.watch("distance_km");
 
   useEffect(() => {
     if (isInternalMeeting) {
@@ -313,6 +314,14 @@ export default function Agenda() {
       form.setValue("data_fim", startDateValue, { shouldValidate: true });
     }
   }, [startDateValue, endDateValue, form]);
+
+  // Calcular automaticamente o custo de deslocamento: R$ 5,00 por km
+  useEffect(() => {
+    if (isExternalLocation && distanceKm !== undefined) {
+      const calculatedCost = distanceKm * 5;
+      form.setValue("travel_cost", calculatedCost);
+    }
+  }, [distanceKm, isExternalLocation, form]);
 
   const loadData = async () => {
     try {
@@ -928,9 +937,13 @@ export default function Agenda() {
                                 min="0"
                                 placeholder="0.00"
                                 {...field}
-                                onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                                disabled
+                                className="bg-muted"
                               />
                             </FormControl>
+                            <FormDescription>
+                              Calculado automaticamente: R$ 5,00 por km
+                            </FormDescription>
                             <FormMessage />
                           </FormItem>
                         )}
