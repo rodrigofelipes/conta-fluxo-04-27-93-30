@@ -1286,7 +1286,100 @@ export default function Chat() {
               <div className="text-center text-muted-foreground">
                 <MessageSquare className="h-16 w-16 mx-auto mb-4 opacity-50" />
                 <h3 className="text-lg font-medium mb-2">Selecione uma conversa</h3>
-                <p>Escolha um contato à esquerda para iniciar a conversa</p>
+                <p className="hidden md:block">Escolha um contato à esquerda para iniciar a conversa</p>
+                
+                {/* Botão mobile para abrir contatos */}
+                <div className="md:hidden mt-6">
+                  <Sheet open={mobileContactsOpen} onOpenChange={setMobileContactsOpen}>
+                    <SheetTrigger asChild>
+                      <Button size="lg" className="w-full max-w-xs">
+                        <MessageSquare className="mr-2 h-5 w-5" />
+                        Ver Contatos
+                        {unreadMessagesCount > 0 && (
+                          <Badge variant="destructive" className="ml-2">
+                            {unreadMessagesCount}
+                          </Badge>
+                        )}
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent side="left" className="w-[320px] p-0">
+                      <SheetHeader className="p-4 border-b">
+                        <SheetTitle className="flex items-center gap-2">
+                          <MessageSquare className="h-5 w-5" />
+                          Conversas
+                          {unreadMessagesCount > 0 && (
+                            <Badge variant="destructive" className="ml-auto">
+                              {unreadMessagesCount}
+                            </Badge>
+                          )}
+                        </SheetTitle>
+                        <div className="relative mt-3">
+                          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Buscar contatos..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-8"
+                          />
+                        </div>
+                      </SheetHeader>
+                      <ScrollArea className="h-[calc(100vh-140px)]">
+                        {loading ? (
+                          <div className="p-4 text-center text-muted-foreground">
+                            Carregando contatos...
+                          </div>
+                        ) : filteredContacts.length === 0 ? (
+                          <div className="p-4 text-center text-muted-foreground">
+                            Nenhum contato encontrado
+                          </div>
+                        ) : (
+                          filteredContacts.map((contact) => (
+                            <div
+                              key={contact.id}
+                              className={`p-4 border-b cursor-pointer hover:bg-muted/50 transition-colors ${
+                                selectedContact?.id === contact.id ? "bg-muted" : ""
+                              }`}
+                              onClick={() => handleContactSelect(contact)}
+                            >
+                              <div className="flex items-start gap-3">
+                                <Avatar className="h-10 w-10 flex-shrink-0">
+                                  <AvatarImage src={contact.avatar} />
+                                  <AvatarFallback>
+                                    {contact.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
+                                    <h4 className="font-medium leading-tight break-words flex-1 min-w-0">
+                                      {contact.name}
+                                    </h4>
+                                    <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
+                                      {contact.unreadCount > 0 && (
+                                        <Badge variant="destructive" className="text-xs">
+                                          {contact.unreadCount}
+                                        </Badge>
+                                      )}
+                                      {contact.isOnline && (
+                                        <div className="w-2 h-2 bg-green-500 rounded-full" />
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground mt-1 min-w-0">
+                                    <Phone className="h-3 w-3 flex-shrink-0" />
+                                    <span className="break-all min-w-0">{contact.phone}</span>
+                                  </div>
+                                  <p className="text-sm text-muted-foreground mt-1 whitespace-normal break-words line-clamp-2">
+                                    {contact.lastMessage}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </ScrollArea>
+                    </SheetContent>
+                  </Sheet>
+                </div>
               </div>
             </CardContent>
           )}
