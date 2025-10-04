@@ -1,10 +1,11 @@
-import { useMemo, useEffect } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
-import { Home, Calendar, Users, Building2, DollarSign, Settings, LogOut, Shield, UserCog, MessageSquare, FolderOpen, BarChart3, BookOpen, Megaphone } from "lucide-react";
+import { Home, Calendar, Users, Building2, DollarSign, Settings, LogOut, Shield, UserCog, MessageSquare, FolderOpen, BarChart3, BookOpen, Megaphone, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { ProportionalScaler } from "@/components/ui/proportional-scaler";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/state/auth";
 import { useGradientDatabase } from "@/hooks/useGradientDatabase";
 import { useAuthSession } from "@/hooks/useAuthSession";
@@ -83,6 +84,7 @@ export default function AppLayout() {
   const location = useLocation();
   
   const navigate = useNavigate();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Verify session on navigation changes
   useEffect(() => {
@@ -222,6 +224,68 @@ export default function AppLayout() {
         <header className="md:hidden sticky top-0 z-10 border-b bg-card/80 backdrop-blur-sm">
           <div className="px-3 py-2 sm:px-4 sm:py-3 flex items-center justify-between">
             <div className="flex items-center gap-2 min-w-0 flex-1">
+              <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
+                    <Menu className="h-5 w-5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-[280px] p-0">
+                  <SheetHeader className="p-4 border-b">
+                    <div className="flex items-center gap-2">
+                      <Logo size="md" />
+                      <div>
+                        <SheetTitle className="text-base">CONCEPÇÃO</SheetTitle>
+                        <p className="text-xs text-muted-foreground">Arquitetura</p>
+                      </div>
+                    </div>
+                  </SheetHeader>
+                  
+                  <nav className="p-3 space-y-1">
+                    {items.map(n => (
+                      <NavLink 
+                        key={n.to} 
+                        to={n.to}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className={({isActive}) => 
+                          `flex items-center gap-3 rounded-md px-3 py-3 text-sm transition-colors ${
+                            isActive ? "bg-primary/10 text-primary font-medium" : "hover:bg-accent"
+                          }`
+                        }
+                      >
+                        <n.icon className="size-5 flex-shrink-0" />
+                        <span>{n.label}</span>
+                      </NavLink>
+                    ))}
+                  </nav>
+
+                  <div className="absolute bottom-0 left-0 right-0 p-3 border-t bg-card">
+                    <div className="space-y-2">
+                      <div className="text-sm px-2">
+                        <p className="font-medium flex items-center gap-2 truncate">
+                          <span className="truncate">{user?.name}</span>
+                          {user?.role === "admin" && <Shield className="size-3 text-primary flex-shrink-0" />}
+                        </p>
+                        <p className="text-muted-foreground text-xs truncate">{getRoleLabel(user?.role as any)}</p>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => {
+                          logout();
+                          navigate("/login");
+                          setMobileMenuOpen(false);
+                        }} 
+                        className="w-full"
+                      >
+                        <LogOut className="mr-2 h-4 w-4" />
+                        Sair
+                      </Button>
+                    </div>
+                  </div>
+                </SheetContent>
+              </Sheet>
+
               <Logo size="sm" />
               <div className="min-w-0">
                 <h1 className="text-sm sm:text-base font-semibold truncate">CONCEPÇÃO</h1>
@@ -230,22 +294,7 @@ export default function AppLayout() {
             </div>
             <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
               <ThemeToggle />
-              <Button variant="soft" size="sm" onClick={() => {
-              logout();
-              navigate("/login");
-            }}>
-                <LogOut className="mr-1 size-3 sm:size-4" /> 
-                <span className="hidden sm:inline">Sair</span>
-              </Button>
             </div>
-          </div>
-          <div className="px-2 pb-2 flex gap-1 overflow-x-auto">
-            {items.map(n => <NavLink key={n.to} to={n.to} className={({
-            isActive
-          }) => `flex items-center gap-1 rounded-md px-2 py-1.5 text-xs sm:text-sm whitespace-nowrap flex-shrink-0 ${isActive ? "bg-primary/10 text-primary" : "bg-secondary"}`}>
-                <n.icon className="size-3 sm:size-4" />
-                <span>{n.label}</span>
-              </NavLink>)}
           </div>
         </header>
         <div className="px-3 py-4 md:responsive-padding-lg bg-custom-bg flex-1"><Outlet /></div>
