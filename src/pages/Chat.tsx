@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,7 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { MessageSquare, Phone, Search, Send, Trash2, X } from "lucide-react";
+import { MessageSquare, Phone, Search, Send, Trash2, X, Menu, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
 import { toast } from "@/hooks/use-toast";
@@ -94,6 +95,7 @@ export default function Chat() {
   const [pendingAttachments, setPendingAttachments] = useState<UploadedFileInfo[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [isClearingConversation, setIsClearingConversation] = useState(false);
+  const [mobileContactsOpen, setMobileContactsOpen] = useState(false);
 
   // Verificar sessão ao entrar no chat
   useEffect(() => {
@@ -889,6 +891,7 @@ export default function Chat() {
     setSelectedContact(contact);
     setPendingAttachments([]);
     setNewMessage("");
+    setMobileContactsOpen(false); // Fechar menu no mobile ao selecionar
     await loadMessages(contact.id);
     await loadWhatsAppContacts({ silent: true });
   };
@@ -899,12 +902,12 @@ export default function Chat() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <PageHeader title="WhatsApp Business" />
 
       <div className="flex gap-4 h-[calc(100vh-200px)] min-h-0">
-        {/* Lista de Contatos */}
-        <div className="w-80 flex-shrink-0 flex flex-col">
+        {/* Lista de Contatos - Desktop */}
+        <div className="hidden md:block w-80 flex-shrink-0">
           <Card className="h-full flex flex-col">
             <CardHeader className="pb-3 flex-shrink-0">
               <CardTitle className="flex items-center gap-2">
@@ -1000,6 +1003,93 @@ export default function Chat() {
               <CardHeader className="pb-3 border-b flex-shrink-0">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
+                    {/* Botão voltar e Menu mobile */}
+                    <div className="md:hidden flex items-center gap-2">
+                      <Sheet open={mobileContactsOpen} onOpenChange={setMobileContactsOpen}>
+                        <SheetTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
+                            <Menu className="h-5 w-5" />
+                          </Button>
+                        </SheetTrigger>
+                        <SheetContent side="left" className="w-[320px] p-0">
+                          <SheetHeader className="p-4 border-b">
+                            <SheetTitle className="flex items-center gap-2">
+                              <MessageSquare className="h-5 w-5" />
+                              Conversas
+                              {unreadMessagesCount > 0 && (
+                                <Badge variant="destructive" className="ml-auto">
+                                  {unreadMessagesCount}
+                                </Badge>
+                              )}
+                            </SheetTitle>
+                            <div className="relative mt-3">
+                              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                placeholder="Buscar contatos..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-8"
+                              />
+                            </div>
+                          </SheetHeader>
+                          <ScrollArea className="h-[calc(100vh-140px)]">
+                            {loading ? (
+                              <div className="p-4 text-center text-muted-foreground">
+                                Carregando contatos...
+                              </div>
+                            ) : filteredContacts.length === 0 ? (
+                              <div className="p-4 text-center text-muted-foreground">
+                                Nenhum contato encontrado
+                              </div>
+                            ) : (
+                              filteredContacts.map((contact) => (
+                                <div
+                                  key={contact.id}
+                                  className={`p-4 border-b cursor-pointer hover:bg-muted/50 transition-colors ${
+                                    selectedContact?.id === contact.id ? "bg-muted" : ""
+                                  }`}
+                                  onClick={() => handleContactSelect(contact)}
+                                >
+                                  <div className="flex items-start gap-3">
+                                    <Avatar className="h-10 w-10 flex-shrink-0">
+                                      <AvatarImage src={contact.avatar} />
+                                      <AvatarFallback>
+                                        {contact.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
+                                        <h4 className="font-medium leading-tight break-words flex-1 min-w-0">
+                                          {contact.name}
+                                        </h4>
+                                        <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
+                                          {contact.unreadCount > 0 && (
+                                            <Badge variant="destructive" className="text-xs">
+                                              {contact.unreadCount}
+                                            </Badge>
+                                          )}
+                                          {contact.isOnline && (
+                                            <div className="w-2 h-2 bg-green-500 rounded-full" />
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground mt-1 min-w-0">
+                                        <Phone className="h-3 w-3 flex-shrink-0" />
+                                        <span className="break-all min-w-0">{contact.phone}</span>
+                                      </div>
+                                      <p className="text-sm text-muted-foreground mt-1 whitespace-normal break-words line-clamp-2">
+                                        {contact.lastMessage}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </ScrollArea>
+                        </SheetContent>
+                      </Sheet>
+                    </div>
+                    
                     <Avatar className="h-10 w-10">
                       <AvatarImage src={selectedContact.avatar} />
                       <AvatarFallback>
