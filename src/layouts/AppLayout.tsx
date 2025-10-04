@@ -248,7 +248,7 @@ export default function AppLayout() {
               </NavLink>)}
           </div>
         </header>
-        <div className="responsive-padding-lg bg-custom-bg flex-1"><Outlet /></div>
+        <div className="px-3 py-4 md:responsive-padding-lg bg-custom-bg flex-1"><Outlet /></div>
       </main>
     </ProportionalScaler>;
 }

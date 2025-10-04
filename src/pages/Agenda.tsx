@@ -683,32 +683,29 @@ export default function Agenda() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <PageHeader title="Agenda" subtitle="Organização de reuniões, visitas e apresentações" />
       
-      <div className="space-y-4">
+      <div className="space-y-3 md:space-y-4">
         {/* Primeira linha - Navegação do Calendário e Botão Novo Agendamento */}
-        <div className="flex items-center justify-between gap-1.5 lg:gap-2 overflow-x-auto">
-          <div className="flex items-center gap-1.5 lg:gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 md:gap-3">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setCurrentMonth(addMonths(currentMonth, -1))}
-              className="flex-shrink-0 min-w-[40px]"
+              className="flex-1 sm:flex-initial h-11"
             >
               <ChevronLeft className="w-4 h-4" />
-              <span className="hidden sm:inline ml-2">Mês Anterior</span>
+              <span className="ml-1 sm:ml-2">Anterior</span>
             </Button>
             
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="flex-shrink-0 min-w-[120px] lg:min-w-[140px] justify-center">
+                <Button variant="outline" size="sm" className="flex-1 sm:flex-initial h-11 justify-center min-w-[140px]">
                   <CalendarIcon className="w-4 h-4 mr-2" />
-                  <span className="hidden sm:inline">
-                    {format(currentMonth, "MMMM yyyy", { locale: ptBR })}
-                  </span>
-                  <span className="sm:hidden">
-                    {format(currentMonth, "MM/yy", { locale: ptBR })}
+                  <span className="capitalize">
+                    {format(currentMonth, "MMM yyyy", { locale: ptBR })}
                   </span>
                 </Button>
               </PopoverTrigger>
@@ -718,7 +715,6 @@ export default function Agenda() {
                   selected={currentMonth}
                   onSelect={(date) => {
                     if (date) {
-                      // Ajustar timezone para evitar problemas
                       const adjustedDate = new Date(date.getTime() + date.getTimezoneOffset() * 60000);
                       setCurrentMonth(adjustedDate);
                     }
@@ -733,9 +729,9 @@ export default function Agenda() {
               variant="outline"
               size="sm"
               onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-              className="flex-shrink-0 min-w-[40px]"
+              className="flex-1 sm:flex-initial h-11"
             >
-              <span className="hidden sm:inline mr-2">Próximo Mês</span>
+              <span className="mr-1 sm:mr-2">Próximo</span>
               <ChevronRight className="w-4 h-4" />
             </Button>
           </div>
@@ -744,11 +740,11 @@ export default function Agenda() {
             <DialogTrigger asChild>
               <Button
                 size="sm"
-                className="btn-hero flex-shrink-0 min-w-[40px]"
+                className="btn-hero w-full sm:w-auto h-11"
                 onClick={resetFormToDefault}
               >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline ml-2">Novo Agendamento</span>
+                <Plus className="w-4 h-4 mr-2" />
+                <span>Novo Agendamento</span>
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1210,11 +1206,11 @@ export default function Agenda() {
         </div>
         
         {/* Segunda linha - Filtros e Botões de Feriados */}
-        <div className="flex flex-wrap items-center gap-1.5 lg:gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 md:gap-3">
           {/* Filtro de Setor */}
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div className="flex-1 sm:flex-initial">
             <Select value={sectorFilter} onValueChange={(value: 'todos' | 'pessoal' | 'compartilhada') => setSectorFilter(value)}>
-              <SelectTrigger className="w-[140px] sm:w-[160px] lg:w-[180px] flex-shrink-0">
+              <SelectTrigger className="w-full sm:w-[180px] h-11">
                 <SelectValue placeholder="Filtrar por setor" />
               </SelectTrigger>
               <SelectContent>
@@ -1241,10 +1237,10 @@ export default function Agenda() {
           </div>
 
           {/* Botões de Feriados */}
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            <Button variant="outline" size="sm" onClick={() => setIsHolidayDialogOpen(true)} className="flex-shrink-0 min-w-[40px]">
-              <Gift className="w-4 h-4" />
-              <span className="hidden sm:inline ml-2">Novo Feriado</span>
+          <div className="flex-1 sm:flex-initial">
+            <Button variant="outline" size="sm" onClick={() => setIsHolidayDialogOpen(true)} className="w-full sm:w-auto h-11">
+              <Gift className="w-4 h-4 mr-2" />
+              <span>Novo Feriado</span>
             </Button>
           </div>
           
@@ -1258,11 +1254,11 @@ export default function Agenda() {
       </div>
 
       {/* Calendário mensal */}
-      <div className="overflow-x-auto">
-        <div className="grid grid-cols-7 gap-1 bg-card rounded-lg border p-4 min-w-fit">
+      <div className="overflow-x-auto -mx-3 md:mx-0">
+        <div className="grid grid-cols-7 gap-0.5 md:gap-1 bg-card rounded-lg border p-2 md:p-4 min-w-[280px]">
           {/* Cabeçalho dos dias da semana */}
           {['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'].map(day => (
-            <div key={day} className="text-center text-sm font-medium p-2 text-muted-foreground min-w-[120px]">
+            <div key={day} className="text-center text-[10px] md:text-sm font-medium p-1 md:p-2 text-muted-foreground min-w-[38px] md:min-w-[120px]">
               {day}
             </div>
           ))}
@@ -1278,20 +1274,20 @@ export default function Agenda() {
             return (
               <div
                 key={day.toISOString()}
-                className={`min-h[120px] min-w-[120px] p-2 border rounded-md ${isToday ? 'bg-primary/20 border-primary' : hasHoliday ? 'bg-brand/10 border-brand/30' : 'bg-primary/10 border-primary/30'} ${!isCurrentMonth ? 'opacity-50' : ''}`}
+                className={`min-h-[80px] md:min-h-[120px] min-w-[38px] md:min-w-[120px] p-1 md:p-2 border rounded-sm md:rounded-md ${isToday ? 'bg-primary/20 border-primary' : hasHoliday ? 'bg-brand/10 border-brand/30' : 'bg-primary/10 border-primary/30'} ${!isCurrentMonth ? 'opacity-50' : ''}`}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <div className={`text-sm font-medium ${isToday ? 'text-primary' : isCurrentMonth ? 'text-foreground' : 'text-muted-foreground'}`}>
+                <div className="flex items-center justify-between mb-1 md:mb-2">
+                  <div className={`text-[10px] md:text-sm font-medium ${isToday ? 'text-primary' : isCurrentMonth ? 'text-foreground' : 'text-muted-foreground'}`}>
                     {format(day, 'd')}
                   </div>
-                  {hasHoliday && <Gift className="h-3 w-3" style={{ color: `hsl(var(--brand))` }} />}
+                  {hasHoliday && <Gift className="h-2 md:h-3 w-2 md:w-3" style={{ color: `hsl(var(--brand))` }} />}
                 </div>
                  
                 {/* Feriados */}
                 {dayHolidays.map(holiday => (
                   <div
                     key={holiday.id}
-                    className="text-xs rounded p-1 mb-1 border"
+                    className="text-[9px] md:text-xs rounded p-0.5 md:p-1 mb-0.5 md:mb-1 border hidden md:block"
                     style={{
                       backgroundColor: `hsl(var(--brand) / 0.1)`,
                       borderColor: `hsl(var(--brand) / 0.3)`,
@@ -1304,34 +1300,38 @@ export default function Agenda() {
                   </div>
                 ))}
                 
-                <div className="space-y-1">
-                  {dayItems.map(item => (
+                <div className="space-y-0.5 md:space-y-1">
+                  {dayItems.slice(0, 2).map(item => (
                     <div
                       key={item.id}
                       onClick={() => handleItemClick(item)}
-                      className="text-xs rounded border cursor-pointer hover:opacity-90 transition-opacity overflow-hidden"
+                      className="text-[8px] md:text-xs rounded border cursor-pointer hover:opacity-90 transition-opacity overflow-hidden"
                     >
-                      <div className={`p-2 rounded-t ${getTipoColor(item.tipo)} text-white overflow-hidden`}>
-                        <div className="flex items-center gap-1 mb-1">
-                          <span className="block truncate font-medium text-white flex-1" title={item.titulo}>
+                      <div className={`p-0.5 md:p-2 rounded-t ${getTipoColor(item.tipo)} text-white overflow-hidden`}>
+                        <div className="flex items-center gap-0.5 md:gap-1 mb-0 md:mb-1">
+                          <span className="block truncate font-medium text-white flex-1 leading-tight" title={item.titulo}>
                             {item.titulo}
                           </span>
                           {item.agenda_type === 'compartilhada' && item.attendees_display && (
-                            <span className="text-xs text-white/80 flex-shrink-0">
+                            <span className="text-[8px] md:text-xs text-white/80 flex-shrink-0 hidden md:inline">
                               {item.attendees_display}
                             </span>
                           )}
                         </div>
                       </div>
-                      <div className="p-1 bg-background text-muted-foreground flex items-center gap-1 rounded-b">
-                        <Clock className="w-3 h-3 flex-shrink-0" />
-                        <span className="truncate">
+                      <div className="p-0.5 md:p-1 bg-background text-muted-foreground flex items-center gap-0.5 md:gap-1 rounded-b">
+                        <Clock className="w-2 md:w-3 h-2 md:h-3 flex-shrink-0 hidden md:block" />
+                        <span className="truncate leading-tight">
                           {item.horario.substring(0, 5)}
-                          {item.horario_fim && ` - ${item.horario_fim.substring(0, 5)}`}
                         </span>
                       </div>
                     </div>
                   ))}
+                  {dayItems.length > 2 && (
+                    <div className="text-[8px] md:text-xs text-muted-foreground text-center p-0.5">
+                      +{dayItems.length - 2}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -1413,58 +1413,58 @@ export default function Agenda() {
                 </div>
 
                 {/* Informações principais em cards */}
-                <div className="grid gap-4">
+                <div className="grid gap-3 md:gap-4">
                   {/* Cliente */}
-                  <Card className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        <div className="w-5 h-5 rounded-full bg-primary/20"></div>
+                  <Card className="p-3 md:p-4">
+                    <div className="flex items-center gap-2 md:gap-3">
+                      <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <div className="w-4 h-4 md:w-5 md:h-5 rounded-full bg-primary/20"></div>
                       </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Cliente</p>
-                        <p className="font-semibold text-foreground">{selectedItem.cliente}</p>
+                      <div className="min-w-0">
+                        <p className="text-xs md:text-sm text-muted-foreground">Cliente</p>
+                        <p className="font-semibold text-sm md:text-base text-foreground truncate">{selectedItem.cliente}</p>
                       </div>
                     </div>
                   </Card>
 
                   {/* Data e Horário */}
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <Card className="p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <CalendarIcon className="w-5 h-5 text-primary" />
+                  <div className="grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-3">
+                    <Card className="p-3 md:p-4">
+                      <div className="flex items-center gap-2 md:gap-3">
+                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <CalendarIcon className="w-4 h-4 md:w-5 md:h-5 text-primary" />
                         </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Início</p>
-                          <p className="font-semibold text-foreground">
+                        <div className="min-w-0">
+                          <p className="text-xs md:text-sm text-muted-foreground">Início</p>
+                          <p className="font-semibold text-sm md:text-base text-foreground truncate">
                             {formatDisplayDate(selectedItem.data)}
                           </p>
                         </div>
                       </div>
                     </Card>
 
-                    <Card className="p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <CalendarIcon className="w-5 h-5 text-primary" />
+                    <Card className="p-3 md:p-4">
+                      <div className="flex items-center gap-2 md:gap-3">
+                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <CalendarIcon className="w-4 h-4 md:w-5 md:h-5 text-primary" />
                         </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Término</p>
-                          <p className="font-semibold text-foreground">
+                        <div className="min-w-0">
+                          <p className="text-xs md:text-sm text-muted-foreground">Término</p>
+                          <p className="font-semibold text-sm md:text-base text-foreground truncate">
                             {formatDisplayDate(selectedItem.data_fim || selectedItem.data)}
                           </p>
                         </div>
                       </div>
                     </Card>
 
-                    <Card className="p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <Clock className="w-5 h-5 text-primary" />
+                    <Card className="p-3 md:p-4">
+                      <div className="flex items-center gap-2 md:gap-3">
+                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <Clock className="w-4 h-4 md:w-5 md:h-5 text-primary" />
                         </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Horário</p>
-                          <p className="font-semibold text-foreground">
+                        <div className="min-w-0">
+                          <p className="text-xs md:text-sm text-muted-foreground">Horário</p>
+                          <p className="font-semibold text-sm md:text-base text-foreground truncate">
                             {selectedItem.horario.substring(0, 5)}
                             {selectedItem.horario_fim && ` - ${selectedItem.horario_fim.substring(0, 5)}`}
                           </p>
@@ -1507,10 +1507,10 @@ export default function Agenda() {
                 </div>
 
                 {/* Ações */}
-                <div className="flex gap-3 pt-4 border-t">
+                <div className="flex flex-col sm:flex-row gap-2 md:gap-3 pt-3 md:pt-4 border-t">
                   <Button
                     variant="outline"
-                    className="flex-1 h-11"
+                    className="flex-1 h-12 md:h-11 text-base md:text-sm"
                     onClick={() => selectedItem && handleEditClick(selectedItem)}
                   >
                     <Edit className="w-4 h-4 mr-2" />
@@ -1518,7 +1518,7 @@ export default function Agenda() {
                   </Button>
                   <Button
                     variant="outline"
-                    className="flex-1 h-11 text-destructive hover:text-destructive"
+                    className="flex-1 h-12 md:h-11 text-base md:text-sm text-destructive hover:text-destructive"
                     onClick={() => selectedItem && handleDeleteClick(selectedItem)}
                   >
                     <Trash2 className="w-4 h-4 mr-2" />
