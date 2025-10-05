@@ -111,11 +111,11 @@ export default function AppLayout() {
       filteredNav = filteredNav.filter(n => 
         n.to !== "/financeiro" && 
         n.to !== "/users" && 
-        n.to !== "/clients" && 
         n.to !== "/projects" &&
         n.to !== "/reports" &&
         n.to !== "/marketing"
       );
+      // Colaboradores podem ver clientes para acessar contatos
     } else if (user?.role === "admin") {
       // Remove user-specific projects tab for admins
       filteredNav = filteredNav.filter(n => n.to !== "/user-projects");
