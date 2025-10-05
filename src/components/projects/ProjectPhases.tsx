@@ -19,11 +19,16 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Edit, Trash2, DollarSign, CheckCircle, Clock, AlertCircle, UserPlus, User, FileText, TrendingUp } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Plus, Edit, Trash2, DollarSign, CheckCircle, Clock, AlertCircle, UserPlus, User, FileText, TrendingUp, CalendarIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { PhaseAssignmentDialog } from "./PhaseAssignmentDialog";
 import { ProjectBankOfHours } from "./ProjectBankOfHours";
+import { format, parseISO } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { cn } from "@/lib/utils";
 
 interface ProjectPhase {
   id: string;
@@ -38,6 +43,8 @@ interface ProjectPhase {
   executed_hours: number;
   assigned_to?: string;
   supervised_by?: string;
+  start_date?: string;
+  due_date?: string;
   assigned_profile?: {
     name: string;
   };
@@ -92,7 +99,9 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
     phase_name: "",
     description: "",
     status: "pending" as ProjectPhase['status'],
-    allocated_hours: 0
+    allocated_hours: 0,
+    start_date: null as Date | null,
+    due_date: null as Date | null
   });
 
   // Calcular valor por hora
@@ -158,7 +167,9 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
       phase_name: "",
       description: "",
       status: "pending",
-      allocated_hours: 0
+      allocated_hours: 0,
+      start_date: null,
+      due_date: null
     });
     setEditingPhase(null);
   };
@@ -170,7 +181,9 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
         phase_name: phase.phase_name,
         description: phase.description || "",
         status: phase.status,
-        allocated_hours: phase.allocated_hours
+        allocated_hours: phase.allocated_hours,
+        start_date: phase.start_date ? parseISO(phase.start_date) : null,
+        due_date: phase.due_date ? parseISO(phase.due_date) : null
       });
     } else {
       resetForm();
@@ -211,6 +224,16 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
       return;
     }
 
+    // Validar datas
+    if (formData.start_date && formData.due_date && formData.start_date > formData.due_date) {
+      toast({
+        title: "Datas inválidas",
+        description: "A data de início não pode ser posterior à data de entrega",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       const { data: userData } = await supabase.auth.getUser();
@@ -227,7 +250,9 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
             description: formData.description,
             status: formData.status,
             allocated_hours: formData.allocated_hours,
-            value_percentage: calculatedPercentage
+            value_percentage: calculatedPercentage,
+            start_date: formData.start_date ? format(formData.start_date, 'yyyy-MM-dd') : null,
+            due_date: formData.due_date ? format(formData.due_date, 'yyyy-MM-dd') : null
           })
           .eq('id', editingPhase.id);
 
@@ -246,7 +271,9 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
             allocated_hours: formData.allocated_hours,
             value_percentage: calculatedPercentage,
             order_index: nextOrderIndex,
-            created_by: userData.user.id
+            created_by: userData.user.id,
+            start_date: formData.start_date ? format(formData.start_date, 'yyyy-MM-dd') : null,
+            due_date: formData.due_date ? format(formData.due_date, 'yyyy-MM-dd') : null
           });
 
         if (error) throw error;
@@ -436,6 +463,65 @@ export function ProjectPhases({ projectId, contractedValue, contractedHours, onP
                   <p className="text-xs text-muted-foreground">
                     Valor por hora: R$ {valuePerHour.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </p>
+                </div>
+
+                <div>
+                  <Label htmlFor="start_date">Data de Início</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !formData.start_date && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {formData.start_date ? format(formData.start_date, "PPP", { locale: ptBR }) : <span>Selecione uma data</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={formData.start_date || undefined}
+                        onSelect={(date) => setFormData({...formData, start_date: date || null})}
+                        initialFocus
+                        className="pointer-events-auto"
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  {formData.start_date && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      ⚠️ A fase mudará automaticamente para "Em Andamento" nesta data
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="due_date">Data de Entrega</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !formData.due_date && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {formData.due_date ? format(formData.due_date, "PPP", { locale: ptBR }) : <span>Selecione uma data</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={formData.due_date || undefined}
+                        onSelect={(date) => setFormData({...formData, due_date: date || null})}
+                        initialFocus
+                        className="pointer-events-auto"
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <div className="flex gap-2 pt-4">
