@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/ui/page-header";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
@@ -21,7 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Plus, Phone, Mail, MessageSquare, Calendar, FileText, DollarSign, Building, Upload, Download, X, MapPin, User, Eye, Trash2, CreditCard } from "lucide-react";
+import { ArrowLeft, Plus, Phone, Mail, MessageSquare, Calendar, FileText, DollarSign, Building, Upload, Download, X, MapPin, User, Eye, Trash2, CreditCard, Send } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
@@ -78,6 +80,12 @@ interface Financial {
   reference_document: string;
   payment_method?: string;
 }
+
+type EmailSummarySections = {
+  includeSummary: boolean;
+  includePending: boolean;
+  includeRecent: boolean;
+};
 
 interface Project {
   id: string;
@@ -154,6 +162,18 @@ export default function ClientDetail() {
     status: 'pending',
     reference: '',
     payment_method: ''
+  });
+
+  const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [emailForm, setEmailForm] = useState({
+    to: '',
+    cc: '',
+    subject: '',
+    message: '',
+    includeSummary: true,
+    includePending: true,
+    includeRecent: true,
   });
 
   useEffect(() => {
@@ -489,7 +509,11 @@ export default function ClientDetail() {
     return (labels as any)[method] || method;
   };
 
-  const formatMoney = (amount: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
+  const currencyFormatter = useMemo(
+    () => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }),
+    []
+  );
+  const formatMoney = useCallback((amount: number) => currencyFormatter.format(amount), [currencyFormatter]);
   const formatSize = (bytes?: number) => {
     if (!bytes && bytes !== 0) return '-';
     if (bytes < 1024) return `${bytes} B`;
@@ -498,6 +522,277 @@ export default function ClientDetail() {
     const mb = kb / 1024;
     return `${mb.toFixed(2)} MB`;
   };
+
+  const formatDateToBR = (value?: string | null) => {
+    if (!value) return 'Sem data';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 'Sem data';
+    return parsed.toLocaleDateString('pt-BR');
+  };
+
+  const totalIncome = useMemo(
+    () =>
+      financials
+        .filter((f) => f.transaction_type === 'income' || f.transaction_type === 'payment_received')
+        .reduce((acc, f) => acc + (f.amount || 0), 0),
+    [financials]
+  );
+
+  const totalExpenses = useMemo(
+    () =>
+      financials
+        .filter((f) => f.transaction_type === 'expense' || f.transaction_type === 'payment_sent')
+        .reduce((acc, f) => acc + (f.amount || 0), 0),
+    [financials]
+  );
+
+  const netBalance = useMemo(() => totalIncome - totalExpenses, [totalIncome, totalExpenses]);
+
+  const pendingTransactions = useMemo(
+    () => financials.filter((f) => (f.status || '').toLowerCase() !== 'completed'),
+    [financials]
+  );
+
+  const totalPendingAmount = useMemo(
+    () => pendingTransactions.reduce((acc, f) => acc + (f.amount || 0), 0),
+    [pendingTransactions]
+  );
+
+  const upcomingPendings = useMemo(() => {
+    const withDate = pendingTransactions.filter((item) => item.transaction_date);
+    const sorted = [...withDate].sort(
+      (a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime()
+    );
+    return sorted.slice(0, 3);
+  }, [pendingTransactions]);
+
+  const recentTransactions = useMemo(() => {
+    const sorted = [...financials].sort(
+      (a, b) => new Date(b.transaction_date).getTime() - new Date(a.transaction_date).getTime()
+    );
+    return sorted.slice(0, 5);
+  }, [financials]);
+
+  const getFinancialStatusLabel = (status: string) => {
+    const labels: Record<string, string> = {
+      completed: 'Concluído',
+      pending: 'Pendente',
+      cancelled: 'Cancelado',
+    };
+    return labels[status?.toLowerCase?.()] || status || '—';
+  };
+
+  const composeEmailSummary = useCallback(
+    (sections: EmailSummarySections) => {
+      const lines: string[] = [];
+      const firstName = client?.name?.split(' ')[0] || client?.name || 'cliente';
+
+      lines.push(`Olá ${firstName},`);
+      lines.push('');
+
+      if (sections.includeSummary) {
+        lines.push('Segue o resumo financeiro atualizado:');
+        lines.push(`• Receitas registradas: ${formatMoney(totalIncome)}`);
+        lines.push(`• Despesas registradas: ${formatMoney(totalExpenses)}`);
+        lines.push(`• Saldo atual: ${formatMoney(netBalance)}`);
+        lines.push('');
+      }
+
+      if (sections.includePending) {
+        if (pendingTransactions.length > 0) {
+          lines.push(
+            `Pendências financeiras: ${formatMoney(totalPendingAmount)} em ${pendingTransactions.length} ${
+              pendingTransactions.length === 1 ? 'lançamento' : 'lançamentos'
+            }.`
+          );
+
+          const highlightPendings = upcomingPendings.length > 0
+            ? upcomingPendings
+            : pendingTransactions.slice(0, 3);
+
+          highlightPendings.forEach((item) => {
+            lines.push(
+              `• ${item.description || 'Lançamento'} - ${formatMoney(item.amount)} (${formatDateToBR(
+                item.transaction_date
+              )})`
+            );
+          });
+        } else {
+          lines.push('Não encontramos pendências financeiras no momento.');
+        }
+        lines.push('');
+      }
+
+      if (sections.includeRecent && recentTransactions.length > 0) {
+        lines.push('Últimos lançamentos registrados:');
+        recentTransactions.forEach((item) => {
+          lines.push(
+            `• ${formatDateToBR(item.transaction_date)} - ${item.description || 'Lançamento'} (${formatMoney(
+              item.amount
+            )}) - ${getFinancialStatusLabel(item.status)}`
+          );
+        });
+        lines.push('');
+      }
+
+      lines.push('Se precisar de qualquer ajuste ou esclarecimento, é só responder este email.');
+      lines.push('');
+      lines.push('Atenciosamente,');
+      lines.push('Equipe Financeira');
+
+      return lines.join('\n');
+    },
+    [
+      client,
+      formatMoney,
+      netBalance,
+      pendingTransactions,
+      recentTransactions,
+      totalExpenses,
+      totalIncome,
+      totalPendingAmount,
+      upcomingPendings,
+    ]
+  );
+
+  const emailSummaryPreview = useMemo(
+    () =>
+      composeEmailSummary({
+        includeSummary: emailForm.includeSummary,
+        includePending: emailForm.includePending,
+        includeRecent: emailForm.includeRecent,
+      }),
+    [composeEmailSummary, emailForm.includePending, emailForm.includeRecent, emailForm.includeSummary]
+  );
+
+  useEffect(() => {
+    if (!isEmailDialogOpen) return;
+
+    setEmailForm((prev) => {
+      const nextTo = prev.to || client?.email || '';
+      const nextSubject = prev.subject || (client ? `Resumo Financeiro - ${client.name}` : 'Resumo Financeiro');
+      const nextMessage =
+        prev.message ||
+        composeEmailSummary({
+          includeSummary: prev.includeSummary,
+          includePending: prev.includePending,
+          includeRecent: prev.includeRecent,
+        });
+
+      if (prev.to === nextTo && prev.subject === nextSubject && prev.message === nextMessage) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        to: nextTo,
+        subject: nextSubject,
+        message: nextMessage,
+      };
+    });
+  }, [client, composeEmailSummary, isEmailDialogOpen]);
+
+  const handleToggleEmailSection = useCallback(
+    (key: keyof EmailSummarySections) => (checked: boolean) => {
+      setEmailForm((prev) => {
+        const updatedSections: EmailSummarySections = {
+          includeSummary: key === 'includeSummary' ? checked : prev.includeSummary,
+          includePending: key === 'includePending' ? checked : prev.includePending,
+          includeRecent: key === 'includeRecent' ? checked : prev.includeRecent,
+        };
+
+        const next = {
+          ...prev,
+          ...updatedSections,
+        } as typeof prev;
+
+        if (!prev.message.trim()) {
+          next.message = composeEmailSummary(updatedSections);
+        }
+
+        return next;
+      });
+    },
+    [composeEmailSummary]
+  );
+
+  const handleUseSuggestedMessage = useCallback(() => {
+    setEmailForm((prev) => ({
+      ...prev,
+      message: emailSummaryPreview,
+    }));
+  }, [emailSummaryPreview]);
+
+  const handleSendEmail = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setIsSendingEmail(true);
+
+      const highlightPendings = upcomingPendings.length > 0 ? upcomingPendings : pendingTransactions.slice(0, 3);
+
+      const payload = {
+        to: emailForm.to,
+        cc: emailForm.cc,
+        subject: emailForm.subject,
+        message: emailForm.message,
+        autoSummary: emailSummaryPreview,
+        sections: {
+          includeSummary: emailForm.includeSummary,
+          includePending: emailForm.includePending,
+          includeRecent: emailForm.includeRecent,
+        },
+        totals: {
+          income: totalIncome,
+          expenses: totalExpenses,
+          balance: netBalance,
+          pendingAmount: totalPendingAmount,
+        },
+        pending: highlightPendings.map((item) => ({
+          id: item.id,
+          description: item.description,
+          amount: item.amount,
+          transaction_date: item.transaction_date,
+          status: item.status,
+        })),
+        recent: recentTransactions.map((item) => ({
+          id: item.id,
+          description: item.description,
+          amount: item.amount,
+          transaction_date: item.transaction_date,
+          status: item.status,
+        })),
+      };
+
+      console.log('[FinanceEmailPreview]', payload);
+
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        toast({
+          title: 'Resumo preparado',
+          description:
+            'Os dados financeiros foram compilados. A integração com o serviço de email será conectada em breve.',
+        });
+        setIsEmailDialogOpen(false);
+      } finally {
+        setIsSendingEmail(false);
+      }
+    },
+    [
+      emailForm,
+      emailSummaryPreview,
+      netBalance,
+      pendingTransactions,
+      recentTransactions,
+      setIsEmailDialogOpen,
+      toast,
+      totalExpenses,
+      totalIncome,
+      totalPendingAmount,
+      upcomingPendings,
+    ]
+  );
+
+  const isEmailFormValid = emailForm.to.trim().length > 0 && emailForm.subject.trim().length > 0;
 
   if (loading) {
     return (
@@ -858,84 +1153,273 @@ export default function ClientDetail() {
                     </p>
                   </div>
                 </div>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button size="sm" className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-md hover:shadow-lg transition-all duration-200">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Nova Transação
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Adicionar Transação</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label>Tipo</Label>
-                        <Select value={newFinancial.type} onValueChange={(value) => setNewFinancial({ ...newFinancial, type: value })}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione o tipo" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="payment_received">Pagamento Recebido</SelectItem>
-                            <SelectItem value="payment_sent">Pagamento Enviado</SelectItem>
-                            <SelectItem value="income">Receita</SelectItem>
-                            <SelectItem value="expense">Despesa</SelectItem>
-                          </SelectContent>
-                        </Select>
+                <div className="flex flex-wrap items-center gap-2 justify-end">
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button size="sm" className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-md hover:shadow-lg transition-all duration-200">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Nova Transação
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Adicionar Transação</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label>Tipo</Label>
+                          <Select value={newFinancial.type} onValueChange={(value) => setNewFinancial({ ...newFinancial, type: value })}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione o tipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="payment_received">Pagamento Recebido</SelectItem>
+                              <SelectItem value="payment_sent">Pagamento Enviado</SelectItem>
+                              <SelectItem value="income">Receita</SelectItem>
+                              <SelectItem value="expense">Despesa</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Descrição</Label>
+                          <Input value={newFinancial.description} onChange={(e) => setNewFinancial({ ...newFinancial, description: e.target.value })} placeholder="Descrição da transação" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Valor</Label>
+                          <Input type="number" step="0.01" value={newFinancial.amount} onChange={(e) => setNewFinancial({ ...newFinancial, amount: e.target.value })} placeholder="0,00" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Data</Label>
+                          <Input type="date" value={newFinancial.date} onChange={(e) => setNewFinancial({ ...newFinancial, date: e.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Status</Label>
+                          <Select value={newFinancial.status} onValueChange={(value) => setNewFinancial({ ...newFinancial, status: value })}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="pending">Pendente</SelectItem>
+                              <SelectItem value="completed">Concluído</SelectItem>
+                              <SelectItem value="cancelled">Cancelado</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Forma de Pagamento</Label>
+                          <Select value={newFinancial.payment_method} onValueChange={(value) => setNewFinancial({ ...newFinancial, payment_method: value })}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione a forma de pagamento" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="pix">PIX</SelectItem>
+                              <SelectItem value="ted">TED</SelectItem>
+                              <SelectItem value="doc">DOC</SelectItem>
+                              <SelectItem value="dinheiro">Dinheiro</SelectItem>
+                              <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
+                              <SelectItem value="cartao_debito">Cartão de Débito</SelectItem>
+                              <SelectItem value="boleto">Boleto</SelectItem>
+                              <SelectItem value="cheque">Cheque</SelectItem>
+                              <SelectItem value="outros">Outros</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Referência</Label>
+                          <Input value={newFinancial.reference} onChange={(e) => setNewFinancial({ ...newFinancial, reference: e.target.value })} placeholder="Ex: PIX-001, TED-002" />
+                        </div>
+                        <Button onClick={handleAddFinancial} className="w-full">Adicionar Transação</Button>
                       </div>
-                      <div className="space-y-2">
-                        <Label>Descrição</Label>
-                        <Input value={newFinancial.description} onChange={(e) => setNewFinancial({ ...newFinancial, description: e.target.value })} placeholder="Descrição da transação" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Valor</Label>
-                        <Input type="number" step="0.01" value={newFinancial.amount} onChange={(e) => setNewFinancial({ ...newFinancial, amount: e.target.value })} placeholder="0,00" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Data</Label>
-                        <Input type="date" value={newFinancial.date} onChange={(e) => setNewFinancial({ ...newFinancial, date: e.target.value })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Status</Label>
-                        <Select value={newFinancial.status} onValueChange={(value) => setNewFinancial({ ...newFinancial, status: value })}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="pending">Pendente</SelectItem>
-                            <SelectItem value="completed">Concluído</SelectItem>
-                            <SelectItem value="cancelled">Cancelado</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Forma de Pagamento</Label>
-                        <Select value={newFinancial.payment_method} onValueChange={(value) => setNewFinancial({ ...newFinancial, payment_method: value })}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione a forma de pagamento" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="pix">PIX</SelectItem>
-                            <SelectItem value="ted">TED</SelectItem>
-                            <SelectItem value="doc">DOC</SelectItem>
-                            <SelectItem value="dinheiro">Dinheiro</SelectItem>
-                            <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
-                            <SelectItem value="cartao_debito">Cartão de Débito</SelectItem>
-                            <SelectItem value="boleto">Boleto</SelectItem>
-                            <SelectItem value="cheque">Cheque</SelectItem>
-                            <SelectItem value="outros">Outros</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Referência</Label>
-                        <Input value={newFinancial.reference} onChange={(e) => setNewFinancial({ ...newFinancial, reference: e.target.value })} placeholder="Ex: PIX-001, TED-002" />
-                      </div>
-                      <Button onClick={handleAddFinancial} className="w-full">Adicionar Transação</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                    </DialogContent>
+                  </Dialog>
+                  <Dialog open={isEmailDialogOpen} onOpenChange={setIsEmailDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 border-green-200 text-green-700 hover:bg-green-100/80 dark:border-green-900 dark:text-green-300 dark:hover:bg-green-900/40"
+                      >
+                        <Mail className="h-4 w-4" />
+                        Enviar resumo por email
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Enviar dados financeiros por email</DialogTitle>
+                      </DialogHeader>
+                      <form onSubmit={handleSendEmail} className="space-y-6">
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label htmlFor="email-to">Destinatário</Label>
+                            <Input
+                              id="email-to"
+                              type="email"
+                              value={emailForm.to}
+                              onChange={(event) => setEmailForm((prev) => ({ ...prev, to: event.target.value }))}
+                              placeholder="cliente@empresa.com"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="email-cc">Cópia (CC)</Label>
+                            <Input
+                              id="email-cc"
+                              value={emailForm.cc}
+                              onChange={(event) => setEmailForm((prev) => ({ ...prev, cc: event.target.value }))}
+                              placeholder="financeiro@empresa.com"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="email-subject">Assunto</Label>
+                          <Input
+                            id="email-subject"
+                            value={emailForm.subject}
+                            onChange={(event) => setEmailForm((prev) => ({ ...prev, subject: event.target.value }))}
+                            placeholder="Resumo Financeiro - Nome do Cliente"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="email-message">Mensagem personalizada</Label>
+                          <Textarea
+                            id="email-message"
+                            rows={6}
+                            value={emailForm.message}
+                            onChange={(event) => setEmailForm((prev) => ({ ...prev, message: event.target.value }))}
+                            placeholder="Inclua orientações adicionais antes de enviar ao cliente."
+                          />
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <Button type="button" variant="outline" size="sm" onClick={handleUseSuggestedMessage}>
+                              Usar resumo sugerido
+                            </Button>
+                            <span>Você pode ajustar o texto conforme necessário.</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <Label>Seções do resumo automático</Label>
+                          <div className="grid gap-3 md:grid-cols-3">
+                            <div className="flex items-start gap-3 rounded-lg border border-green-100/80 bg-green-50/40 p-4 dark:border-green-900/50 dark:bg-green-950/20">
+                              <Switch checked={emailForm.includeSummary} onCheckedChange={handleToggleEmailSection('includeSummary')} />
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium">Resumo geral</p>
+                                <p className="text-xs text-muted-foreground">Receitas, despesas e saldo atual.</p>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-3 rounded-lg border border-green-100/80 bg-green-50/40 p-4 dark:border-green-900/50 dark:bg-green-950/20">
+                              <Switch checked={emailForm.includePending} onCheckedChange={handleToggleEmailSection('includePending')} />
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium">Pendências</p>
+                                <p className="text-xs text-muted-foreground">Parcelas em aberto e valores previstos.</p>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-3 rounded-lg border border-green-100/80 bg-green-50/40 p-4 dark:border-green-900/50 dark:bg-green-950/20">
+                              <Switch checked={emailForm.includeRecent} onCheckedChange={handleToggleEmailSection('includeRecent')} />
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium">Últimos lançamentos</p>
+                                <p className="text-xs text-muted-foreground">Movimentações mais recentes registradas.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Resumo sugerido</Label>
+                          <div className="rounded-lg border border-border/60 bg-muted/40 p-4">
+                            <pre className="whitespace-pre-wrap text-sm leading-relaxed">{emailSummaryPreview}</pre>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <Label>Dados que serão destacados</Label>
+                          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                            <div className="rounded-lg border border-border/60 bg-background p-4 shadow-sm">
+                              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Receitas</p>
+                              <p className="text-lg font-semibold text-green-600 dark:text-green-300">{formatMoney(totalIncome)}</p>
+                            </div>
+                            <div className="rounded-lg border border-border/60 bg-background p-4 shadow-sm">
+                              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Despesas</p>
+                              <p className="text-lg font-semibold text-red-600 dark:text-red-300">{formatMoney(totalExpenses)}</p>
+                            </div>
+                            <div className="rounded-lg border border-border/60 bg-background p-4 shadow-sm">
+                              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Saldo atual</p>
+                              <p className="text-lg font-semibold">
+                                <span className={netBalance >= 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300'}>
+                                  {formatMoney(netBalance)}
+                                </span>
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-border/60 bg-background p-4 shadow-sm">
+                              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pendências</p>
+                              <p className="text-lg font-semibold text-amber-600 dark:text-amber-300">{formatMoney(totalPendingAmount)}</p>
+                              <p className="text-xs text-muted-foreground mt-1">{pendingTransactions.length} {pendingTransactions.length === 1 ? 'lançamento' : 'lançamentos'}</p>
+                            </div>
+                          </div>
+
+                          {pendingTransactions.length > 0 && (
+                            <div className="rounded-lg border border-border/60 bg-background p-4 space-y-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="font-medium">Principais pendências</p>
+                                  <p className="text-xs text-muted-foreground">Essas informações serão destacadas no email.</p>
+                                </div>
+                                <Badge variant="outline" className="text-xs font-medium">{formatMoney(totalPendingAmount)}</Badge>
+                              </div>
+                              <div className="space-y-2">
+                                {(upcomingPendings.length > 0 ? upcomingPendings : pendingTransactions.slice(0, 3)).map((item) => (
+                                  <div key={item.id} className="flex items-start justify-between gap-3 rounded-md bg-muted/30 p-3">
+                                    <div>
+                                      <p className="text-sm font-medium">{item.description || 'Lançamento'}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {formatDateToBR(item.transaction_date)} · {getFinancialStatusLabel(item.status)}
+                                      </p>
+                                    </div>
+                                    <Badge variant="secondary" className="text-xs font-semibold">
+                                      {formatMoney(item.amount)}
+                                    </Badge>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {recentTransactions.length > 0 && (
+                            <div className="rounded-lg border border-border/60 bg-background p-4 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <p className="font-medium">Últimos lançamentos</p>
+                                <Badge variant="outline" className="text-xs font-medium">{recentTransactions.length} registro{recentTransactions.length === 1 ? '' : 's'}</Badge>
+                              </div>
+                              <div className="space-y-2">
+                                {recentTransactions.map((item) => (
+                                  <div key={item.id} className="flex items-start justify-between gap-3 rounded-md border border-border/50 p-3">
+                                    <div>
+                                      <p className="text-sm font-medium">{item.description || 'Lançamento'}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {formatDateToBR(item.transaction_date)} · {getFinancialStatusLabel(item.status)}
+                                      </p>
+                                    </div>
+                                    <Badge variant="outline" className="text-xs font-semibold">
+                                      {formatMoney(item.amount)}
+                                    </Badge>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col gap-2 border-t border-border/60 pt-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                          <span>O envio será integrado a um serviço de email em breve. Esta ação apenas prepara o conteúdo.</span>
+                          <Button type="submit" className="gap-2" disabled={!isEmailFormValid || isSendingEmail}>
+                            <Send className="h-4 w-4" />
+                            {isSendingEmail ? 'Preparando...' : 'Preparar envio'}
+                          </Button>
+                        </div>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-6">
