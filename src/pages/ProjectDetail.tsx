@@ -13,6 +13,7 @@ import { MapPin, Users, Eye, Clock, Settings, Edit, Save, X } from "lucide-react
 import { toast } from "@/hooks/use-toast";
 import { ProjectPhases } from "@/components/projects/ProjectPhases";
 import { ProjectDocuments } from "@/components/projects/ProjectDocuments";
+import { ClientContactsCard } from "@/components/client/ClientContactsCard";
 import { useAuth } from "@/state/auth";
 
 interface Project {
@@ -63,18 +64,19 @@ export default function ProjectDetail() {
     briefing_document: ""
   });
 
+  // Não redirecionar colaboradores - eles podem ver detalhes do projeto
   // Redirect users to their tasks page
-  useEffect(() => {
-    if (user?.role === 'user') {
-      // Redirect users to their phases page instead
-      navigate('/user-projects', { replace: true });
-      return;
-    }
-  }, [user?.role, navigate]);
+  // useEffect(() => {
+  //   if (user?.role === 'user') {
+  //     // Redirect users to their phases page instead
+  //     navigate('/user-projects', { replace: true });
+  //     return;
+  //   }
+  // }, [user?.role, navigate]);
 
   useEffect(() => {
     const loadData = async () => {
-      if (!id || user?.role === 'user') return;
+      if (!id) return;
       
       setLoading(true);
       
@@ -119,12 +121,12 @@ export default function ProjectDetail() {
     };
 
     loadData();
-  }, [id, user?.role]);
+  }, [id]);
 
-  // If user role, don't render anything (will be redirected)
-  if (user?.role === 'user') {
-    return null;
-  }
+  // Não bloquear colaboradores de ver a página
+  // if (user?.role === 'user') {
+  //   return null;
+  // }
 
   const handleStatusChange = async (newStatus: Project["status"]) => {
     if (!project || !currentUser || (currentUser.role !== 'supervisor' && currentUser.role !== 'admin')) return;
@@ -446,6 +448,11 @@ export default function ProjectDetail() {
 
       {/* Documentos do Projeto */}
       <ProjectDocuments projectId={project.id} />
+
+      {/* Contatos com o Cliente - Visível para todos incluindo colaboradores */}
+      {project.client_id && (
+        <ClientContactsCard clientId={project.client_id} />
+      )}
 
       {/* Card de Status (apenas para supervisores e admins) */}
       {canChangeStatus && (
