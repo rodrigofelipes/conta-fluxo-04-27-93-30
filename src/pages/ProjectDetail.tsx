@@ -16,6 +16,14 @@ import { ProjectDocuments } from "@/components/projects/ProjectDocuments";
 import { ClientContactsCard } from "@/components/client/ClientContactsCard";
 import { useAuth } from "@/state/auth";
 
+type EditableProjectStatus = "pendente" | "em_andamento" | "em_obra" | "finalizado";
+
+type ProjectStatus =
+  | EditableProjectStatus
+  | "orçamento"
+  | "aguardando_retorno"
+  | "concluído";
+
 interface Project {
   id: string;
   title: string;
@@ -27,19 +35,34 @@ interface Project {
   executed_hours: number;
   visits_count: number;
   meetings_count: number;
-  status: "orçamento" | "aguardando_retorno" | "em_andamento" | "em_obra" | "concluído";
+  status: ProjectStatus;
   created_at: string;
   updated_at: string;
   client_id: string;
   client?: { name: string; email?: string };
 }
 
-const statusLabel: Record<Project["status"], string> = {
-  "orçamento": "Orçamento",
-  aguardando_retorno: "Aguardando Retorno",
+const statusLabel: Record<ProjectStatus, string> = {
+  pendente: "Pendente",
   em_andamento: "Em Andamento",
   em_obra: "Em Obra",
+  finalizado: "Finalizado",
+  "orçamento": "Orçamento",
+  aguardando_retorno: "Aguardando Retorno",
   concluído: "Concluído",
+};
+
+const editableStatuses: { value: EditableProjectStatus; label: string }[] = [
+  { value: "pendente", label: "Pendente" },
+  { value: "em_andamento", label: "Em Andamento" },
+  { value: "em_obra", label: "Em Obra" },
+  { value: "finalizado", label: "Finalizado" },
+];
+
+const toEditableStatus = (status: ProjectStatus): EditableProjectStatus => {
+  if (status === "concluído") return "finalizado";
+  if (status === "orçamento" || status === "aguardando_retorno") return "pendente";
+  return (status as EditableProjectStatus) || "pendente";
 };
 
 export default function ProjectDetail() {
@@ -61,7 +84,8 @@ export default function ProjectDetail() {
     contracted_hours: 0,
     visits_count: 0,
     meetings_count: 0,
-    briefing_document: ""
+    briefing_document: "",
+    status: "pendente" as EditableProjectStatus,
   });
 
   // Não redirecionar colaboradores - eles podem ver detalhes do projeto
@@ -112,7 +136,8 @@ export default function ProjectDetail() {
           contracted_hours: projectData.contracted_hours || 0,
           visits_count: projectData.visits_count || 0,
           meetings_count: projectData.meetings_count || 0,
-          briefing_document: projectData.briefing_document || ""
+          briefing_document: projectData.briefing_document || "",
+          status: toEditableStatus(projectData.status),
         });
         document.title = `Projeto: ${projectData.title}`;
       }
@@ -174,7 +199,8 @@ export default function ProjectDetail() {
       contracted_hours: project.contracted_hours || 0,
       visits_count: project.visits_count || 0,
       meetings_count: project.meetings_count || 0,
-      briefing_document: project.briefing_document || ""
+      briefing_document: project.briefing_document || "",
+      status: toEditableStatus(project.status),
     });
     setIsEditing(false);
   };
@@ -194,7 +220,8 @@ export default function ProjectDetail() {
           contracted_hours: editData.contracted_hours,
           visits_count: editData.visits_count,
           meetings_count: editData.meetings_count,
-          briefing_document: editData.briefing_document
+          briefing_document: editData.briefing_document,
+          status: editData.status,
         })
         .eq('id', id);
       
@@ -209,7 +236,8 @@ export default function ProjectDetail() {
         contracted_hours: editData.contracted_hours,
         visits_count: editData.visits_count,
         meetings_count: editData.meetings_count,
-        briefing_document: editData.briefing_document
+        briefing_document: editData.briefing_document,
+        status: editData.status,
       });
       
       setIsEditing(false);
@@ -300,6 +328,29 @@ export default function ProjectDetail() {
             <CardTitle>Informações {isEditing && "(Editando)"}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Status */}
+            {isEditing ? (
+              <div className="space-y-2">
+                <Label htmlFor="status">Status do Projeto</Label>
+                <Select
+                  value={editData.status}
+                  onValueChange={(value) => setEditData({ ...editData, status: value as EditableProjectStatus })}
+                  disabled={saving}
+                >
+                  <SelectTrigger id="status">
+                    <SelectValue placeholder="Selecione o status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {editableStatuses.map((status) => (
+                      <SelectItem key={status.value} value={status.value}>
+                        {status.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+
             {/* Título */}
             {isEditing ? (
               <div className="space-y-2">
