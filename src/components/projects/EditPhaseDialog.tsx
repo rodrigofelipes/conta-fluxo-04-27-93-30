@@ -40,6 +40,7 @@ interface PhaseFormData {
   status: PhaseStatus;
   assigned_to: string | null;
   priority: Priority;
+  start_date: Date | null;
   due_date: Date | null;
 }
 
@@ -60,6 +61,7 @@ export function EditPhaseDialog({
     status: "pending",
     assigned_to: null,
     priority: "media",
+    start_date: null,
     due_date: null
   });
 
@@ -72,6 +74,7 @@ export function EditPhaseDialog({
         status: (phase.status as PhaseStatus) || "pending",
         assigned_to: phase.assigned_to || null,
         priority: (phase.priority as Priority) || "media",
+        start_date: (phase as any).start_date ? parseISO((phase as any).start_date) : null,
         due_date: phase.due_date ? parseISO(phase.due_date) : null
       });
       loadCollaborators();
@@ -108,6 +111,16 @@ export function EditPhaseDialog({
     try {
       setSaving(true);
 
+      // Validar datas
+      if (formData.start_date && formData.due_date && formData.start_date > formData.due_date) {
+        toast({
+          title: "Erro",
+          description: "A data de início não pode ser posterior à data de entrega",
+          variant: "destructive"
+        });
+        return;
+      }
+
       const { error } = await supabase
         .from('project_phases')
         .update({
@@ -117,6 +130,7 @@ export function EditPhaseDialog({
           status: formData.status,
           assigned_to: formData.assigned_to || null,
           priority: formData.priority,
+          start_date: formData.start_date ? format(formData.start_date, 'yyyy-MM-dd') : null,
           due_date: formData.due_date ? format(formData.due_date, 'yyyy-MM-dd') : null
         })
         .eq('id', phase.id);
@@ -239,6 +253,38 @@ export function EditPhaseDialog({
                 <SelectItem value="urgente">Urgente</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="start_date">Data de Início</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-full justify-start text-left font-normal",
+                    !formData.start_date && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {formData.start_date ? format(formData.start_date, "PPP", { locale: ptBR }) : <span>Selecione uma data</span>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={formData.start_date || undefined}
+                  onSelect={(date) => setFormData(prev => ({ ...prev, start_date: date || null }))}
+                  initialFocus
+                  className="pointer-events-auto"
+                />
+              </PopoverContent>
+            </Popover>
+            {formData.start_date && (
+              <p className="text-xs text-muted-foreground">
+                ⚠️ A fase mudará automaticamente para "Em Andamento" nesta data
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">

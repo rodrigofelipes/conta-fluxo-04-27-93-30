@@ -824,6 +824,44 @@ export type Database = {
         }
         Relationships: []
       }
+      phase_status_changes: {
+        Row: {
+          changed_at: string | null
+          changed_by: string | null
+          id: string
+          new_status: string
+          old_status: string
+          phase_id: string | null
+          reason: string | null
+        }
+        Insert: {
+          changed_at?: string | null
+          changed_by?: string | null
+          id?: string
+          new_status: string
+          old_status: string
+          phase_id?: string | null
+          reason?: string | null
+        }
+        Update: {
+          changed_at?: string | null
+          changed_by?: string | null
+          id?: string
+          new_status?: string
+          old_status?: string
+          phase_id?: string | null
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phase_status_changes_phase_id_fkey"
+            columns: ["phase_id"]
+            isOneToOne: false
+            referencedRelation: "project_phases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           active: boolean
@@ -916,6 +954,7 @@ export type Database = {
           phase_name: string
           priority: string | null
           project_id: string
+          start_date: string | null
           status: string
           supervised_by: string | null
           updated_at: string
@@ -934,6 +973,7 @@ export type Database = {
           phase_name: string
           priority?: string | null
           project_id: string
+          start_date?: string | null
           status?: string
           supervised_by?: string | null
           updated_at?: string
@@ -952,6 +992,7 @@ export type Database = {
           phase_name?: string
           priority?: string | null
           project_id?: string
+          start_date?: string | null
           status?: string
           supervised_by?: string | null
           updated_at?: string
@@ -1290,6 +1331,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      auto_update_phase_status_by_date: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          phase_ids: string[]
+          updated_count: number
+        }[]
+      }
       calculate_phase_loss: {
         Args: { phase_id_param: string }
         Returns: {
