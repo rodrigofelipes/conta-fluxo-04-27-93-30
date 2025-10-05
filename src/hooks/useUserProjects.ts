@@ -22,6 +22,7 @@ interface UserPhase {
   project: {
     id: string;
     title: string;
+    status?: string;
   };
 }
 
@@ -147,7 +148,7 @@ export function useUserProjects() {
           status,
           allocated_hours,
           executed_hours,
-          project:projects(id, title)
+          project:projects(id, title, status)
         `)
         .eq('assigned_to', profileId)
         .order('created_at', { ascending: false });
@@ -171,7 +172,13 @@ export function useUserProjects() {
         project: Array.isArray(phase.project) ? phase.project[0] : phase.project
       }));
 
-      setPhases(processedPhases);
+      const allowedProjectStatuses = new Set(['em_andamento', 'em_obra']);
+      const activeProjectPhases = processedPhases.filter(phase => {
+        const projectStatus = phase.project?.status;
+        return !projectStatus || allowedProjectStatuses.has(projectStatus);
+      });
+
+      setPhases(activeProjectPhases);
 
       // Calcular horas trabalhadas
       const today = new Date();
