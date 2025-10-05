@@ -113,9 +113,9 @@ export default function AppLayout() {
         n.to !== "/users" && 
         n.to !== "/projects" &&
         n.to !== "/reports" &&
-        n.to !== "/marketing"
+        n.to !== "/marketing" &&
+        n.to !== "/clients"
       );
-      // Colaboradores podem ver clientes para acessar contatos
     } else if (user?.role === "admin") {
       // Remove user-specific projects tab for admins
       filteredNav = filteredNav.filter(n => n.to !== "/user-projects");

@@ -27,6 +27,11 @@ interface UserPhase {
     id: string;
     title: string;
     status: string;
+    client_id?: string;
+    client?: {
+      id: string;
+      name: string;
+    };
   };
 }
 
@@ -79,7 +84,7 @@ export function UserPhasesView() {
           supervised_by,
           assigned_profile:profiles!assigned_to(name),
           supervisor_profile:profiles!supervised_by(name),
-          project:projects(id, title, status)
+          project:projects(id, title, status, client_id, client:clients(id, name))
         `)
         .order('created_at', { ascending: false });
 
