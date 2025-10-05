@@ -112,7 +112,6 @@ export default function AppLayout() {
         n.to !== "/financeiro" && 
         n.to !== "/users" && 
         n.to !== "/clients" && 
-        n.to !== "/chat" &&
         n.to !== "/projects" &&
         n.to !== "/reports" &&
         n.to !== "/marketing"
@@ -121,13 +120,12 @@ export default function AppLayout() {
       // Remove user-specific projects tab for admins
       filteredNav = filteredNav.filter(n => n.to !== "/user-projects");
     } else if (user?.role === "coordenador") {
-      // Coordenadores: access to agenda, dashboard, coordinator-phases, user-projects, and settings
+      // Coordenadores: access to agenda, dashboard, coordinator-phases, user-projects, chat, and settings
       filteredNav = filteredNav.filter(n => 
         n.to !== "/financeiro" && 
         n.to !== "/clients" &&
         n.to !== "/projects" &&
         n.to !== "/reports" &&
-        n.to !== "/chat" &&
         n.to !== "/marketing"
       );
     } else if (user?.role === "supervisor") {
@@ -139,10 +137,11 @@ export default function AppLayout() {
         n.to !== "/marketing"
       );
     } else if (user?.role === "marketing") {
-      // Marketing: acesso limitado a dashboard, agenda, configurações e marketing
+      // Marketing: acesso limitado a dashboard, agenda, chat, configurações e marketing
       filteredNav = filteredNav.filter(n => 
         n.to === "/dashboard" ||
         n.to === "/agenda" ||
+        n.to === "/chat" ||
         n.to === "/settings" ||
         n.to === "/marketing"
       );
@@ -153,8 +152,8 @@ export default function AppLayout() {
       if (n.adminOnly) {
         return user?.role === "admin";
       }
-      if (n.to === "/chat" || n.to === "/reports") {
-        // Chat and Reports are accessible to admin and supervisor only
+      if (n.to === "/reports") {
+        // Reports are accessible to admin and supervisor only
         return user?.role === "admin" || user?.role === "supervisor";
       }
       if (n.to === "/coordinator-phases") {
