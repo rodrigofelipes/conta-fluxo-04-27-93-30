@@ -26,6 +26,8 @@ import { useCustomNotifications } from "@/hooks/useCustomNotifications";
 import { NotificationCenter } from "@/components/NotificationCenter";
 import { FileUpload, UploadedFileInfo } from "@/components/chat/FileUpload";
 import { MediaMessage } from "@/components/chat/MediaMessage";
+import { InternalChat } from "@/components/chat/InternalChat";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Database } from "@/integrations/supabase/types";
 
 interface WhatsAppContact {
@@ -84,6 +86,10 @@ const isOutgoingSubject = (subject?: string | null) =>
 export default function Chat() {
   const { user } = useAuth();
   const { showNotification } = useCustomNotifications();
+
+  // Verificar se o usuário tem acesso ao WhatsApp (admin ou supervisor)
+  const hasWhatsAppAccess = user?.role === 'admin' || user?.role === 'supervisor';
+  const [chatMode, setChatMode] = useState<'internal' | 'whatsapp'>(hasWhatsAppAccess ? 'whatsapp' : 'internal');
 
   const [contacts, setContacts] = useState<WhatsAppContact[]>([]);
   const [selectedContact, setSelectedContact] = useState<WhatsAppContact | null>(null);
@@ -901,9 +907,33 @@ export default function Chat() {
     contact.phone.includes(searchTerm)
   );
 
+  // Se o usuário não tem acesso ao WhatsApp, mostrar apenas chat interno
+  if (!hasWhatsAppAccess) {
+    return (
+      <div className="space-y-4 md:space-y-6">
+        <PageHeader title="Chat Interno" />
+        <InternalChat />
+      </div>
+    );
+  }
+
+  // Se tem acesso ao WhatsApp, mostrar tabs com ambos
   return (
     <div className="space-y-4 md:space-y-6">
-      <PageHeader title="WhatsApp Business" />
+      <PageHeader title="Chat" />
+      
+      <Tabs value={chatMode} onValueChange={(v) => setChatMode(v as 'internal' | 'whatsapp')} className="w-full">
+        <TabsList className="grid w-full max-w-md grid-cols-2 mb-4">
+          <TabsTrigger value="internal">Chat Interno</TabsTrigger>
+          <TabsTrigger value="whatsapp">WhatsApp Business</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="internal" className="mt-0">
+          <InternalChat />
+        </TabsContent>
+        
+        <TabsContent value="whatsapp" className="mt-0"
+          >
 
       <div className="flex gap-4 h-[calc(100vh-200px)] min-h-0">
         {/* Lista de Contatos - Desktop */}
@@ -1386,6 +1416,8 @@ export default function Chat() {
           </Card>
         </div>
       </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

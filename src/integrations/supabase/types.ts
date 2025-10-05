@@ -748,6 +748,7 @@ export type Database = {
           to_user_id: string
           to_user_name: string
           updated_at: string
+          viewed_at: string | null
         }
         Insert: {
           created_at?: string
@@ -759,6 +760,7 @@ export type Database = {
           to_user_id: string
           to_user_name?: string
           updated_at?: string
+          viewed_at?: string | null
         }
         Update: {
           created_at?: string
@@ -770,6 +772,7 @@ export type Database = {
           to_user_id?: string
           to_user_name?: string
           updated_at?: string
+          viewed_at?: string | null
         }
         Relationships: []
       }
