@@ -121,7 +121,12 @@ export function UserPhasesView() {
         status: phase.status as UserPhase['status'],
         project: Array.isArray(phase.project) ? phase.project[0] : phase.project
       }));
-      setPhases(phasesData);
+      const allowedProjectStatuses = new Set(['em_andamento', 'em_obra']);
+      const activeProjectPhases = phasesData.filter(phase => {
+        const projectStatus = phase.project?.status;
+        return !projectStatus || allowedProjectStatuses.has(projectStatus);
+      });
+      setPhases(activeProjectPhases);
     } catch (error) {
       console.error('Erro ao carregar fases do usuário:', error);
       toast({
