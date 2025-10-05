@@ -14,10 +14,12 @@ import {
   User, 
   DollarSign,
   Clock,
-  FolderOpen
+  FolderOpen,
+  MessageCircle
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { PhaseClientContacts } from "./PhaseClientContacts";
 
 interface ProjectData {
   id: string;
@@ -29,7 +31,9 @@ interface ProjectData {
   contracted_hours?: number;
   executed_hours?: number;
   created_at: string;
+  client_id: string;
   client: {
+    id: string;
     name: string;
     email?: string;
     phone?: string;
@@ -57,6 +61,7 @@ export function ProjectObservationDialog({ projectId, children }: ProjectObserva
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const [contactsCount, setContactsCount] = useState(0);
 
   useEffect(() => {
     if (open && projectId) {
@@ -73,7 +78,7 @@ export function ProjectObservationDialog({ projectId, children }: ProjectObserva
         .from('projects')
         .select(`
           *,
-          client:clients(name, email, phone)
+          client:clients(id, name, email, phone)
         `)
         .eq('id', projectId)
         .single();
@@ -112,6 +117,17 @@ export function ProjectObservationDialog({ projectId, children }: ProjectObserva
 
       setProject(projectData);
       setDocuments(processedDocuments);
+      
+      // Carregar contagem de contatos
+      if (projectData.client_id) {
+        const { count } = await supabase
+          .from('client_contacts')
+          .select('*', { count: 'exact', head: true })
+          .eq('client_id', projectData.client_id)
+          .not('subject', 'ilike', '%Mensagem%via WhatsApp%');
+        
+        setContactsCount(count || 0);
+      }
     } catch (error) {
       console.error('Erro ao carregar dados do projeto:', error);
       toast({
@@ -231,10 +247,13 @@ export function ProjectObservationDialog({ projectId, children }: ProjectObserva
           </div>
         ) : project ? (
           <Tabs defaultValue="info" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="info">Informações do Projeto</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="info">Informações</TabsTrigger>
               <TabsTrigger value="documents">
                 Documentos ({documents.length})
+              </TabsTrigger>
+              <TabsTrigger value="contacts">
+                Contatos ({contactsCount})
               </TabsTrigger>
             </TabsList>
 
@@ -402,6 +421,30 @@ export function ProjectObservationDialog({ projectId, children }: ProjectObserva
                     </p>
                   </div>
                 )}
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="contacts">
+              <ScrollArea className="h-[60vh]">
+                <div className="space-y-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <MessageCircle className="h-5 w-5" />
+                        Histórico de Contatos com {project.client.name}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {project.client_id ? (
+                        <PhaseClientContacts clientId={project.client_id} />
+                      ) : (
+                        <p className="text-sm text-muted-foreground text-center py-4">
+                          Informações do cliente não disponíveis.
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
               </ScrollArea>
             </TabsContent>
           </Tabs>

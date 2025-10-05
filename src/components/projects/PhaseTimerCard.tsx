@@ -4,7 +4,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { 
   Play, 
   Square, 
@@ -15,15 +14,12 @@ import {
   CheckCircle,
   DollarSign,
   TrendingDown,
-  Eye,
-  ChevronDown,
-  MessageCircle
+  Eye
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/state/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { ProjectObservationDialog } from "./ProjectObservationDialog";
-import { PhaseClientContacts } from "./PhaseClientContacts";
 
 interface Phase {
   id: string;
@@ -68,8 +64,6 @@ export function PhaseTimerCard({ phase, onHoursUpdate, showProjectTitle = false 
   const [isCompleting, setIsCompleting] = useState(false);
   const [canManage, setCanManage] = useState(false);
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
-  const [showContacts, setShowContacts] = useState(false);
-  const [contactsCount, setContactsCount] = useState(0);
   
   const progressPercentage = phase.allocated_hours > 0 
     ? Math.min((phase.executed_hours / phase.allocated_hours) * 100, 100)
@@ -82,8 +76,7 @@ export function PhaseTimerCard({ phase, onHoursUpdate, showProjectTitle = false 
     checkActiveTimer();
     calculateLoss();
     checkManagePermissions();
-    loadContactsCount();
-  }, [phase.id, user, phase.executed_hours, phase.allocated_hours, phase.project?.client_id]);
+  }, [phase.id, user, phase.executed_hours, phase.allocated_hours]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -172,27 +165,6 @@ export function PhaseTimerCard({ phase, onHoursUpdate, showProjectTitle = false 
     } catch (error) {
       console.error('Erro ao verificar permissões:', error);
       setCanManage(false);
-    }
-  };
-
-  const loadContactsCount = async () => {
-    if (!phase.project?.client_id) {
-      setContactsCount(0);
-      return;
-    }
-
-    try {
-      const { count, error } = await supabase
-        .from('client_contacts')
-        .select('*', { count: 'exact', head: true })
-        .eq('client_id', phase.project.client_id)
-        .not('subject', 'ilike', '%Mensagem%via WhatsApp%');
-
-      if (error) throw error;
-      setContactsCount(count || 0);
-    } catch (error) {
-      console.error('Erro ao carregar contagem de contatos:', error);
-      setContactsCount(0);
     }
   };
 
@@ -473,40 +445,6 @@ export function PhaseTimerCard({ phase, onHoursUpdate, showProjectTitle = false 
               </Button>
             </ProjectObservationDialog>
           </div>
-        )}
-
-        {/* Client Contacts Section */}
-        {phase.project?.client_id && (
-          <Collapsible open={showContacts} onOpenChange={setShowContacts}>
-            <CollapsibleTrigger asChild>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="w-full gap-2 justify-between"
-              >
-                <div className="flex items-center gap-2">
-                  <MessageCircle className="h-4 w-4" />
-                  Contatos com o Cliente
-                  {contactsCount > 0 && (
-                    <Badge variant="secondary" className="ml-1">
-                      {contactsCount}
-                    </Badge>
-                  )}
-                </div>
-                <ChevronDown className={`h-4 w-4 transition-transform ${showContacts ? 'rotate-180' : ''}`} />
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="mt-2">
-              <div className="p-3 border rounded-lg bg-muted/50">
-                {phase.project.client && (
-                  <p className="text-sm font-medium mb-3">
-                    Cliente: {phase.project.client.name}
-                  </p>
-                )}
-                <PhaseClientContacts clientId={phase.project.client_id} />
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
         )}
 
         {/* Timer Controls */}
