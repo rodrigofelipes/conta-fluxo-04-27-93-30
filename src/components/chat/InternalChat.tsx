@@ -44,13 +44,17 @@ export function InternalChat() {
   };
 
   const loadMessages = useCallback(async (contact: InternalContact) => {
-    const currentUserId = user?.id;
+
+    if (!user) return;
+
 
     try {
       if (contact.isGroup) {
         const { data, error } = await supabase
           .from('group_messages')
-          .select('id, message, created_at, user_id, user_name')
+
+          .select('*')
+
           .order('created_at', { ascending: true });
 
         if (error) throw error;
@@ -59,8 +63,10 @@ export function InternalChat() {
           id: msg.id,
           content: msg.message,
           timestamp: msg.created_at,
-          isOutgoing: !!currentUserId && msg.user_id === currentUserId,
-          from_user_name: msg.user_name || "",
+
+          isOutgoing: msg.user_id === user.id,
+          from_user_name: msg.user_name,
+
           to_user_name: "Chat Geral",
         }));
 
@@ -68,12 +74,12 @@ export function InternalChat() {
         return;
       }
 
-      if (!currentUserId) return;
 
       const { data, error } = await supabase
         .from('messages')
         .select('*')
-        .or(`and(from_user_id.eq.${currentUserId},to_user_id.eq.${contact.id}),and(from_user_id.eq.${contact.id},to_user_id.eq.${currentUserId})`)
+        .or(`and(from_user_id.eq.${user.id},to_user_id.eq.${contact.id}),and(from_user_id.eq.${contact.id},to_user_id.eq.${user.id})`)
+
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -160,7 +166,8 @@ export function InternalChat() {
     setSelectedContact(contact);
     setNewMessage("");
     setMobileContactsOpen(false);
-    setMessages([]);
+
+
     await loadMessages(contact);
   }, [loadMessages]);
 
