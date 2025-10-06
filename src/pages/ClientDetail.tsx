@@ -199,8 +199,10 @@ export default function ClientDetail() {
     }
   };
 
-  const fetchClientDocuments = useCallback(async (): Promise<Document[]> => {
-    if (!id) return [];
+
+  const fetchClientDocuments = useCallback(async () => {
+    if (!id) return;
+
 
     const { data: documentsData, error: documentsError } = await supabase
       .from('client_documents')
@@ -247,7 +249,8 @@ export default function ClientDetail() {
     );
 
     setDocuments(docsWithUrls);
-    return docsWithUrls;
+
+
   }, [id]);
 
   const loadClientData = async () => {
@@ -459,17 +462,17 @@ export default function ClientDetail() {
   const handleDeleteDocument = async () => {
     const doc = documentToDelete;
     if (!doc) return;
-    if (!id) {
-      toast({ title: 'Erro', description: 'Cliente inválido para exclusão do documento.', variant: 'destructive' });
-      return;
-    }
+
     setIsDeletingDocument(true);
     try {
-      if (doc.file_path) {
+
+      if (documentToDelete.file_path) {
         const { error: storageError } = await supabase
           .storage
           .from('client-documents')
-          .remove([doc.file_path]);
+          .remove([documentToDelete.file_path]);
+
+
 
         if (storageError && storageError.message && storageError.message.toLowerCase().includes('not found')) {
           console.warn('Arquivo não encontrado no storage, prosseguindo com exclusão do registro.');
@@ -481,16 +484,20 @@ export default function ClientDetail() {
       const { data: deletedRows, error: dbError } = await supabase
         .from('client_documents')
         .delete()
-        .eq('id', doc.id)
-        .eq('client_id', id)
-        .select('id');
+
+        .eq('id', doc.id);
+
       if (dbError) throw dbError;
       if (!deletedRows || deletedRows.length === 0) {
         throw new Error('Documento não encontrado no banco de dados.');
       }
 
       toast({ title: 'Documento excluído', description: 'O documento foi removido com sucesso.' });
-      setDocuments((prev) => prev.filter((current) => current.id !== doc.id));
+
+
+      setDocuments((prev) => prev.filter((doc) => doc.id !== documentToDelete.id));
+
+
       setIsDeleteDocumentDialogOpen(false);
       setDocumentToDelete(null);
       await fetchClientDocuments();
