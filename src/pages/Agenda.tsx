@@ -655,7 +655,7 @@ export default function Agenda() {
   };
 
   const handleSelectMinutesMeeting = (meetingId: string) => {
-    const meeting = agenda.find(item => item.id === meetingId) || null;
+    const meeting = sortedAgendaForMinutes.find(item => item.id === meetingId) || null;
     setSelectedMinutesMeetingId(meetingId);
     setSelectedMinutesMeeting(meeting);
     setMinutesText(meeting?.descricao || "");
@@ -775,10 +775,32 @@ export default function Agenda() {
     }
   }, [availableMinutesLocations, minutesLocationFilter]);
 
-  const minutesGroups = useMemo<MinutesGroup[]>(() => {
-    const filtered = filteredAgendaBySector
+  const filteredAgendaForMinutes = useMemo(() => {
+    return filteredAgendaBySector
       .filter(item => minutesTypeFilter === 'all' || item.tipo === minutesTypeFilter)
       .filter(item => minutesLocationFilter === 'all' || getLocationDisplay(item.local) === minutesLocationFilter);
+  }, [filteredAgendaBySector, minutesTypeFilter, minutesLocationFilter]);
+
+  const sortedAgendaForMinutes = useMemo(() => {
+    return [...filteredAgendaForMinutes].sort((a, b) => {
+      const dateComparison = a.data.localeCompare(b.data);
+      if (dateComparison !== 0) return dateComparison;
+
+      if (a.horario && b.horario) {
+        const timeComparison = a.horario.localeCompare(b.horario);
+        if (timeComparison !== 0) return timeComparison;
+      } else if (a.horario) {
+        return -1;
+      } else if (b.horario) {
+        return 1;
+      }
+
+      return a.titulo.localeCompare(b.titulo, 'pt-BR');
+    });
+  }, [filteredAgendaForMinutes]);
+
+  const minutesGroups = useMemo<MinutesGroup[]>(() => {
+    const filtered = filteredAgendaForMinutes;
 
     const typeMap = new Map<AgendaItem['tipo'], Map<string, AgendaItem[]>>();
 
@@ -812,12 +834,10 @@ export default function Agenda() {
     }));
 
     return result.sort((a, b) => getTipoLabel(a.type).localeCompare(getTipoLabel(b.type), 'pt-BR'));
-  }, [filteredAgendaBySector, minutesTypeFilter, minutesLocationFilter]);
+  }, [filteredAgendaForMinutes]);
 
   const minutesSummary = useMemo(() => {
-    const filtered = filteredAgendaBySector
-      .filter(item => minutesTypeFilter === 'all' || item.tipo === minutesTypeFilter)
-      .filter(item => minutesLocationFilter === 'all' || getLocationDisplay(item.local) === minutesLocationFilter);
+    const filtered = filteredAgendaForMinutes;
 
     const uniqueTypes = new Set(filtered.map(item => item.tipo));
     const uniqueLocations = new Set(filtered.map(item => getLocationDisplay(item.local)));
@@ -827,7 +847,31 @@ export default function Agenda() {
       types: uniqueTypes.size,
       locations: uniqueLocations.size
     };
-  }, [filteredAgendaBySector, minutesTypeFilter, minutesLocationFilter]);
+  }, [filteredAgendaForMinutes]);
+
+  useEffect(() => {
+    if (
+      selectedMinutesMeetingId &&
+      !sortedAgendaForMinutes.some(item => item.id === selectedMinutesMeetingId)
+    ) {
+      setSelectedMinutesMeetingId("");
+      setSelectedMinutesMeeting(null);
+    }
+  }, [selectedMinutesMeetingId, sortedAgendaForMinutes]);
+
+  useEffect(() => {
+    if (!selectedMinutesMeetingId) {
+      return;
+    }
+
+    const updatedMeeting = sortedAgendaForMinutes.find(
+      item => item.id === selectedMinutesMeetingId
+    );
+
+    if (updatedMeeting) {
+      setSelectedMinutesMeeting(updatedMeeting);
+    }
+  }, [selectedMinutesMeetingId, sortedAgendaForMinutes]);
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
