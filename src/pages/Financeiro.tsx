@@ -857,22 +857,28 @@ export default function Financeiro() {
   }, [transactions, manualExpenses, getTransactionCategoryLabel]);
 
   const overviewItems = useMemo<OverviewListItem[]>(() => {
-    const groups = new Map<string, { records: OverviewRecord[]; baseDescription: string }>();
+
+    const groups = new Map<string, OverviewRecord[]>();
     const singles: OverviewRecord[] = [];
 
     overviewRecords.forEach(record => {
-      const groupingData = getInstallmentGroupingKey(record);
+      const isInstallment =
+        (record.recurrence_type === "monthly" || record.recurrence_type === "yearly") &&
+        Boolean(record.created_at);
 
-      if (groupingData) {
-        const existing = groups.get(groupingData.key);
-        if (existing) {
-          existing.records.push(record);
-        } else {
-          groups.set(groupingData.key, {
-            records: [record],
-            baseDescription: groupingData.baseDescription,
-          });
+      if (isInstallment) {
+        const keyParts = [record.type, record.description, record.origin, record.created_at ?? ""];
+        if (record.origin === "client" && record.clientId) {
+          keyParts.push(record.clientId);
         }
+        if (record.origin === "operational" && record.category) {
+          keyParts.push(record.category);
+        }
+        const key = keyParts.join("|");
+        const existing = groups.get(key) ?? [];
+        existing.push(record);
+        groups.set(key, existing);
+
       } else {
         singles.push(record);
       }
@@ -886,7 +892,9 @@ export default function Financeiro() {
 
     const statusKeys: OverviewStatusKey[] = ["pending", "paid", "overdue", "cancelled"];
 
-    groups.forEach(({ records, baseDescription }, key) => {
+
+    groups.forEach((records, key) => {
+
       if (records.length <= 1) {
         const [record] = records;
         if (record) {
@@ -920,7 +928,9 @@ export default function Financeiro() {
       items.push({
         type: "installment",
         key,
-        description: baseDescription || firstRecord?.description || "Parcelado",
+
+        description: firstRecord?.description ?? "Parcelado",
+
         typeValue: firstRecord?.type ?? "expense",
         origin: firstRecord?.origin ?? "operational",
         category: firstRecord?.category ?? "Sem categoria",
@@ -1040,6 +1050,7 @@ export default function Financeiro() {
 
       if (item.type === "single") {
         const recordCategory = normalizeCategoryLabel(item.record.category);
+
         searchFields.push(
           item.record.description,
           recordCategory,
@@ -1085,6 +1096,7 @@ export default function Financeiro() {
           item.totalAmount.toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
           item.totalAmount.toFixed(2),
         );
+
 
         if (item.categoryType) {
           searchFields.push(
