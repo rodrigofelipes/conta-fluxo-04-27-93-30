@@ -903,7 +903,9 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="payment-description">Descrição</Label>
+
+                  <FormLabel htmlFor="payment-description">Descrição</FormLabel>
+
                   <Input
                     id="payment-description"
                     placeholder="Ex: Recebimento do projeto"
@@ -915,7 +917,9 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="payment-amount">Valor total</Label>
+
+                  <FormLabel htmlFor="payment-amount">Valor total</FormLabel>
+
                   <Input
                     id="payment-amount"
                     placeholder="0,00"
@@ -930,7 +934,9 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="payment-date">Data do primeiro recebimento</Label>
+
+                  <FormLabel htmlFor="payment-date">Data do primeiro recebimento</FormLabel>
+
                   <Input
                     id="payment-date"
                     type="date"
@@ -942,7 +948,9 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="payment-method">Forma de pagamento</Label>
+
+                  <FormLabel htmlFor="payment-method">Forma de pagamento</FormLabel>
+
                   <Input
                     id="payment-method"
                     placeholder="Ex: Pix, Boleto, Cartão..."
@@ -973,7 +981,9 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
 
                 {paymentForm.isInstallment && (
                   <div className="space-y-2">
-                    <Label htmlFor="installment-count">Número de parcelas</Label>
+
+                    <FormLabel htmlFor="installment-count">Número de parcelas</FormLabel>
+
                     <Input
                       id="installment-count"
                       type="number"
@@ -989,7 +999,9 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="payment-notes">Observações para o financeiro</Label>
+
+                <FormLabel htmlFor="payment-notes">Observações para o financeiro</FormLabel>
+
                 <Textarea
                   id="payment-notes"
                   placeholder="Informações adicionais que o financeiro precisa saber"
