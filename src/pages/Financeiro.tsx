@@ -392,6 +392,77 @@ const normalizeSearchValue = (value: string) =>
     .replace(/\p{Diacritic}/gu, "")
     .toLowerCase();
 
+const installmentRecurrenceTypes = new Set(["monthly", "quarterly", "yearly"]);
+
+const extractInstallmentMetadata = (description: string | null | undefined) => {
+  const original = description?.trim() ?? "";
+  if (!original) {
+    return {
+      baseDescription: "",
+      hasInstallmentPattern: false,
+      currentInstallment: null as number | null,
+      totalInstallments: null as number | null,
+    };
+  }
+
+  const pattern = /(.*?)(?:\s*[\-–—(\[]?\s*parc(?:ela|\.)\s*)(\d+)(?:\s*(?:\/|de)\s*)(\d+)[)\]\s]*$/i;
+  const match = original.match(pattern);
+
+  if (!match) {
+    return {
+      baseDescription: original,
+      hasInstallmentPattern: false,
+      currentInstallment: null,
+      totalInstallments: null,
+    };
+  }
+
+  const [, base = "", current, total] = match;
+  return {
+    baseDescription: base.trim() || original,
+    hasInstallmentPattern: true,
+    currentInstallment: Number.parseInt(current, 10) || null,
+    totalInstallments: Number.parseInt(total, 10) || null,
+  };
+};
+
+const getInstallmentGroupingKey = (record: OverviewRecord) => {
+  const metadata = extractInstallmentMetadata(record.description);
+  const recurrence = record.recurrence_type ?? "none";
+  const isInstallmentRecord =
+    metadata.hasInstallmentPattern || installmentRecurrenceTypes.has(recurrence);
+
+  if (!isInstallmentRecord) {
+    return null;
+  }
+
+  const baseDescription = metadata.baseDescription || record.description.trim();
+  const ownerKey =
+    record.origin === "client"
+      ? record.clientId || record.clientName || ""
+      : record.category || "";
+
+  const createdAtKey = record.created_at
+    ? new Date(record.created_at).toISOString().slice(0, 10)
+    : "";
+
+  const parts = [record.type, record.origin, baseDescription];
+  if (ownerKey) {
+    parts.push(ownerKey);
+  }
+  if (metadata.totalInstallments) {
+    parts.push(`total:${metadata.totalInstallments}`);
+  }
+  if (createdAtKey) {
+    parts.push(`created:${createdAtKey}`);
+  }
+
+  return {
+    key: parts.join("|"),
+    baseDescription,
+  };
+};
+
 const manualCategoryTypeLabels: Record<ManualExpenseCategory["category_type"], string> = {
   previsao_custo: "Previsão de Custo",
   variavel: "Variável",
@@ -786,6 +857,7 @@ export default function Financeiro() {
   }, [transactions, manualExpenses, getTransactionCategoryLabel]);
 
   const overviewItems = useMemo<OverviewListItem[]>(() => {
+
     const groups = new Map<string, OverviewRecord[]>();
     const singles: OverviewRecord[] = [];
 
@@ -806,6 +878,7 @@ export default function Financeiro() {
         const existing = groups.get(key) ?? [];
         existing.push(record);
         groups.set(key, existing);
+
       } else {
         singles.push(record);
       }
@@ -819,7 +892,9 @@ export default function Financeiro() {
 
     const statusKeys: OverviewStatusKey[] = ["pending", "paid", "overdue", "cancelled"];
 
+
     groups.forEach((records, key) => {
+
       if (records.length <= 1) {
         const [record] = records;
         if (record) {
@@ -853,7 +928,9 @@ export default function Financeiro() {
       items.push({
         type: "installment",
         key,
+
         description: firstRecord?.description ?? "Parcelado",
+
         typeValue: firstRecord?.type ?? "expense",
         origin: firstRecord?.origin ?? "operational",
         category: firstRecord?.category ?? "Sem categoria",
@@ -973,6 +1050,7 @@ export default function Financeiro() {
 
       if (item.type === "single") {
         const recordCategory = normalizeCategoryLabel(item.record.category);
+
         searchFields.push(
           item.record.description,
           recordCategory,
@@ -1018,6 +1096,7 @@ export default function Financeiro() {
           item.totalAmount.toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
           item.totalAmount.toFixed(2),
         );
+
 
         if (item.categoryType) {
           searchFields.push(
