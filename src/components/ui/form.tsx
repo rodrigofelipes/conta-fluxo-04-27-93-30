@@ -42,15 +42,37 @@ const FormField = <
 const useFormField = () => {
   const fieldContext = React.useContext(FormFieldContext)
   const itemContext = React.useContext(FormItemContext)
-  const { getFieldState, formState } = useFormContext()
-
-  const fieldState = getFieldState(fieldContext.name, formState)
+  const formContext = useFormContext()
+  const generatedId = React.useId()
 
   if (!fieldContext) {
     throw new Error("useFormField should be used within <FormField>")
   }
 
-  const { id } = itemContext
+  if (!formContext) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(
+        "useFormField was invoked outside of a <FormProvider>. Default field state will be used."
+      )
+    }
+
+    const fallbackId = itemContext?.id ?? generatedId
+
+    return {
+      id: fallbackId,
+      name: fieldContext.name,
+      formItemId: `${fallbackId}-form-item`,
+      formDescriptionId: `${fallbackId}-form-item-description`,
+      formMessageId: `${fallbackId}-form-item-message`,
+      invalid: false,
+      isDirty: false,
+      isTouched: false,
+      error: undefined,
+    }
+  }
+
+  const id = itemContext?.id ?? generatedId
+  const fieldState = formContext.getFieldState(fieldContext.name, formContext.formState)
 
   return {
     id,
