@@ -279,11 +279,10 @@ export default function Agenda() {
   const [activeTab, setActiveTab] = useState<'agenda' | 'atas'>('agenda');
   const [minutesTypeFilter, setMinutesTypeFilter] = useState<'all' | AgendaItem['tipo']>('all');
   const [minutesLocationFilter, setMinutesLocationFilter] = useState<'all' | string>('all');
-  const [minutesDialogOpen, setMinutesDialogOpen] = useState(false);
-  const [selectedMinutesMeetingId, setSelectedMinutesMeetingId] = useState<string>("");
-  const [selectedMinutesMeeting, setSelectedMinutesMeeting] = useState<AgendaItem | null>(null);
-  const [minutesText, setMinutesText] = useState("");
-  const [isSavingMinutes, setIsSavingMinutes] = useState(false);
+
+
+
+
 
   // Hook para acessar as cores da paleta selecionada
   const { selectedGradient, gradientOptions } = useGradientDatabase();
@@ -645,7 +644,9 @@ export default function Agenda() {
       setSelectedMinutesMeeting(null);
       setMinutesText("");
     }
-    setMinutesDialogOpen(open);
+
+    setIsMinutesDialogOpen(open);
+
   };
 
   const handleSelectMinutesMeeting = (meetingId: string) => {
@@ -753,20 +754,9 @@ export default function Agenda() {
     return Array.from(unique).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [filteredAgendaBySector]);
 
-  const sortedAgendaForMinutes = useMemo(() => {
-    return [...agenda].sort((a, b) => {
-      const dateComparison = b.data.localeCompare(a.data);
-      if (dateComparison !== 0) return dateComparison;
 
-      if (a.horario && b.horario) {
-        return b.horario.localeCompare(a.horario);
-      }
 
-      if (a.horario) return -1;
-      if (b.horario) return 1;
-      return 0;
-    });
-  }, [agenda]);
+
 
   useEffect(() => {
     if (minutesTypeFilter !== 'all' && !availableMinutesTypes.includes(minutesTypeFilter)) {
@@ -1786,7 +1776,9 @@ export default function Agenda() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={minutesDialogOpen} onOpenChange={handleMinutesDialogOpenChange}>
+
+      <Dialog open={isMinutesDialogOpen} onOpenChange={handleMinutesDialogOpenChange}>
+
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Registrar ata de reunião</DialogTitle>
@@ -2020,65 +2012,58 @@ export default function Agenda() {
         </TabsContent>
 
         <TabsContent value="atas" className="space-y-4 md:space-y-6">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div className="grid flex-1 min-w-0 gap-2 md:grid-cols-2 lg:grid-cols-3">
-              <Select
-                value={sectorFilter}
-                onValueChange={(value: 'todos' | 'pessoal' | 'compartilhada') => setSectorFilter(value)}
-              >
-                <SelectTrigger className="h-11 w-full">
-                  <SelectValue placeholder="Filtrar por setor" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos os setores</SelectItem>
-                  <SelectItem value="pessoal">Setor pessoal</SelectItem>
-                  <SelectItem value="compartilhada">Setor compartilhado</SelectItem>
-                </SelectContent>
-              </Select>
 
-              <Select
-                value={minutesTypeFilter}
-                onValueChange={value => setMinutesTypeFilter(value as 'all' | AgendaItem['tipo'])}
-              >
-                <SelectTrigger className="h-11 w-full">
-                  <SelectValue placeholder="Tipo de reunião" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os tipos</SelectItem>
-                  {sortedMinutesTypes.map(tipo => (
-                    <SelectItem key={tipo} value={tipo}>
-                      {getTipoLabel(tipo)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
 
-              <Select
-                value={minutesLocationFilter}
-                onValueChange={value => setMinutesLocationFilter(value)}
-              >
-                <SelectTrigger className="h-11 w-full">
-                  <SelectValue placeholder="Local" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os locais</SelectItem>
-                  {availableMinutesLocations.map(location => (
-                    <SelectItem key={location} value={location}>
-                      {location}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Button
-              onClick={() => handleMinutesDialogOpenChange(true)}
-              className="h-11 w-full md:w-auto"
-              disabled={sortedAgendaForMinutes.length === 0}
+          <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+            <Select
+              value={sectorFilter}
+              onValueChange={(value: 'todos' | 'pessoal' | 'compartilhada') => setSectorFilter(value)}
             >
-              <NotebookPen className="mr-2 h-4 w-4" />
-              Registrar ata
-            </Button>
+              <SelectTrigger className="h-11 w-full">
+                <SelectValue placeholder="Filtrar por setor" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos os setores</SelectItem>
+                <SelectItem value="pessoal">Setor pessoal</SelectItem>
+                <SelectItem value="compartilhada">Setor compartilhado</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={minutesTypeFilter}
+              onValueChange={value => setMinutesTypeFilter(value as 'all' | AgendaItem['tipo'])}
+            >
+              <SelectTrigger className="h-11 w-full">
+                <SelectValue placeholder="Tipo de reunião" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os tipos</SelectItem>
+                {sortedMinutesTypes.map(tipo => (
+                  <SelectItem key={tipo} value={tipo}>
+                    {getTipoLabel(tipo)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={minutesLocationFilter}
+              onValueChange={value => setMinutesLocationFilter(value)}
+            >
+              <SelectTrigger className="h-11 w-full">
+                <SelectValue placeholder="Local" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os locais</SelectItem>
+                {availableMinutesLocations.map(location => (
+                  <SelectItem key={location} value={location}>
+                    {location}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+
           </div>
 
           <Card className="border-muted-foreground/10 bg-card/50">
