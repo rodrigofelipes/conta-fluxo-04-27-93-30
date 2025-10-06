@@ -279,6 +279,11 @@ export default function Agenda() {
   const [activeTab, setActiveTab] = useState<'agenda' | 'atas'>('agenda');
   const [minutesTypeFilter, setMinutesTypeFilter] = useState<'all' | AgendaItem['tipo']>('all');
   const [minutesLocationFilter, setMinutesLocationFilter] = useState<'all' | string>('all');
+  const [isMinutesDialogOpen, setIsMinutesDialogOpen] = useState(false);
+  const [selectedMinutesMeetingId, setSelectedMinutesMeetingId] = useState("");
+  const [selectedMinutesMeeting, setSelectedMinutesMeeting] = useState<AgendaItem | null>(null);
+  const [minutesText, setMinutesText] = useState("");
+  const [isSavingMinutes, setIsSavingMinutes] = useState(false);
 
 
 
