@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,8 +14,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/state/auth";
 import { useGradientDatabase } from "@/hooks/useGradientDatabase";
+import { Switch } from "@/components/ui/switch";
 
 const budgetFormSchema = z.object({
   title: z.string().min(2, "Título deve ter pelo menos 2 caracteres"),
@@ -64,6 +66,24 @@ const statusColors = {
   expired: "bg-orange-100 text-orange-800"
 };
 
+const createDefaultPaymentForm = () => ({
+  description: "",
+  amount: "",
+  transactionDate: new Date().toISOString().split("T")[0],
+  paymentMethod: "",
+  isInstallment: false,
+  installmentCount: "1",
+  notes: ""
+});
+
+type PaymentFormState = ReturnType<typeof createDefaultPaymentForm>;
+
+const parseCurrencyInput = (value: string) => {
+  if (!value) return NaN;
+  const normalized = value.replace(/\./g, "").replace(",", ".");
+  return Number(normalized);
+};
+
 export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTabProps) {
   const { user } = useAuth();
   const { selectedGradient, gradientOptions } = useGradientDatabase();
@@ -73,6 +93,13 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedBudget, setSelectedBudget] = useState<ClientBudget | null>(null);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [paymentForm, setPaymentForm] = useState<PaymentFormState>(() => createDefaultPaymentForm());
+  const [pendingBudgetApproval, setPendingBudgetApproval] = useState<{
+    budget: ClientBudget;
+    values: z.infer<typeof budgetFormSchema>;
+  } | null>(null);
+  const [savingPaymentInfo, setSavingPaymentInfo] = useState(false);
 
   const form = useForm<z.infer<typeof budgetFormSchema>>({
     resolver: zodResolver(budgetFormSchema),
@@ -156,6 +183,21 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
     }
   };
 
+  const updateBudgetRecord = async (budgetId: string, values: z.infer<typeof budgetFormSchema>) => {
+    const { error } = await supabase
+      .from('client_budgets')
+      .update({
+        title: values.title,
+        description: values.description,
+        total_amount: parseFloat(values.total_amount),
+        valid_until: values.valid_until || null,
+        status: values.status
+      })
+      .eq('id', budgetId);
+
+    if (error) throw error;
+  };
+
   const createProjectFromBudget = async (budget: ClientBudget) => {
     if (!user) return;
 
@@ -217,19 +259,26 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
   const onEditSubmit = async (values: z.infer<typeof budgetFormSchema>) => {
     if (!user || !selectedBudget) return;
 
-    try {
-      const { error } = await supabase
-        .from('client_budgets')
-        .update({
-          title: values.title,
-          description: values.description,
-          total_amount: parseFloat(values.total_amount),
-          valid_until: values.valid_until || null,
-          status: values.status
-        })
-        .eq('id', selectedBudget.id);
+    const isApprovingBudget = selectedBudget.status !== 'approved' && values.status === 'approved';
+    const canManageFinancial = user.role === 'admin' || user.role === 'supervisor';
 
-      if (error) throw error;
+    if (isApprovingBudget && canManageFinancial) {
+      setPendingBudgetApproval({ budget: selectedBudget, values });
+      setPaymentForm({
+        description: values.title,
+        amount: values.total_amount,
+        transactionDate: new Date().toISOString().split('T')[0],
+        paymentMethod: '',
+        isInstallment: false,
+        installmentCount: '1',
+        notes: ''
+      });
+      setIsPaymentModalOpen(true);
+      return;
+    }
+
+    try {
+      await updateBudgetRecord(selectedBudget.id, values);
 
       toast({
         title: "Sucesso!",
@@ -258,6 +307,148 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('pt-BR');
+  };
+
+  const resetPaymentModal = () => {
+    setSavingPaymentInfo(false);
+    setPendingBudgetApproval(null);
+    setPaymentForm(createDefaultPaymentForm());
+    setIsPaymentModalOpen(false);
+  };
+
+  const handleCancelPayment = () => {
+    if (savingPaymentInfo) return;
+    resetPaymentModal();
+  };
+
+  const handleConfirmPayment = async () => {
+    if (!pendingBudgetApproval || !user) return;
+
+    const baseDescription = paymentForm.description.trim() || pendingBudgetApproval.values.title;
+    const amountInput = paymentForm.amount || pendingBudgetApproval.values.total_amount;
+    const normalizedAmount = parseCurrencyInput(amountInput);
+
+    if (!amountInput || Number.isNaN(normalizedAmount) || normalizedAmount <= 0) {
+      toast({
+        title: "Valor inválido",
+        description: "Informe um valor de recebimento válido.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!paymentForm.transactionDate) {
+      toast({
+        title: "Data obrigatória",
+        description: "Informe a data do primeiro recebimento.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const firstDueDate = new Date(paymentForm.transactionDate);
+    if (Number.isNaN(firstDueDate.getTime())) {
+      toast({
+        title: "Data inválida",
+        description: "Informe uma data de recebimento válida.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const installments = paymentForm.isInstallment ? parseInt(paymentForm.installmentCount, 10) : 1;
+
+    if (paymentForm.isInstallment && (!Number.isFinite(installments) || installments < 1)) {
+      toast({
+        title: "Parcelamento inválido",
+        description: "Informe um número de parcelas válido.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const recurrenceType = installments > 1 ? 'monthly' : 'none';
+    const totalInCents = Math.round(normalizedAmount * 100);
+    const baseAmountInCents = installments > 0 ? Math.floor(totalInCents / installments) : totalInCents;
+    const remainder = installments > 0 ? totalInCents % installments : 0;
+
+    const entries = [] as Array<Database['public']['Tables']['client_financials']['Insert']>;
+
+    for (let index = 0; index < installments; index += 1) {
+      const amountInCents = installments > 1 ? baseAmountInCents + (index < remainder ? 1 : 0) : totalInCents;
+      const dueDate = new Date(firstDueDate);
+      if (installments > 1) {
+        dueDate.setMonth(dueDate.getMonth() + index);
+      }
+
+      const referencePayload: Record<string, unknown> = {
+        source: 'budget_approval',
+        budgetId: pendingBudgetApproval.budget.id,
+        approvedAt: new Date().toISOString(),
+      };
+
+      if (paymentForm.notes) {
+        referencePayload.notes = paymentForm.notes;
+      }
+
+      if (paymentForm.paymentMethod) {
+        referencePayload.paymentMethod = paymentForm.paymentMethod;
+      }
+
+      if (installments > 1) {
+        referencePayload.installmentNumber = index + 1;
+        referencePayload.totalInstallments = installments;
+      }
+
+      entries.push({
+        transaction_type: 'income',
+        description: installments > 1
+          ? `${baseDescription} - Parcela ${index + 1}/${installments}`
+          : baseDescription,
+        amount: amountInCents / 100,
+        transaction_date: dueDate.toISOString().split('T')[0],
+        status: 'pending',
+        client_id: clientId,
+        created_by: user.id,
+        payment_method: paymentForm.paymentMethod || null,
+        recurrence_type: recurrenceType,
+        reference_document: JSON.stringify(referencePayload),
+        project_id: pendingBudgetApproval.budget.project_id || null,
+      });
+    }
+
+    try {
+      setSavingPaymentInfo(true);
+
+      const { error: financialError } = await supabase
+        .from('client_financials')
+        .insert(entries);
+
+      if (financialError) throw financialError;
+
+      await updateBudgetRecord(pendingBudgetApproval.budget.id, pendingBudgetApproval.values);
+
+      toast({
+        title: "Orçamento aprovado",
+        description: installments > 1
+          ? `${installments} parcelas foram registradas no financeiro.`
+          : "Recebimento registrado no financeiro do cliente.",
+      });
+
+      setIsEditModalOpen(false);
+      setSelectedBudget(null);
+      resetPaymentModal();
+      loadBudgets();
+    } catch (error) {
+      console.error('Erro ao registrar informações financeiras do orçamento:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível registrar as informações financeiras do orçamento.",
+        variant: "destructive"
+      });
+    } finally {
+      setSavingPaymentInfo(false);
+    }
   };
 
   if (loading) {
@@ -672,6 +863,158 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
               </div>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment Information Modal */}
+      <Dialog
+        open={isPaymentModalOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            handleCancelPayment();
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Enviar orçamento para o financeiro</DialogTitle>
+            <DialogDescription>
+              Informe os dados de recebimento para que o financeiro do cliente seja atualizado.
+            </DialogDescription>
+          </DialogHeader>
+
+          {pendingBudgetApproval && (
+            <div className="space-y-6">
+              <div className="rounded-lg border bg-muted/40 p-4 text-sm">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Projeto</span>
+                    <span className="font-medium">{pendingBudgetApproval.budget.title}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Valor aprovado</span>
+                    <span className="font-semibold text-green-600">
+                      {formatMoney(pendingBudgetApproval.budget.total_amount)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <FormLabel htmlFor="payment-description">Descrição</FormLabel>
+                  <Input
+                    id="payment-description"
+                    placeholder="Ex: Recebimento do projeto"
+                    value={paymentForm.description}
+                    onChange={(event) => setPaymentForm((prev) => ({
+                      ...prev,
+                      description: event.target.value,
+                    }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <FormLabel htmlFor="payment-amount">Valor total</FormLabel>
+                  <Input
+                    id="payment-amount"
+                    placeholder="0,00"
+                    value={paymentForm.amount}
+                    onChange={(event) => setPaymentForm((prev) => ({
+                      ...prev,
+                      amount: event.target.value,
+                    }))}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <FormLabel htmlFor="payment-date">Data do primeiro recebimento</FormLabel>
+                  <Input
+                    id="payment-date"
+                    type="date"
+                    value={paymentForm.transactionDate}
+                    onChange={(event) => setPaymentForm((prev) => ({
+                      ...prev,
+                      transactionDate: event.target.value,
+                    }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <FormLabel htmlFor="payment-method">Forma de pagamento</FormLabel>
+                  <Input
+                    id="payment-method"
+                    placeholder="Ex: Pix, Boleto, Cartão..."
+                    value={paymentForm.paymentMethod}
+                    onChange={(event) => setPaymentForm((prev) => ({
+                      ...prev,
+                      paymentMethod: event.target.value,
+                    }))}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Gerar parcelas</p>
+                    <p className="text-xs text-muted-foreground">Ative se o pagamento será parcelado.</p>
+                  </div>
+                  <Switch
+                    checked={paymentForm.isInstallment}
+                    onCheckedChange={(checked) => setPaymentForm((prev) => ({
+                      ...prev,
+                      isInstallment: checked,
+                      installmentCount: checked ? (prev.installmentCount === '1' ? '2' : prev.installmentCount) : '1',
+                    }))}
+                  />
+                </div>
+
+                {paymentForm.isInstallment && (
+                  <div className="space-y-2">
+                    <FormLabel htmlFor="installment-count">Número de parcelas</FormLabel>
+                    <Input
+                      id="installment-count"
+                      type="number"
+                      min={1}
+                      value={paymentForm.installmentCount}
+                      onChange={(event) => setPaymentForm((prev) => ({
+                        ...prev,
+                        installmentCount: event.target.value,
+                      }))}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <FormLabel htmlFor="payment-notes">Observações para o financeiro</FormLabel>
+                <Textarea
+                  id="payment-notes"
+                  placeholder="Informações adicionais que o financeiro precisa saber"
+                  value={paymentForm.notes}
+                  onChange={(event) => setPaymentForm((prev) => ({
+                    ...prev,
+                    notes: event.target.value,
+                  }))}
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCancelPayment}
+              disabled={savingPaymentInfo}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleConfirmPayment} disabled={savingPaymentInfo}>
+              {savingPaymentInfo ? 'Salvando...' : 'Enviar para o financeiro'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </Card>
