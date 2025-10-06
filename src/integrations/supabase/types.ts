@@ -846,6 +846,30 @@ export type Database = {
         }
         Relationships: []
       }
+      group_messages: {
+        Row: {
+          created_at: string
+          id: string
+          message: string
+          user_id: string
+          user_name: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message: string
+          user_id: string
+          user_name?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string
+          user_id?: string
+          user_name?: string | null
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           created_at: string
