@@ -199,6 +199,56 @@ export default function ClientDetail() {
     }
   };
 
+  const fetchClientDocuments = useCallback(async () => {
+    if (!id) return;
+
+    const { data: documentsData, error: documentsError } = await supabase
+      .from('client_documents')
+      .select('id, client_id, document_name, document_type, file_path, file_size, created_at, uploaded_by')
+      .eq('client_id', id)
+      .order('created_at', { ascending: false });
+    if (documentsError) throw documentsError;
+
+    const uploaderIds = [...new Set(documentsData?.map(d => d.uploaded_by).filter(Boolean) || [])];
+    let uploaderProfiles: { user_id: string; name: string }[] = [];
+
+    if (uploaderIds.length > 0) {
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('user_id, name')
+        .in('user_id', uploaderIds);
+
+      if (profilesError) throw profilesError;
+      uploaderProfiles = profilesData;
+    }
+
+    const uploaderProfilesMap = new Map(uploaderProfiles.map((p) => [p.user_id, p.name]));
+
+    const docsWithUploader: Document[] = (documentsData || []).map((doc: any) => ({
+      ...doc,
+      uploader_name: uploaderProfilesMap.get(doc.uploaded_by) || 'Usuário desconhecido',
+    }));
+
+    const docsWithUrls: Document[] = await Promise.all(
+      docsWithUploader.map(async (doc) => {
+        try {
+          const { data: signed, error: signedError } = await supabase
+            .storage
+            .from('client-documents')
+            .createSignedUrl(doc.file_path, 60 * 60, { download: doc.document_name });
+
+          if (signedError) throw signedError;
+          return { ...doc, view_url: signed?.signedUrl, download_url: signed?.signedUrl };
+        } catch (e) {
+          const { data: pub } = supabase.storage.from('client-documents').getPublicUrl(doc.file_path);
+          return { ...doc, view_url: pub?.publicUrl || null, download_url: pub?.publicUrl || null };
+        }
+      })
+    );
+
+    setDocuments(docsWithUrls);
+  }, [id]);
+
   const loadClientData = async () => {
     if (!id) return;
     setLoading(true);
@@ -234,44 +284,7 @@ export default function ClientDetail() {
       setContacts(processedContacts);
 
       // 3) Documentos do cliente (agora com URLs para visualizar/baixar)
-      const { data: documentsData, error: documentsError } = await supabase
-        .from('client_documents')
-        .select('id, client_id, document_name, document_type, file_path, file_size, created_at, uploaded_by')
-        .eq('client_id', id)
-        .order('created_at', { ascending: false });
-      if (documentsError) throw documentsError;
-
-      const uploaderIds = [...new Set(documentsData?.map(d => d.uploaded_by).filter(Boolean) || [])];
-      const { data: uploaderProfiles } = await supabase
-        .from('profiles')
-        .select('user_id, name')
-        .in('user_id', uploaderIds);
-      const uploaderProfilesMap = new Map(uploaderProfiles?.map(p => [p.user_id, p.name]) || []);
-
-      const docsWithUploader: Document[] = (documentsData || []).map((doc: any) => ({
-        ...doc,
-        uploader_name: uploaderProfilesMap.get(doc.uploaded_by) || 'Usuário desconhecido',
-      }));
-
-      // Gera URLs assinadas (funciona mesmo com bucket privado). Se falhar, tenta URL pública.
-      const docsWithUrls: Document[] = await Promise.all(
-        docsWithUploader.map(async (doc) => {
-          try {
-            const { data: signed, error: signedError } = await supabase
-              .storage
-              .from('client-documents')
-              .createSignedUrl(doc.file_path, 60 * 60, { download: doc.document_name }); // 1h
-
-            if (signedError) throw signedError;
-            return { ...doc, view_url: signed?.signedUrl, download_url: signed?.signedUrl };
-          } catch (e) {
-            const { data: pub } = supabase.storage.from('client-documents').getPublicUrl(doc.file_path);
-            return { ...doc, view_url: pub?.publicUrl || null, download_url: pub?.publicUrl || null };
-          }
-        })
-      );
-
-      setDocuments(docsWithUrls);
+      await fetchClientDocuments();
 
       // 4) Financeiro
       const { data: financialsData } = await supabase
@@ -443,25 +456,34 @@ export default function ClientDetail() {
   };
 
   const handleDeleteDocument = async () => {
-    if (!documentToDelete) return;
+    const doc = documentToDelete;
+    if (!doc) return;
     setIsDeletingDocument(true);
     try {
-      const { error: storageError } = await supabase
-        .storage
-        .from('client-documents')
-        .remove([documentToDelete.file_path]);
-      if (storageError) throw storageError;
+      if (doc.file_path) {
+        const { error: storageError } = await supabase
+          .storage
+          .from('client-documents')
+          .remove([doc.file_path]);
+
+        if (storageError && storageError.message && storageError.message.toLowerCase().includes('not found')) {
+          console.warn('Arquivo não encontrado no storage, prosseguindo com exclusão do registro.');
+        } else if (storageError) {
+          throw storageError;
+        }
+      }
 
       const { error: dbError } = await supabase
         .from('client_documents')
         .delete()
-        .eq('id', documentToDelete.id);
+        .eq('id', doc.id);
       if (dbError) throw dbError;
 
       toast({ title: 'Documento excluído', description: 'O documento foi removido com sucesso.' });
+      setDocuments((prev) => prev.filter((current) => current.id !== doc.id));
       setIsDeleteDocumentDialogOpen(false);
       setDocumentToDelete(null);
-      loadClientData();
+      await fetchClientDocuments();
     } catch (error) {
       console.error(error);
       toast({ title: 'Erro', description: 'Não foi possível excluir o documento.', variant: 'destructive' });
