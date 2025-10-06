@@ -460,11 +460,13 @@ export default function ClientDetail() {
     if (!doc) return;
     setIsDeletingDocument(true);
     try {
-      if (doc.file_path) {
+
+      if (documentToDelete.file_path) {
         const { error: storageError } = await supabase
           .storage
           .from('client-documents')
-          .remove([doc.file_path]);
+          .remove([documentToDelete.file_path]);
+
 
         if (storageError && storageError.message && storageError.message.toLowerCase().includes('not found')) {
           console.warn('Arquivo não encontrado no storage, prosseguindo com exclusão do registro.');
@@ -480,7 +482,9 @@ export default function ClientDetail() {
       if (dbError) throw dbError;
 
       toast({ title: 'Documento excluído', description: 'O documento foi removido com sucesso.' });
-      setDocuments((prev) => prev.filter((current) => current.id !== doc.id));
+
+      setDocuments((prev) => prev.filter((doc) => doc.id !== documentToDelete.id));
+
       setIsDeleteDocumentDialogOpen(false);
       setDocumentToDelete(null);
       await fetchClientDocuments();
