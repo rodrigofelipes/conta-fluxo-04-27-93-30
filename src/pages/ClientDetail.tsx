@@ -23,7 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Plus, Phone, Mail, MessageSquare, Calendar, FileText, DollarSign, Building, Upload, Download, X, MapPin, User, Eye, Trash2, CreditCard, Send } from "lucide-react";
+import { ArrowLeft, Plus, Phone, Mail, MessageSquare, Calendar, FileText, DollarSign, Building, Upload, Download, X, MapPin, User, Eye, Trash2, CreditCard, Send, ChevronDown } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
@@ -79,6 +79,7 @@ interface Financial {
   status: string;
   reference_document: string;
   payment_method?: string;
+  created_at?: string;
 }
 
 type EmailSummarySections = {
@@ -145,6 +146,7 @@ export default function ClientDetail() {
   const [activeTab, setActiveTab] = useState('contatos');
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [selectedProjectForTimeline, setSelectedProjectForTimeline] = useState<Project | null>(null);
+  const [openFinancialGroups, setOpenFinancialGroups] = useState<Record<string, boolean>>({});
 
   // Estados para novos itens
   const [newContact, setNewContact] = useState({
@@ -1682,57 +1684,209 @@ export default function ClientDetail() {
                   </div>
 
                   <div className="space-y-3">
-                    {financials.map((financial) => (
-                      <div key={financial.id} className="group border-2 border-border/50 rounded-xl p-5 hover:border-green-300 dark:hover:border-green-700 transition-all duration-300 hover:shadow-lg bg-gradient-to-r from-card to-muted/20">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <div className={`p-3 rounded-full ${financial.transaction_type === 'income' || financial.transaction_type === 'payment_received' ? 'bg-green-100 dark:bg-green-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
-                              <DollarSign className={`h-5 w-5 ${financial.transaction_type === 'income' || financial.transaction_type === 'payment_received' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} />
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-3 mb-1">
-                                <h4 className="font-semibold text-foreground">{financial.description}</h4>
-                                <Badge variant="secondary" className={`${financial.transaction_type === 'income' || financial.transaction_type === 'payment_received' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'}`}>
-                                  {financial.transaction_type}
-                                </Badge>
-                              </div>
-                              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                                <div className="flex items-center gap-1">
-                                  <Calendar className="h-3 w-3" />
-                                  {new Date(financial.transaction_date).toLocaleDateString('pt-BR')}
+                    {(() => {
+                      // Normalize description helper
+                      const normalizeDesc = (description: string) => {
+                        return description.replace(/\s*-\s*Parcela\s+\d+\/\d+\s*$/i, '').trim();
+                      };
+
+                      // Group installments
+                      const groups = new Map<string, Financial[]>();
+                      const standalone: Financial[] = [];
+
+                      financials.forEach(financial => {
+                        const normalizedDesc = normalizeDesc(financial.description);
+                        const key = `${financial.transaction_type}|${normalizedDesc}`;
+                        
+                        // Check if description has installment pattern
+                        const hasInstallmentPattern = /Parcela\s+\d+\/\d+/i.test(financial.description);
+                        
+                        if (hasInstallmentPattern) {
+                          const existing = groups.get(key);
+                          if (existing) {
+                            existing.push(financial);
+                          } else {
+                            groups.set(key, [financial]);
+                          }
+                        } else {
+                          standalone.push(financial);
+                        }
+                      });
+
+                      const items: Array<{type: 'single', financial: Financial} | {type: 'group', key: string, transactions: Financial[], description: string, totalAmount: number}> = [];
+                      
+                      standalone.forEach(financial => {
+                        items.push({ type: 'single', financial });
+                      });
+
+                      groups.forEach((transactions, key) => {
+                        if (transactions.length > 1) {
+                          const sortedTransactions = [...transactions].sort((a, b) => 
+                            new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime()
+                          );
+                          const normalizedDesc = normalizeDesc(sortedTransactions[0].description);
+                          items.push({
+                            type: 'group',
+                            key,
+                            transactions: sortedTransactions,
+                            description: normalizedDesc,
+                            totalAmount: sortedTransactions.reduce((sum, t) => sum + t.amount, 0)
+                          });
+                        } else {
+                          items.push({ type: 'single', financial: transactions[0] });
+                        }
+                      });
+
+                      return items.map((item) => {
+                        if (item.type === 'single') {
+                          const financial = item.financial;
+                          return (
+                            <div key={financial.id} className="group border-2 border-border/50 rounded-xl p-5 hover:border-green-300 dark:hover:border-green-700 transition-all duration-300 hover:shadow-lg bg-gradient-to-r from-card to-muted/20">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                  <div className={`p-3 rounded-full ${financial.transaction_type === 'income' || financial.transaction_type === 'payment_received' ? 'bg-green-100 dark:bg-green-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
+                                    <DollarSign className={`h-5 w-5 ${financial.transaction_type === 'income' || financial.transaction_type === 'payment_received' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} />
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-3 mb-1">
+                                      <h4 className="font-semibold text-foreground">{financial.description}</h4>
+                                      <Badge variant="secondary" className={`${financial.transaction_type === 'income' || financial.transaction_type === 'payment_received' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'}`}>
+                                        {financial.transaction_type}
+                                      </Badge>
+                                    </div>
+                                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                                      <div className="flex items-center gap-1">
+                                        <Calendar className="h-3 w-3" />
+                                        {new Date(financial.transaction_date).toLocaleDateString('pt-BR')}
+                                      </div>
+                                      {financial.payment_method && (
+                                        <div className="flex items-center gap-1">
+                                          <CreditCard className="h-3 w-3" />
+                                          {getPaymentMethodLabel(financial.payment_method)}
+                                        </div>
+                                      )}
+                                      {financial.reference_document && (
+                                        <div className="flex items-center gap-1">
+                                          <FileText className="h-3 w-3" />
+                                          {financial.reference_document}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
-                                {financial.payment_method && (
-                                  <div className="flex items-center gap-1">
-                                    <CreditCard className="h-3 w-3" />
-                                    {getPaymentMethodLabel(financial.payment_method)}
+                                <div className="text-right">
+                                  <div className={`text-2xl font-bold ${financial.transaction_type === 'income' || financial.transaction_type === 'payment_received' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                    {financial.transaction_type === 'income' || financial.transaction_type === 'payment_received' ? '+' : '-'}
+                                    {formatMoney(financial.amount)}
                                   </div>
-                                )}
-                                {financial.reference_document && (
-                                  <div className="flex items-center gap-1">
-                                    <FileText className="h-3 w-3" />
-                                    {financial.reference_document}
+                                  <div className="mt-1">
+                                    <Badge
+                                      variant={financial.status === 'completed' ? 'default' : financial.status === 'pending' ? 'secondary' : 'destructive'}
+                                      className="text-xs"
+                                    >
+                                      {financial.status === 'completed' ? 'Concluído' : financial.status === 'pending' ? 'Pendente' : 'Cancelado'}
+                                    </Badge>
                                   </div>
-                                )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                          <div className="text-right">
-                            <div className={`text-2xl font-bold ${financial.transaction_type === 'income' || financial.transaction_type === 'payment_received' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                              {financial.transaction_type === 'income' || financial.transaction_type === 'payment_received' ? '+' : '-'}
-                              {formatMoney(financial.amount)}
+                          );
+                        }
+
+                        // Group rendering
+                        const isOpen = Boolean(openFinancialGroups[item.key]);
+                        const firstTransaction = item.transactions[0];
+                        const pendingCount = item.transactions.filter(t => t.status === 'pending').length;
+                        const paidCount = item.transactions.filter(t => t.status === 'completed').length;
+                        
+                        return (
+                          <div key={item.key} className="border-2 border-border/50 rounded-xl overflow-hidden bg-gradient-to-r from-card to-muted/20">
+                            <div className="group p-5 hover:border-green-300 dark:hover:border-green-700 transition-all duration-300 hover:shadow-lg bg-muted/40">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4 flex-1">
+                                  <div className={`p-3 rounded-full ${firstTransaction.transaction_type === 'income' || firstTransaction.transaction_type === 'payment_received' ? 'bg-green-100 dark:bg-green-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
+                                    <DollarSign className={`h-5 w-5 ${firstTransaction.transaction_type === 'income' || firstTransaction.transaction_type === 'payment_received' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} />
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-3 mb-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setOpenFinancialGroups(prev => ({ ...prev, [item.key]: !prev[item.key] }))}
+                                        className="flex items-center gap-2 text-left"
+                                      >
+                                        <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? '-rotate-180' : 'rotate-0'}`} />
+                                        <h4 className="font-semibold text-foreground">{item.description}</h4>
+                                      </button>
+                                      <Badge variant="outline">Parcelado ({item.transactions.length}x)</Badge>
+                                      <Badge variant="secondary" className={`${firstTransaction.transaction_type === 'income' || firstTransaction.transaction_type === 'payment_received' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'}`}>
+                                        {firstTransaction.transaction_type}
+                                      </Badge>
+                                    </div>
+                                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                                      {pendingCount > 0 && <span>{pendingCount} pendente(s)</span>}
+                                      {paidCount > 0 && <span>{paidCount} pago(s)</span>}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className={`text-2xl font-bold ${firstTransaction.transaction_type === 'income' || firstTransaction.transaction_type === 'payment_received' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                    {firstTransaction.transaction_type === 'income' || firstTransaction.transaction_type === 'payment_received' ? '+' : '-'}
+                                    {formatMoney(item.totalAmount)}
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                            <div className="mt-1">
-                              <Badge
-                                variant={financial.status === 'completed' ? 'default' : financial.status === 'pending' ? 'secondary' : 'destructive'}
-                                className="text-xs"
-                              >
-                                {financial.status === 'completed' ? 'Concluído' : financial.status === 'pending' ? 'Pendente' : 'Cancelado'}
-                              </Badge>
-                            </div>
+                            
+                            {isOpen && (
+                              <div className="border-t border-border/50 bg-muted/20 p-4">
+                                <div className="space-y-3">
+                                  {item.transactions.map((transaction, index) => (
+                                    <div key={transaction.id} className="border border-border/50 rounded-lg p-4 bg-card">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-3 mb-2">
+                                            <span className="font-medium">Parcela {index + 1} de {item.transactions.length}</span>
+                                            <Badge
+                                              variant={transaction.status === 'completed' ? 'default' : transaction.status === 'pending' ? 'secondary' : 'destructive'}
+                                              className="text-xs"
+                                            >
+                                              {transaction.status === 'completed' ? 'Concluído' : transaction.status === 'pending' ? 'Pendente' : 'Cancelado'}
+                                            </Badge>
+                                          </div>
+                                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                                            <div className="flex items-center gap-1">
+                                              <Calendar className="h-3 w-3" />
+                                              {new Date(transaction.transaction_date).toLocaleDateString('pt-BR')}
+                                            </div>
+                                            {transaction.payment_method && (
+                                              <div className="flex items-center gap-1">
+                                                <CreditCard className="h-3 w-3" />
+                                                {getPaymentMethodLabel(transaction.payment_method)}
+                                              </div>
+                                            )}
+                                            {transaction.reference_document && (
+                                              <div className="flex items-center gap-1">
+                                                <FileText className="h-3 w-3" />
+                                                {transaction.reference_document}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <div className="text-right">
+                                          <div className={`text-xl font-bold ${firstTransaction.transaction_type === 'income' || firstTransaction.transaction_type === 'payment_received' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                            {formatMoney(transaction.amount)}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      </div>
-                    ))}
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               ) : (
