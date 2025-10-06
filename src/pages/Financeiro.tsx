@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { Fragment, useState, useEffect, useMemo, useCallback } from "react";
 
 import { useLocation } from "react-router-dom";
 
@@ -21,7 +21,8 @@ import {
   Download,
   AlertCircle,
   Timer,
-  BarChart3
+  BarChart3,
+  ChevronDown
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -324,6 +325,7 @@ interface ManualExpense {
   payment_method?: string | null;
   created_at: string;
   category?: ManualExpenseCategory | null;
+  recurrence_type?: "none" | "monthly" | "yearly" | null;
 }
 
 interface OverviewRecord {
@@ -336,7 +338,37 @@ interface OverviewRecord {
   origin: "client" | "operational";
   category?: string | null;
   categoryType?: ManualExpenseCategory["category_type"]; // only for expenses
+  recurrence_type?: "none" | "monthly" | "quarterly" | "yearly" | null;
+  created_at?: string | null;
+  clientId?: string | null;
+  clientName?: string | null;
+  paymentMethod?: string | null;
 }
+
+type OverviewStatusKey = "pending" | "paid" | "overdue" | "cancelled";
+
+type OverviewListItem =
+  | {
+      type: "single";
+      record: OverviewRecord;
+      sortDate: string;
+    }
+  | {
+      type: "installment";
+      key: string;
+      description: string;
+      typeValue: OverviewRecord["type"];
+      origin: OverviewRecord["origin"];
+      category?: string | null;
+      categoryType?: ManualExpenseCategory["category_type"];
+      totalAmount: number;
+      firstDate: string;
+      lastDate: string;
+      records: OverviewRecord[];
+      statusCounts: Record<OverviewStatusKey, number>;
+      statusInfo: { label: string; variant: "default" | "secondary" | "destructive" | "outline" };
+      sortDate: string;
+    };
 
 type OverviewTypeFilter = "all" | OverviewRecord["type"];
 type OverviewStatusFilter = "all" | "paid" | "pending" | "overdue" | "cancelled";
@@ -359,6 +391,77 @@ const normalizeSearchValue = (value: string) =>
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
     .toLowerCase();
+
+const installmentRecurrenceTypes = new Set(["monthly", "quarterly", "yearly"]);
+
+const extractInstallmentMetadata = (description: string | null | undefined) => {
+  const original = description?.trim() ?? "";
+  if (!original) {
+    return {
+      baseDescription: "",
+      hasInstallmentPattern: false,
+      currentInstallment: null as number | null,
+      totalInstallments: null as number | null,
+    };
+  }
+
+  const pattern = /(.*?)(?:\s*[\-–—(\[]?\s*parc(?:ela|\.)\s*)(\d+)(?:\s*(?:\/|de)\s*)(\d+)[)\]\s]*$/i;
+  const match = original.match(pattern);
+
+  if (!match) {
+    return {
+      baseDescription: original,
+      hasInstallmentPattern: false,
+      currentInstallment: null,
+      totalInstallments: null,
+    };
+  }
+
+  const [, base = "", current, total] = match;
+  return {
+    baseDescription: base.trim() || original,
+    hasInstallmentPattern: true,
+    currentInstallment: Number.parseInt(current, 10) || null,
+    totalInstallments: Number.parseInt(total, 10) || null,
+  };
+};
+
+const getInstallmentGroupingKey = (record: OverviewRecord) => {
+  const metadata = extractInstallmentMetadata(record.description);
+  const recurrence = record.recurrence_type ?? "none";
+  const isInstallmentRecord =
+    metadata.hasInstallmentPattern || installmentRecurrenceTypes.has(recurrence);
+
+  if (!isInstallmentRecord) {
+    return null;
+  }
+
+  const baseDescription = metadata.baseDescription || record.description.trim();
+  const ownerKey =
+    record.origin === "client"
+      ? record.clientId || record.clientName || ""
+      : record.category || "";
+
+  const createdAtKey = record.created_at
+    ? new Date(record.created_at).toISOString().slice(0, 10)
+    : "";
+
+  const parts = [record.type, record.origin, baseDescription];
+  if (ownerKey) {
+    parts.push(ownerKey);
+  }
+  if (metadata.totalInstallments) {
+    parts.push(`total:${metadata.totalInstallments}`);
+  }
+  if (createdAtKey) {
+    parts.push(`created:${createdAtKey}`);
+  }
+
+  return {
+    key: parts.join("|"),
+    baseDescription,
+  };
+};
 
 const manualCategoryTypeLabels: Record<ManualExpenseCategory["category_type"], string> = {
   previsao_custo: "Previsão de Custo",
@@ -411,6 +514,7 @@ export default function Financeiro() {
   const [statusFilter, setStatusFilter] = useState<OverviewStatusFilter>("all");
   const [originFilter, setOriginFilter] = useState<OverviewOriginFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [openOverviewGroups, setOpenOverviewGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const state = location.state as { activeTab?: string } | null;
@@ -475,6 +579,7 @@ export default function Financeiro() {
           status,
           payment_method,
           created_at,
+          recurrence_type,
           category:financial_categories(id, name, category_type)
         `)
         .order('expense_date', { ascending: false });
@@ -507,6 +612,7 @@ export default function Financeiro() {
         status: normalizeExpenseStatus(expense.status),
         payment_method: expense.payment_method ? String(expense.payment_method) : null,
         created_at: String(expense.created_at),
+        recurrence_type: (expense.recurrence_type ?? "none") as ManualExpense["recurrence_type"],
         category: expense.category
           ? {
               id: String(expense.category.id),
@@ -633,6 +739,49 @@ export default function Financeiro() {
     }
   };
 
+  const getOverviewGroupStatusInfo = useCallback((
+    counts: Record<OverviewStatusKey, number>,
+  ): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } => {
+    const hasPending = counts.pending > 0;
+    const hasPaid = counts.paid > 0;
+    const hasOverdue = counts.overdue > 0;
+    const hasCancelled = counts.cancelled > 0;
+
+    if (hasOverdue && hasPending) {
+      return { label: "Pendentes/Atrasadas", variant: "destructive" };
+    }
+
+    if (hasOverdue) {
+      return { label: "Em atraso", variant: "destructive" };
+    }
+
+    if (hasPending && hasPaid) {
+      return { label: "Pendentes/Pagas", variant: "secondary" };
+    }
+
+    if (hasPending) {
+      return { label: "Pendente", variant: "secondary" };
+    }
+
+    if (hasCancelled && (hasPending || hasPaid || hasOverdue)) {
+      return { label: "Parcialmente Cancelado", variant: "outline" };
+    }
+
+    if (hasCancelled) {
+      return { label: "Cancelado", variant: "outline" };
+    }
+
+    return { label: "Pago", variant: "default" };
+  }, []);
+
+  const formatDateLabel = (value: string) => {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return "—";
+    }
+    return format(parsed, "dd/MM/yyyy");
+  };
+
   const categoryNameById = useMemo(() => {
     const map = new Map<string, string>();
     categories.forEach(category => {
@@ -676,6 +825,11 @@ export default function Financeiro() {
         status: t.status,
         origin: "client",
         category: getTransactionCategoryLabel(t.transaction_category),
+        recurrence_type: t.recurrence_type ?? "none",
+        created_at: t.created_at ?? null,
+        clientId: t.client_id ?? null,
+        clientName: t.client ?? null,
+        paymentMethod: null,
       }));
 
       const expenseRecords = manualExpenses.map<OverviewRecord>(expense => ({
@@ -688,6 +842,11 @@ export default function Financeiro() {
         origin: "operational",
         category: normalizeCategoryLabel(expense.category?.name),
         categoryType: expense.category?.category_type,
+        recurrence_type: expense.recurrence_type ?? "none",
+        created_at: expense.created_at,
+        clientId: null,
+        clientName: null,
+        paymentMethod: expense.payment_method ?? null,
       }));
 
     return [...transactionRecords, ...expenseRecords].sort((a, b) => {
@@ -696,6 +855,111 @@ export default function Financeiro() {
       return dateB - dateA;
     });
   }, [transactions, manualExpenses, getTransactionCategoryLabel]);
+
+  const overviewItems = useMemo<OverviewListItem[]>(() => {
+    const groups = new Map<string, { records: OverviewRecord[]; baseDescription: string }>();
+    const singles: OverviewRecord[] = [];
+
+    overviewRecords.forEach(record => {
+      const groupingData = getInstallmentGroupingKey(record);
+
+      if (groupingData) {
+        const existing = groups.get(groupingData.key);
+        if (existing) {
+          existing.records.push(record);
+        } else {
+          groups.set(groupingData.key, {
+            records: [record],
+            baseDescription: groupingData.baseDescription,
+          });
+        }
+      } else {
+        singles.push(record);
+      }
+    });
+
+    const items: OverviewListItem[] = singles.map(record => ({
+      type: "single",
+      record,
+      sortDate: record.date,
+    }));
+
+    const statusKeys: OverviewStatusKey[] = ["pending", "paid", "overdue", "cancelled"];
+
+    groups.forEach(({ records, baseDescription }, key) => {
+      if (records.length <= 1) {
+        const [record] = records;
+        if (record) {
+          items.push({ type: "single", record, sortDate: record.date });
+        }
+        return;
+      }
+
+      const sortedRecords = [...records].sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+      );
+
+      const totalAmount = sortedRecords.reduce((sum, item) => sum + item.amount, 0);
+      const statusCounts: Record<OverviewStatusKey, number> = {
+        pending: 0,
+        paid: 0,
+        overdue: 0,
+        cancelled: 0,
+      };
+
+      sortedRecords.forEach(record => {
+        const statusKey = statusKeys.includes(record.status as OverviewStatusKey)
+          ? (record.status as OverviewStatusKey)
+          : "pending";
+        statusCounts[statusKey] += 1;
+      });
+
+      const firstRecord = sortedRecords[0];
+      const lastRecord = sortedRecords[sortedRecords.length - 1] ?? firstRecord;
+
+      items.push({
+        type: "installment",
+        key,
+        description: baseDescription || firstRecord?.description || "Parcelado",
+        typeValue: firstRecord?.type ?? "expense",
+        origin: firstRecord?.origin ?? "operational",
+        category: firstRecord?.category ?? "Sem categoria",
+        categoryType: firstRecord?.categoryType,
+        totalAmount,
+        firstDate: firstRecord?.date ?? new Date().toISOString(),
+        lastDate: lastRecord?.date ?? firstRecord?.date ?? new Date().toISOString(),
+        records: sortedRecords,
+        statusCounts,
+        statusInfo: getOverviewGroupStatusInfo(statusCounts),
+        sortDate: lastRecord?.date ?? firstRecord?.date ?? new Date().toISOString(),
+      });
+    });
+
+    return items.sort((a, b) => {
+      const dateA = new Date(a.sortDate).getTime();
+      const dateB = new Date(b.sortDate).getTime();
+      return dateB - dateA;
+    });
+  }, [overviewRecords, getOverviewGroupStatusInfo]);
+
+  useEffect(() => {
+    setOpenOverviewGroups(prev => {
+      const validKeys = new Set(
+        overviewItems
+          .filter(item => item.type === "installment")
+          .map(item => item.key),
+      );
+
+      const next: Record<string, boolean> = {};
+      validKeys.forEach(key => {
+        if (prev[key]) {
+          next[key] = true;
+        }
+      });
+
+      return next;
+    });
+  }, [overviewItems]);
 
   const overviewCategories = useMemo(() => {
     const unique = new Set<string>();
@@ -713,48 +977,158 @@ export default function Financeiro() {
     return Array.from(unique).sort((a, b) => a.localeCompare(b, "pt-BR"));
   }, [overviewRecords, categories]);
 
-  const filteredOverviewRecords = useMemo(() => {
+  const filteredOverviewItems = useMemo(() => {
     const rawTerm = searchTerm.trim();
     const normalizedTerm = normalizeSearchValue(rawTerm);
 
-    return overviewRecords.filter(record => {
-      const matchesType = typeFilter === "all" || record.type === typeFilter;
-      const matchesStatus = statusFilter === "all" || record.status === statusFilter;
-      const matchesOrigin = originFilter === "all" || record.origin === originFilter;
-      const recordCategory = normalizeCategoryLabel(record.category);
-      const matchesCategory = categoryFilter === "all" || recordCategory === categoryFilter;
-
-      if (!normalizedTerm) {
-        return matchesType && matchesStatus && matchesOrigin && matchesCategory;
+    return overviewItems.filter(item => {
+      const typeValue = item.type === "single" ? item.record.type : item.typeValue;
+      if (typeFilter !== "all" && typeValue !== typeFilter) {
+        return false;
       }
 
-      const searchFields: string[] = [
-        record.description,
-        recordCategory,
-        record.status,
-        getStatusLabel(record.status),
-        record.origin,
-        record.origin === "client" ? "clientes" : "operacional",
-        record.type,
-        record.type === "income" ? "receita" : "despesa",
-        record.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
-        record.amount.toFixed(2),
-      ];
+      const originValue = item.type === "single" ? item.record.origin : item.origin;
+      if (originFilter !== "all" && originValue !== originFilter) {
+        return false;
+      }
 
-      if (record.categoryType) {
+      const categoryLabel = normalizeCategoryLabel(
+        item.type === "single" ? item.record.category : item.category,
+      );
+      if (categoryFilter !== "all" && categoryLabel !== categoryFilter) {
+        return false;
+      }
+
+      const matchesStatus = (() => {
+        if (statusFilter === "all") return true;
+        if (item.type === "single") {
+          return item.record.status === statusFilter;
+        }
+
+        switch (statusFilter) {
+          case "pending":
+            return item.statusCounts.pending > 0;
+          case "paid":
+            return (
+              item.statusCounts.paid > 0 &&
+              item.statusCounts.pending === 0 &&
+              item.statusCounts.overdue === 0
+            );
+          case "overdue":
+            return item.statusCounts.overdue > 0;
+          case "cancelled":
+            return (
+              item.statusCounts.cancelled > 0 &&
+              item.statusCounts.pending === 0 &&
+              item.statusCounts.overdue === 0 &&
+              item.statusCounts.paid === 0
+            );
+          default:
+            return true;
+        }
+      })();
+
+      if (!matchesStatus) {
+        return false;
+      }
+
+      if (!normalizedTerm) {
+        return true;
+      }
+
+      const searchFields: string[] = [];
+
+      if (item.type === "single") {
+        const recordCategory = normalizeCategoryLabel(item.record.category);
         searchFields.push(
-          record.categoryType,
-          manualCategoryTypeLabels[record.categoryType]
+          item.record.description,
+          recordCategory,
+          item.record.status,
+          getStatusLabel(item.record.status),
+          item.record.origin,
+          item.record.origin === "client" ? "clientes" : "operacional",
+          item.record.type,
+          item.record.type === "income" ? "receita" : "despesa",
+          item.record.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
+          item.record.amount.toFixed(2),
+          formatDateLabel(item.record.date),
         );
+
+        if (item.record.categoryType) {
+          searchFields.push(
+            item.record.categoryType,
+            manualCategoryTypeLabels[item.record.categoryType],
+          );
+        }
+
+        if (item.record.clientName) {
+          searchFields.push(item.record.clientName);
+        }
+
+        if (item.record.paymentMethod) {
+          searchFields.push(item.record.paymentMethod);
+        }
+      } else {
+        searchFields.push(
+          item.description,
+          categoryLabel,
+          item.origin,
+          item.origin === "client" ? "clientes" : "operacional",
+          item.typeValue,
+          item.typeValue === "income" ? "receita" : "despesa",
+          item.statusInfo.label,
+          `${item.records.length} parcelas`,
+          "parcelado",
+          "parcelas",
+          formatDateLabel(item.firstDate),
+          formatDateLabel(item.lastDate),
+          item.totalAmount.toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
+          item.totalAmount.toFixed(2),
+        );
+
+        if (item.categoryType) {
+          searchFields.push(
+            item.categoryType,
+            manualCategoryTypeLabels[item.categoryType],
+          );
+        }
+
+        item.records.forEach((installment, index) => {
+          searchFields.push(
+            installment.description,
+            normalizeCategoryLabel(installment.category),
+            installment.status,
+            getStatusLabel(installment.status),
+            formatDateLabel(installment.date),
+            installment.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
+            installment.amount.toFixed(2),
+            `parcela ${index + 1}`,
+          );
+
+          if (installment.clientName) {
+            searchFields.push(installment.clientName);
+          }
+
+          if (installment.paymentMethod) {
+            searchFields.push(installment.paymentMethod);
+          }
+        });
       }
 
       const matchesTerm = searchFields.some(field =>
-        normalizeSearchValue(String(field)).includes(normalizedTerm)
+        normalizeSearchValue(String(field ?? "")).includes(normalizedTerm),
       );
 
-      return matchesType && matchesStatus && matchesOrigin && matchesCategory && matchesTerm;
+      return matchesTerm;
     });
-  }, [overviewRecords, searchTerm, typeFilter, statusFilter, originFilter, categoryFilter]);
+  }, [
+    overviewItems,
+    searchTerm,
+    typeFilter,
+    statusFilter,
+    originFilter,
+    categoryFilter,
+  ]);
 
   const resetOverviewFilters = () => {
     setTypeFilter("all");
@@ -930,7 +1304,7 @@ export default function Financeiro() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              {filteredOverviewRecords.length > 0 ? (
+              {filteredOverviewItems.length > 0 ? (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -945,33 +1319,137 @@ export default function Financeiro() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredOverviewRecords.map(record => (
-                        <TableRow key={`${record.origin}-${record.id}`}>
-                          <TableCell>
-                            <Badge variant={record.type === "income" ? "default" : "destructive"}>
-                              {record.type === "income" ? "Receita" : "Despesa"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-medium">{record.description}</TableCell>
-                          <TableCell>{record.category ?? "—"}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {record.origin === "client" ? "Clientes" : "Operacional"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{format(new Date(record.date), "dd/MM/yyyy")}</TableCell>
-                          <TableCell className="text-right font-semibold">
-                            {formatCurrency(record.amount)}
-                          </TableCell>
-                          <TableCell>
-                            <span
-                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${getStatusColor(record.status)}`}
-                            >
-                              {getStatusLabel(record.status)}
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {filteredOverviewItems.map(item => {
+                        if (item.type === "single") {
+                          const record = item.record;
+                          return (
+                            <TableRow key={`single-${record.origin}-${record.id}`}>
+                              <TableCell>
+                                <Badge variant={record.type === "income" ? "default" : "destructive"}>
+                                  {record.type === "income" ? "Receita" : "Despesa"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-medium">{record.description}</TableCell>
+                              <TableCell>{record.category ?? "—"}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline">
+                                  {record.origin === "client" ? "Clientes" : "Operacional"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{formatDateLabel(record.date)}</TableCell>
+                              <TableCell className="text-right font-semibold">
+                                {formatCurrency(record.amount)}
+                              </TableCell>
+                              <TableCell>
+                                <span
+                                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${getStatusColor(record.status)}`}
+                                >
+                                  {getStatusLabel(record.status)}
+                                </span>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        }
+
+                        const isOpen = Boolean(openOverviewGroups[item.key]);
+                        const pendingLabel = item.statusCounts.pending > 0 ? `${item.statusCounts.pending} pendente(s)` : null;
+                        const paidLabel = item.statusCounts.paid > 0 ? `${item.statusCounts.paid} pago(s)` : null;
+                        const overdueLabel = item.statusCounts.overdue > 0 ? `${item.statusCounts.overdue} em atraso` : null;
+                        const cancelledLabel = item.statusCounts.cancelled > 0 ? `${item.statusCounts.cancelled} cancelado(s)` : null;
+
+                        return (
+                          <Fragment key={`group-${item.key}`}>
+                            <TableRow className="bg-muted/40">
+                              <TableCell>
+                                <Badge variant={item.typeValue === "income" ? "default" : "destructive"}>
+                                  {item.typeValue === "income" ? "Receita" : "Despesa"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setOpenOverviewGroups(prev => ({
+                                          ...prev,
+                                          [item.key]: !prev[item.key],
+                                        }))
+                                      }
+                                      aria-expanded={isOpen}
+                                      className="flex items-center gap-2 text-left font-medium text-foreground transition-colors hover:text-primary"
+                                    >
+                                      <ChevronDown
+                                        className={`h-4 w-4 transition-transform ${isOpen ? "-rotate-180" : "rotate-0"}`}
+                                      />
+                                      <span>{item.description}</span>
+                                    </button>
+                                    <Badge variant="outline">Parcelado ({item.records.length}x)</Badge>
+                                  </div>
+                                  <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                                    {pendingLabel && <span>{pendingLabel}</span>}
+                                    {paidLabel && <span>{paidLabel}</span>}
+                                    {overdueLabel && <span>{overdueLabel}</span>}
+                                    {cancelledLabel && <span>{cancelledLabel}</span>}
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell>{item.category ?? "—"}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline">
+                                  {item.origin === "client" ? "Clientes" : "Operacional"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {formatDateLabel(item.firstDate)} - {formatDateLabel(item.lastDate)}
+                              </TableCell>
+                              <TableCell className="text-right font-semibold">
+                                {formatCurrency(item.totalAmount)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={item.statusInfo.variant}>{item.statusInfo.label}</Badge>
+                              </TableCell>
+                            </TableRow>
+                            {isOpen && (
+                              <TableRow className="bg-muted/20">
+                                <TableCell colSpan={7}>
+                                  <div className="space-y-3">
+                                    {item.records.map((installment, index) => (
+                                      <div
+                                        key={`${item.key}-${installment.id}`}
+                                        className="flex flex-col gap-2 rounded-md border p-3 md:flex-row md:items-center md:justify-between"
+                                      >
+                                        <div className="space-y-1">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <span className="font-medium">
+                                              Parcela {index + 1} de {item.records.length}
+                                            </span>
+                                            <span
+                                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${getStatusColor(installment.status)}`}
+                                            >
+                                              {getStatusLabel(installment.status)}
+                                            </span>
+                                            {installment.clientName && (
+                                              <Badge variant="outline">{installment.clientName}</Badge>
+                                            )}
+                                          </div>
+                                          <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                                            <span>Valor: {formatCurrency(installment.amount)}</span>
+                                            <span>Data: {formatDateLabel(installment.date)}</span>
+                                            {installment.paymentMethod && (
+                                              <span>Pagamento: {installment.paymentMethod}</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </Fragment>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
