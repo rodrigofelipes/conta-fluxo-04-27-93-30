@@ -676,7 +676,7 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="user">Usuário</SelectItem>
+                <SelectItem value="user">Colaborador</SelectItem>
                 <SelectItem value="supervisor">Supervisor</SelectItem>
                 <SelectItem value="coordenador">Coordenador</SelectItem>
                 <SelectItem value="admin">Admin</SelectItem>
@@ -936,13 +936,13 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
-                       <SelectContent>
-                         <SelectItem value="user">Usuário</SelectItem>
-                         <SelectItem value="supervisor">Supervisor</SelectItem>
-                         <SelectItem value="coordenador">Coordenador</SelectItem>
-                         <SelectItem value="marketing">Marketing</SelectItem>
-                         {isMasterAdmin && <SelectItem value="admin">Administrador</SelectItem>}
-                       </SelectContent>
+                      <SelectContent>
+                        <SelectItem value="user">Colaborador</SelectItem>
+                        <SelectItem value="supervisor">Supervisor</SelectItem>
+                        <SelectItem value="coordenador">Coordenador</SelectItem>
+                        <SelectItem value="marketing">Marketing</SelectItem>
+                        {isMasterAdmin && <SelectItem value="admin">Administrador</SelectItem>}
+                      </SelectContent>
                     </Select>
                   </div>
                 </div>
