@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -279,6 +279,8 @@ export default function Agenda() {
   const [activeTab, setActiveTab] = useState<'agenda' | 'atas'>('agenda');
   const [minutesTypeFilter, setMinutesTypeFilter] = useState<'all' | AgendaItem['tipo']>('all');
   const [minutesLocationFilter, setMinutesLocationFilter] = useState<'all' | string>('all');
+
+
 
   // Hook para acessar as cores da paleta selecionada
   const { selectedGradient, gradientOptions } = useGradientDatabase();
@@ -634,6 +636,82 @@ export default function Agenda() {
     }
   };
 
+  const handleMinutesDialogOpenChange = (open: boolean) => {
+    if (!open) {
+      setSelectedMinutesMeetingId("");
+      setSelectedMinutesMeeting(null);
+      setMinutesText("");
+    }
+    setIsMinutesDialogOpen(open);
+  };
+
+  const handleSelectMinutesMeeting = (meetingId: string) => {
+    const meeting = agenda.find(item => item.id === meetingId) || null;
+    setSelectedMinutesMeetingId(meetingId);
+    setSelectedMinutesMeeting(meeting);
+    setMinutesText(meeting?.descricao || "");
+  };
+
+  const handleSaveMinutes = async () => {
+    if (!selectedMinutesMeeting) {
+      toast({
+        title: "Selecione a reunião",
+        description: "Escolha uma reunião para registrar a ata.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const trimmedMinutes = minutesText.trim();
+    if (trimmedMinutes.length === 0) {
+      toast({
+        title: "Ata obrigatória",
+        description: "Escreva os principais pontos antes de salvar.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setIsSavingMinutes(true);
+
+      const { error } = await supabase
+        .from('agenda')
+        .update({ descricao: trimmedMinutes })
+        .eq('id', selectedMinutesMeeting.id);
+
+      if (error) throw error;
+
+      setAgenda(prev =>
+        prev.map(item =>
+          item.id === selectedMinutesMeeting.id
+            ? { ...item, descricao: trimmedMinutes }
+            : item
+        )
+      );
+
+      setSelectedMinutesMeeting(current =>
+        current ? { ...current, descricao: trimmedMinutes } : current
+      );
+
+      toast({
+        title: "Ata registrada",
+        description: "As informações foram salvas com sucesso."
+      });
+
+      handleMinutesDialogOpenChange(false);
+    } catch (error) {
+      console.error('Erro ao salvar ata:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível salvar a ata. Tente novamente.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSavingMinutes(false);
+    }
+  };
+
   const getTipoColor = (tipo: string) => {
     return tiposReuniao.find(t => t.value === tipo)?.color || "bg-gray-500";
   };
@@ -671,6 +749,8 @@ export default function Agenda() {
     filteredAgendaBySector.forEach(item => unique.add(getLocationDisplay(item.local)));
     return Array.from(unique).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [filteredAgendaBySector]);
+
+
 
   useEffect(() => {
     if (minutesTypeFilter !== 'all' && !availableMinutesTypes.includes(minutesTypeFilter)) {
@@ -1690,6 +1770,150 @@ export default function Agenda() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <Dialog open={isMinutesDialogOpen} onOpenChange={handleMinutesDialogOpenChange}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Registrar ata de reunião</DialogTitle>
+            <DialogDescription>
+              Selecione um compromisso existente para preencher automaticamente os dados e registrar a ata.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground" htmlFor="minutes-meeting-select">
+                Reunião
+              </label>
+              <Select
+                value={selectedMinutesMeetingId}
+                onValueChange={handleSelectMinutesMeeting}
+              >
+                <SelectTrigger id="minutes-meeting-select" className="h-11 w-full">
+                  <SelectValue placeholder="Selecione a reunião" />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {sortedAgendaForMinutes.map(meeting => (
+                    <SelectItem key={meeting.id} value={meeting.id}>
+                      {`${formatDisplayDateRange(meeting.data, meeting.data_fim)} • ${meeting.titulo}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Os detalhes da reunião são preenchidos automaticamente após a seleção.
+              </p>
+            </div>
+
+            {selectedMinutesMeeting && (
+              <div className="space-y-4 rounded-lg border border-muted-foreground/20 bg-muted/10 p-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Título
+                    </p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {selectedMinutesMeeting.titulo}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Tipo e setor
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                        {getTipoLabel(selectedMinutesMeeting.tipo)}
+                      </Badge>
+                      <Badge
+                        variant="secondary"
+                        className={`text-xs ${
+                          selectedMinutesMeeting.agenda_type === 'pessoal'
+                            ? 'bg-yellow-500/10 text-yellow-700 border-yellow-500/30'
+                            : 'bg-green-500/10 text-green-700 border-green-500/30'
+                        }`}
+                      >
+                        {selectedMinutesMeeting.agenda_type === 'pessoal' ? 'Pessoal' : 'Compartilhado'}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Data e horário
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {formatDisplayDateRange(selectedMinutesMeeting.data, selectedMinutesMeeting.data_fim)}
+                      {selectedMinutesMeeting.horario && (
+                        <>
+                          {' '}• {selectedMinutesMeeting.horario.substring(0, 5)}
+                          {selectedMinutesMeeting.horario_fim && ` - ${selectedMinutesMeeting.horario_fim.substring(0, 5)}`}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Local
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {getLocationDisplay(selectedMinutesMeeting.local)}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Cliente ou responsável
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {selectedMinutesMeeting.cliente || INTERNAL_MEETING_PLACEHOLDER}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Participantes
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {selectedMinutesMeeting.attendees_display || 'Equipe'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground" htmlFor="minutes-description">
+                Conteúdo da ata
+              </label>
+              <Textarea
+                id="minutes-description"
+                placeholder="Descreva os principais pontos discutidos, decisões e próximos passos."
+                rows={8}
+                value={minutesText}
+                onChange={event => setMinutesText(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Utilize este campo para registrar o resumo da reunião, responsáveis e prazos definidos.
+              </p>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                variant="outline"
+                onClick={() => handleMinutesDialogOpenChange(false)}
+                disabled={isSavingMinutes}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleSaveMinutes}
+                disabled={
+                  isSavingMinutes || !selectedMinutesMeeting || minutesText.trim().length === 0
+                }
+              >
+                {isSavingMinutes ? 'Salvando...' : 'Salvar ata'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Lista de próximos agendamentos (AGORA APENAS HOJE E AMANHÃ) */}
       <Card className="border-primary/20 shadow-sm">
         <CardHeader className="pb-4">
@@ -1780,6 +2004,7 @@ export default function Agenda() {
         </TabsContent>
 
         <TabsContent value="atas" className="space-y-4 md:space-y-6">
+
           <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
             <Select
               value={sectorFilter}
@@ -1828,6 +2053,7 @@ export default function Agenda() {
                 ))}
               </SelectContent>
             </Select>
+
           </div>
 
           <Card className="border-muted-foreground/10 bg-card/50">
