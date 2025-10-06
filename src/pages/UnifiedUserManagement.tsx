@@ -679,6 +679,7 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
                 <SelectItem value="user">Colaborador</SelectItem>
                 <SelectItem value="supervisor">Supervisor</SelectItem>
                 <SelectItem value="coordenador">Coordenador</SelectItem>
+                <SelectItem value="marketing">Marketing</SelectItem>
                 <SelectItem value="admin">Admin</SelectItem>
               </SelectContent>
             </Select>
