@@ -1,60 +1,38 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { 
-  Users,
-  Search,
-  DollarSign,
-  CreditCard,
-  TrendingUp,
-  Calendar,
-  AlertCircle
-} from "lucide-react";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Users, Search, Mail } from "lucide-react";
 import { useClients } from "@/hooks/useClients";
-
-interface ClientFinancialData {
-  client_id: string;
-  client_name: string;
-  total_receivables: number;
-  paid_receivables: number;
-  pending_receivables: number;
-  overdue_receivables: number;
-  total_installments: number;
-  pending_installments: number;
-  transactions: Array<{
-    id: string;
-    description: string;
-    amount: number;
-    transaction_date: string;
-    status: string;
-    transaction_category: string;
-    transaction_type: string;
-  }>;
-  installments: Array<{
-    id: string;
-    installment_number: number;
-    total_installments: number;
-    amount: number;
-    due_date: string;
-    status: string;
-    payment_date?: string;
-  }>;
-}
+import { ClientFinancialEmailDialog } from "@/components/financial/ClientFinancialEmailDialog";
 
 export function ClientFinancialTab() {
   const { clients } = useClients();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
+  const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
   const filteredClients = clients.filter(client =>
     client.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const selectedClient = selectedClientId
+    ? clients.find(client => client.id === selectedClientId) || null
+    : null;
+
+  const handleOpenEmailDialog = (clientId: string) => {
+    setSelectedClientId(clientId);
+    setIsEmailDialogOpen(true);
+  };
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setIsEmailDialogOpen(open);
+    if (!open) {
+      setSelectedClientId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -91,22 +69,36 @@ export function ClientFinancialTab() {
           {filteredClients.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredClients.map(client => (
-                <Card 
-                  key={client.id} 
-                  className="cursor-pointer transition-all hover:shadow-md hover:bg-accent/50"
-                  onClick={() => {
-                    navigate(`/client-financial/${client.id}`);
-                  }}
+                <Card
+                  key={client.id}
+                  className="transition-all hover:shadow-md"
                 >
-                  <CardContent className="p-4">
+                  <CardContent className="p-4 space-y-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                         <Users className="w-5 h-5 text-primary" />
                       </div>
                       <div className="flex-1">
                         <h3 className="font-medium">{client.name}</h3>
-                        <p className="text-sm text-muted-foreground">{client.email || 'Sem email'}</p>
+                        <p className="text-sm text-muted-foreground">{client.email || 'Sem email cadastrado'}</p>
                       </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => navigate(`/client-financial/${client.id}`)}
+                      >
+                        Ver detalhes
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleOpenEmailDialog(client.id)}
+                      >
+                        <Mail className="mr-2 h-4 w-4" /> Enviar resumo por email
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -123,6 +115,12 @@ export function ClientFinancialTab() {
           )}
         </CardContent>
       </Card>
+
+      <ClientFinancialEmailDialog
+        client={selectedClient || null}
+        open={isEmailDialogOpen}
+        onOpenChange={handleDialogOpenChange}
+      />
     </div>
   );
 }
