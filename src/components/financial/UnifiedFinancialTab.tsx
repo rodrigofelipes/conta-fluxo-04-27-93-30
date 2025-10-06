@@ -252,11 +252,17 @@ export function UnifiedFinancialTab({
       };
 
   const groupTransactions = (transactionList: FinancialTransaction[]): TransactionListItem[] => {
+    // Função para normalizar descrição removendo sufixo de parcela
+    const normalizeDescription = (desc: string) => {
+      return desc.replace(/\s*-\s*Parcela\s+\d+\/\d+\s*$/i, '').trim();
+    };
+
     const groups = new Map<string, FinancialTransaction[]>();
 
     transactionList.forEach(transaction => {
       if (transaction.recurrence_type === 'monthly') {
-        const key = `${transaction.description}|${transaction.created_at}`;
+        const normalizedDesc = normalizeDescription(transaction.description);
+        const key = `${normalizedDesc}|${transaction.created_at}`;
         const existing = groups.get(key) ?? [];
         existing.push(transaction);
         groups.set(key, existing);
@@ -268,7 +274,8 @@ export function UnifiedFinancialTab({
 
     transactionList.forEach(transaction => {
       if (transaction.recurrence_type === 'monthly') {
-        const key = `${transaction.description}|${transaction.created_at}`;
+        const normalizedDesc = normalizeDescription(transaction.description);
+        const key = `${normalizedDesc}|${transaction.created_at}`;
         if (seenGroups.has(key)) {
           return;
         }
@@ -302,7 +309,7 @@ export function UnifiedFinancialTab({
         items.push({
           type: 'group',
           key,
-          description: transaction.description,
+          description: normalizedDesc,
           transactions: sortedItems,
           totalAmount,
           firstDate: sortedItems[0]?.transaction_date ?? transaction.transaction_date,

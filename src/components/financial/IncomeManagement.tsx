@@ -594,11 +594,17 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
       };
 
   const incomeItems = useMemo<IncomeListItem[]>(() => {
+    // Função para normalizar descrição removendo sufixo de parcela
+    const normalizeDescription = (desc: string) => {
+      return desc.replace(/\s*-\s*Parcela\s+\d+\/\d+\s*$/i, '').trim();
+    };
+
     const groups = new Map<string, IncomeRecord[]>();
 
     incomes.forEach(income => {
       if (income.recurrence_type === 'monthly') {
-        const key = `${income.description}|${income.created_at}`;
+        const normalizedDesc = normalizeDescription(income.description);
+        const key = `${normalizedDesc}|${income.created_at}`;
         const existing = groups.get(key) ?? [];
         existing.push(income);
         groups.set(key, existing);
@@ -610,7 +616,8 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
 
     incomes.forEach(income => {
       if (income.recurrence_type === 'monthly') {
-        const key = `${income.description}|${income.created_at}`;
+        const normalizedDesc = normalizeDescription(income.description);
+        const key = `${normalizedDesc}|${income.created_at}`;
         if (seenGroups.has(key)) {
           return;
         }
@@ -625,7 +632,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
         items.push({
           type: 'installment',
           key,
-          description: income.description,
+          description: normalizedDesc,
           incomes: sortedInstallments,
           totalAmount,
           firstDueDate: sortedInstallments[0]?.transaction_date ?? income.transaction_date,

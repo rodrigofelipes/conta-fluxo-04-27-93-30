@@ -444,11 +444,17 @@ export function ExpenseManagement({
       };
 
   const expenseItems = useMemo<ExpenseListItem[]>(() => {
+    // Função para normalizar descrição removendo sufixo de parcela
+    const normalizeDescription = (desc: string) => {
+      return desc.replace(/\s*-\s*Parcela\s+\d+\/\d+\s*$/i, '').trim();
+    };
+
     const groups = new Map<string, Expense[]>();
 
     expenses.forEach(expense => {
       if (expense.recurrence_type === 'monthly') {
-        const key = `${expense.description}|${expense.created_at}`;
+        const normalizedDesc = normalizeDescription(expense.description);
+        const key = `${normalizedDesc}|${expense.created_at}`;
         const existing = groups.get(key) ?? [];
         existing.push(expense);
         groups.set(key, existing);
@@ -460,7 +466,8 @@ export function ExpenseManagement({
 
     expenses.forEach(expense => {
       if (expense.recurrence_type === 'monthly') {
-        const key = `${expense.description}|${expense.created_at}`;
+        const normalizedDesc = normalizeDescription(expense.description);
+        const key = `${normalizedDesc}|${expense.created_at}`;
         if (seenGroups.has(key)) {
           return;
         }
@@ -475,7 +482,7 @@ export function ExpenseManagement({
         items.push({
           type: 'installment',
           key,
-          description: expense.description,
+          description: normalizedDesc,
           expenses: sortedInstallments,
           totalAmount,
           firstDueDate: sortedInstallments[0]?.expense_date ?? expense.expense_date,
