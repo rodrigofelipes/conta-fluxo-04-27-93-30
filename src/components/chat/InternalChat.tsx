@@ -45,10 +45,13 @@ export function InternalChat() {
 
   const loadMessages = useCallback(async (contact: InternalContact) => {
 
+
     if (!user) return;
 
 
+
     try {
+
       if (contact.isGroup) {
         const { data, error } = await supabase
           .from('group_messages')
@@ -68,6 +71,7 @@ export function InternalChat() {
           from_user_name: msg.user_name,
 
           to_user_name: "Chat Geral",
+
         }));
 
         setMessages(groupMessages);
@@ -75,16 +79,20 @@ export function InternalChat() {
       }
 
 
+
       const { data, error } = await supabase
         .from('messages')
         .select('*')
         .or(`and(from_user_id.eq.${user.id},to_user_id.eq.${contact.id}),and(from_user_id.eq.${contact.id},to_user_id.eq.${user.id})`)
 
+
         .order('created_at', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
-      const internalMessages: InternalMessage[] = (data || []).map((msg) => ({
+      const internalMessages: InternalMessage[] = (data ?? []).map((msg) => ({
         id: msg.id,
         content: msg.message,
         timestamp: msg.created_at,
@@ -95,17 +103,18 @@ export function InternalChat() {
 
       setMessages(internalMessages);
 
-      // Marcar mensagens como lidas
-      if (data && data.length > 0) {
-        const unreadIds = data
-          .filter(msg => msg.to_user_id === user.id && !msg.viewed_at)
-          .map(msg => msg.id);
+      const unreadIds = (data ?? [])
+        .filter((msg) => msg.to_user_id === currentUserId && !msg.viewed_at)
+        .map((msg) => msg.id);
 
-        if (unreadIds.length > 0) {
-          await supabase
-            .from('messages')
-            .update({ viewed_at: new Date().toISOString() })
-            .in('id', unreadIds);
+      if (unreadIds.length > 0) {
+        const { error: updateError } = await supabase
+          .from('messages')
+          .update({ viewed_at: new Date().toISOString() })
+          .in('id', unreadIds);
+
+        if (updateError) {
+          console.error('Erro ao marcar mensagens como lidas:', updateError);
         }
       }
     } catch (error) {
@@ -116,7 +125,7 @@ export function InternalChat() {
         variant: "destructive",
       });
     }
-  }, [user, toast]);
+  }, [user?.id, toast]);
 
   const sendMessage = async () => {
     if (!newMessage.trim() || !selectedContact || !user || isSending) return;
@@ -162,6 +171,7 @@ export function InternalChat() {
     }
   };
 
+
   const handleContactSelect = useCallback(async (contact: InternalContact) => {
     setSelectedContact(contact);
     setNewMessage("");
@@ -170,6 +180,7 @@ export function InternalChat() {
 
     await loadMessages(contact);
   }, [loadMessages]);
+
 
   // Realtime updates
   useEffect(() => {

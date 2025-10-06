@@ -86,6 +86,7 @@ export function useInternalChatContacts() {
                 lastMessage: lastMessage?.message || '',
                 lastMessageTime: lastMessage?.created_at || '',
                 isOnline: Math.random() > 0.5, // TODO: Implementar status real
+
               } as InternalContact;
             })
           )
