@@ -10,7 +10,7 @@ import { MessageSquare, Search, Send, Menu } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
 import { toast } from "@/hooks/use-toast";
-import { useInternalChatContacts, InternalContact } from "@/hooks/useInternalChatContacts";
+import { useInternalChatContacts, InternalContact, GENERAL_CHAT_ID } from "@/hooks/useInternalChatContacts";
 import { getRoleLabel } from "@/lib/roleUtils";
 
 interface InternalMessage {
@@ -43,40 +43,81 @@ export function InternalChat() {
     return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   };
 
-  const loadMessages = useCallback(async (contactId: string) => {
-    if (!user) return;
+  const loadMessages = useCallback(async (contact: InternalContact) => {
+    if (!contact) {
+      return;
+    }
+
+    const currentUserId = user?.id;
+    const isGroupChat = contact.isGroup || contact.id === GENERAL_CHAT_ID;
 
     try {
+      if (isGroupChat) {
+        const { data, error } = await supabase
+          .from('group_messages')
+          .select('id, message, created_at, user_id, user_name')
+          .order('created_at', { ascending: true });
+
+        if (error) {
+          throw error;
+        }
+
+        const groupMessages: InternalMessage[] = (data ?? []).map((msg) => ({
+          id: msg.id,
+          content: msg.message,
+          timestamp: msg.created_at,
+          isOutgoing: currentUserId ? msg.user_id === currentUserId : false,
+          from_user_name: msg.user_name || "",
+          to_user_name: contact.name,
+        }));
+
+        setMessages(groupMessages);
+        return;
+      }
+
+      if (!currentUserId) {
+        console.warn('Usuário não disponível para carregar mensagens privadas.');
+        return;
+      }
+
+      const orFilter = [
+        `and(from_user_id.eq.${currentUserId},to_user_id.eq.${contact.id})`,
+        `and(from_user_id.eq.${contact.id},to_user_id.eq.${currentUserId})`,
+      ].join(',');
+
       const { data, error } = await supabase
         .from('messages')
-        .select('*')
-        .or(`and(from_user_id.eq.${user.id},to_user_id.eq.${contactId}),and(from_user_id.eq.${contactId},to_user_id.eq.${user.id})`)
+        .select('id, message, created_at, from_user_id, to_user_id, from_user_name, to_user_name, viewed_at')
+        .or(orFilter)
         .order('created_at', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
-      const internalMessages: InternalMessage[] = (data || []).map((msg) => ({
+      const internalMessages: InternalMessage[] = (data ?? []).map((msg) => ({
         id: msg.id,
         content: msg.message,
         timestamp: msg.created_at,
-        isOutgoing: msg.from_user_id === user.id,
+        isOutgoing: msg.from_user_id === currentUserId,
         from_user_name: msg.from_user_name,
         to_user_name: msg.to_user_name,
       }));
 
       setMessages(internalMessages);
 
-      // Marcar mensagens como lidas
-      if (data && data.length > 0) {
-        const unreadIds = data
-          .filter(msg => msg.to_user_id === user.id && !msg.viewed_at)
-          .map(msg => msg.id);
+      const unreadIds = (data ?? [])
+        .filter((msg) => msg.to_user_id === currentUserId && !msg.viewed_at)
+        .map((msg) => msg.id);
 
-        if (unreadIds.length > 0) {
-          await supabase
-            .from('messages')
-            .update({ viewed_at: new Date().toISOString() })
-            .in('id', unreadIds);
+      if (unreadIds.length > 0) {
+        const { error: updateError } = await supabase
+          .from('messages')
+          .update({ viewed_at: new Date().toISOString() })
+          .in('id', unreadIds);
+
+        if (updateError) {
+          console.error('Erro ao marcar mensagens como lidas:', updateError);
         }
       }
     } catch (error) {
@@ -87,28 +128,40 @@ export function InternalChat() {
         variant: "destructive",
       });
     }
-  }, [user, toast]);
+  }, [user?.id, toast]);
 
   const sendMessage = async () => {
     if (!newMessage.trim() || !selectedContact || !user || isSending) return;
 
     setIsSending(true);
     try {
-      const { error } = await supabase
-        .from('messages')
-        .insert({
-          from_user_id: user.id,
-          to_user_id: selectedContact.id,
-          message: newMessage,
-          from_user_name: user.name,
-          to_user_name: selectedContact.name,
-          message_type: 'text',
-        });
+      if (selectedContact.isGroup) {
+        const { error } = await supabase
+          .from('group_messages')
+          .insert({
+            user_id: user.id,
+            message: newMessage,
+            user_name: user.name,
+          });
 
-      if (error) throw error;
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('messages')
+          .insert({
+            from_user_id: user.id,
+            to_user_id: selectedContact.id,
+            message: newMessage,
+            from_user_name: user.name,
+            to_user_name: selectedContact.name,
+            message_type: 'text',
+          });
+
+        if (error) throw error;
+      }
 
       setNewMessage("");
-      await loadMessages(selectedContact.id);
+      await loadMessages(selectedContact);
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
       toast({
@@ -121,44 +174,76 @@ export function InternalChat() {
     }
   };
 
-  const handleContactSelect = async (contact: InternalContact) => {
+  const handleContactSelect = useCallback((contact: InternalContact) => {
     setSelectedContact(contact);
     setNewMessage("");
     setMobileContactsOpen(false);
-    await loadMessages(contact.id);
-  };
+    setMessages([]);
+  }, []);
+
+  useEffect(() => {
+    if (selectedContact) {
+      loadMessages(selectedContact);
+    }
+  }, [selectedContact, loadMessages]);
 
   // Realtime updates
   useEffect(() => {
     if (!user) return;
 
-    const channel = supabase
+    const privateChannel = supabase
       .channel('internal-chat-messages')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages' },
         async (payload) => {
           const newMsg = payload.new;
-          
+
           // Se a mensagem é para este usuário ou deste usuário
           if (newMsg.to_user_id === user.id || newMsg.from_user_id === user.id) {
             // Atualizar lista de contatos
             await refetch({ silent: true });
 
             // Se a conversa está aberta, adicionar mensagem
-            if (selectedContact && 
+            if (selectedContact &&
+                !selectedContact.isGroup &&
                 (newMsg.from_user_id === selectedContact.id || newMsg.to_user_id === selectedContact.id)) {
-              await loadMessages(selectedContact.id);
+              await loadMessages(selectedContact);
             }
           }
         }
       )
       .subscribe();
 
+    const groupChannel = supabase
+      .channel('internal-group-chat')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'group_messages' },
+        async () => {
+          await refetch({ silent: true });
+
+          if (selectedContact?.isGroup) {
+            await loadMessages(selectedContact);
+          }
+        }
+      )
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(privateChannel);
+      supabase.removeChannel(groupChannel);
     };
   }, [user, selectedContact, loadMessages, refetch]);
+
+  useEffect(() => {
+    if (!selectedContact && contacts.length > 0) {
+      const generalContact = contacts.find((contact) => contact.id === GENERAL_CHAT_ID);
+      if (generalContact) {
+        handleContactSelect(generalContact);
+      }
+    }
+  }, [contacts, selectedContact, handleContactSelect]);
 
   // Auto scroll
   useEffect(() => {
@@ -239,9 +324,9 @@ export function InternalChat() {
                             )}
                           </div>
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          {getRoleLabel(contact.role as any)}
-                        </p>
+                          <p className="text-xs text-muted-foreground">
+                            {contact.isGroup ? 'Canal geral' : getRoleLabel(contact.role as any)}
+                          </p>
                         {contact.lastMessage && (
                           <p className="text-sm text-muted-foreground mt-1 whitespace-normal break-words line-clamp-2">
                             {contact.lastMessage}
@@ -316,7 +401,7 @@ export function InternalChat() {
                                 )}
                               </div>
                               <p className="text-xs text-muted-foreground">
-                                {getRoleLabel(contact.role as any)}
+                                {contact.isGroup ? 'Canal geral' : getRoleLabel(contact.role as any)}
                               </p>
                             </div>
                           </div>
@@ -337,7 +422,7 @@ export function InternalChat() {
                       {selectedContact.name}
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      {getRoleLabel(selectedContact.role as any)}
+                      {selectedContact.isGroup ? 'Canal geral' : getRoleLabel(selectedContact.role as any)}
                     </p>
                   </div>
                 </div>
@@ -361,6 +446,16 @@ export function InternalChat() {
                               : "bg-muted"
                           }`}
                         >
+                          {selectedContact.isGroup && (
+                            <span className={`text-xs font-semibold ${
+                              message.isOutgoing
+                                ? "text-primary-foreground/80"
+                                : "text-muted-foreground"
+                            }`}
+                            >
+                              {message.isOutgoing ? 'Você' : message.from_user_name || 'Participante'}
+                            </span>
+                          )}
                           <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
                             {message.content}
                           </p>
@@ -469,7 +564,7 @@ export function InternalChat() {
                                 )}
                               </div>
                               <p className="text-xs text-muted-foreground">
-                                {getRoleLabel(contact.role as any)}
+                                {contact.isGroup ? 'Canal geral' : getRoleLabel(contact.role as any)}
                               </p>
                             </div>
                           </div>
