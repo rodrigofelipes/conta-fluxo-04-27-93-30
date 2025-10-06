@@ -96,7 +96,7 @@ export function InternalChat() {
         id: msg.id,
         content: msg.message,
         timestamp: msg.created_at,
-        isOutgoing: msg.from_user_id === currentUserId,
+        isOutgoing: msg.from_user_id === user.id,
         from_user_name: msg.from_user_name,
         to_user_name: msg.to_user_name,
       }));
@@ -104,7 +104,7 @@ export function InternalChat() {
       setMessages(internalMessages);
 
       const unreadIds = (data ?? [])
-        .filter((msg) => msg.to_user_id === currentUserId && !msg.viewed_at)
+        .filter((msg) => msg.to_user_id === user.id && !msg.viewed_at)
         .map((msg) => msg.id);
 
       if (unreadIds.length > 0) {
