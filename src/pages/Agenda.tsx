@@ -2061,58 +2061,64 @@ export default function Agenda() {
         </TabsContent>
 
         <TabsContent value="atas" className="space-y-4 md:space-y-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="grid flex-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
+              <Select
+                value={sectorFilter}
+                onValueChange={(value: 'todos' | 'pessoal' | 'compartilhada') => setSectorFilter(value)}
+              >
+                <SelectTrigger className="h-11 w-full">
+                  <SelectValue placeholder="Filtrar por setor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos os setores</SelectItem>
+                  <SelectItem value="pessoal">Setor pessoal</SelectItem>
+                  <SelectItem value="compartilhada">Setor compartilhado</SelectItem>
+                </SelectContent>
+              </Select>
 
+              <Select
+                value={minutesTypeFilter}
+                onValueChange={value => setMinutesTypeFilter(value as 'all' | AgendaItem['tipo'])}
+              >
+                <SelectTrigger className="h-11 w-full">
+                  <SelectValue placeholder="Tipo de reunião" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os tipos</SelectItem>
+                  {sortedMinutesTypes.map(tipo => (
+                    <SelectItem key={tipo} value={tipo}>
+                      {getTipoLabel(tipo)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-          <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-            <Select
-              value={sectorFilter}
-              onValueChange={(value: 'todos' | 'pessoal' | 'compartilhada') => setSectorFilter(value)}
+              <Select
+                value={minutesLocationFilter}
+                onValueChange={value => setMinutesLocationFilter(value)}
+              >
+                <SelectTrigger className="h-11 w-full">
+                  <SelectValue placeholder="Local" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os locais</SelectItem>
+                  {availableMinutesLocations.map(location => (
+                    <SelectItem key={location} value={location}>
+                      {location}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              className="btn-hero h-11 w-full lg:w-auto"
+              onClick={() => handleMinutesDialogOpenChange(true)}
             >
-              <SelectTrigger className="h-11 w-full">
-                <SelectValue placeholder="Filtrar por setor" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos os setores</SelectItem>
-                <SelectItem value="pessoal">Setor pessoal</SelectItem>
-                <SelectItem value="compartilhada">Setor compartilhado</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={minutesTypeFilter}
-              onValueChange={value => setMinutesTypeFilter(value as 'all' | AgendaItem['tipo'])}
-            >
-              <SelectTrigger className="h-11 w-full">
-                <SelectValue placeholder="Tipo de reunião" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os tipos</SelectItem>
-                {sortedMinutesTypes.map(tipo => (
-                  <SelectItem key={tipo} value={tipo}>
-                    {getTipoLabel(tipo)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={minutesLocationFilter}
-              onValueChange={value => setMinutesLocationFilter(value)}
-            >
-              <SelectTrigger className="h-11 w-full">
-                <SelectValue placeholder="Local" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os locais</SelectItem>
-                {availableMinutesLocations.map(location => (
-                  <SelectItem key={location} value={location}>
-                    {location}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-
+              <NotebookPen className="mr-2 h-4 w-4" />
+              Registrar ata
+            </Button>
           </div>
 
           <Card className="border-muted-foreground/10 bg-card/50">
