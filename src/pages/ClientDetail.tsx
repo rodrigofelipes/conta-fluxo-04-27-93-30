@@ -486,7 +486,7 @@ export default function ClientDetail() {
       if (dbError) throw dbError;
 
       // Atualiza estado imediatamente para feedback visual rápido
-      setDocuments((prev) => prev.filter((d) => d.id !== documentToDelete.id));
+      setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
 
       toast({ title: 'Documento excluído', description: 'O documento foi removido com sucesso.' });
 
