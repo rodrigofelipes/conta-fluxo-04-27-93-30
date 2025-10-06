@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -199,8 +199,10 @@ export default function ClientDetail() {
     }
   };
 
+
   const fetchClientDocuments = useCallback(async () => {
     if (!id) return;
+
 
     const { data: documentsData, error: documentsError } = await supabase
       .from('client_documents')
@@ -247,6 +249,8 @@ export default function ClientDetail() {
     );
 
     setDocuments(docsWithUrls);
+
+
   }, [id]);
 
   const loadClientData = async () => {
@@ -458,6 +462,7 @@ export default function ClientDetail() {
   const handleDeleteDocument = async () => {
     const doc = documentToDelete;
     if (!doc) return;
+
     setIsDeletingDocument(true);
     try {
 
@@ -468,6 +473,7 @@ export default function ClientDetail() {
           .remove([documentToDelete.file_path]);
 
 
+
         if (storageError && storageError.message && storageError.message.toLowerCase().includes('not found')) {
           console.warn('Arquivo não encontrado no storage, prosseguindo com exclusão do registro.');
         } else if (storageError) {
@@ -475,15 +481,22 @@ export default function ClientDetail() {
         }
       }
 
-      const { error: dbError } = await supabase
+      const { data: deletedRows, error: dbError } = await supabase
         .from('client_documents')
         .delete()
+
         .eq('id', doc.id);
+
       if (dbError) throw dbError;
+      if (!deletedRows || deletedRows.length === 0) {
+        throw new Error('Documento não encontrado no banco de dados.');
+      }
 
       toast({ title: 'Documento excluído', description: 'O documento foi removido com sucesso.' });
 
+
       setDocuments((prev) => prev.filter((doc) => doc.id !== documentToDelete.id));
+
 
       setIsDeleteDocumentDialogOpen(false);
       setDocumentToDelete(null);
@@ -1646,7 +1659,10 @@ export default function ClientDetail() {
             <AlertDialogCancel disabled={isDeletingDocument}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={handleDeleteDocument}
+              onClick={async (event: ReactMouseEvent<HTMLButtonElement>) => {
+                event.preventDefault();
+                await handleDeleteDocument();
+              }}
               disabled={isDeletingDocument}
             >
               {isDeletingDocument ? 'Excluindo...' : 'Excluir'}
