@@ -1856,6 +1856,207 @@ export default function Agenda() {
 
 
 
+      <Dialog open={isMinutesDialogOpen} onOpenChange={handleMinutesDialogOpenChange}>
+
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Registrar ata de reunião</DialogTitle>
+            <DialogDescription>
+              Selecione um compromisso existente para preencher automaticamente os dados e registrar a ata.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-foreground" htmlFor="minutes-meeting-search">
+                  Buscar reunião
+                </label>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="minutes-meeting-search"
+                    placeholder="Busque por título, cliente, local ou data"
+                    value={minutesSearchTerm}
+                    onChange={event => setMinutesSearchTerm(event.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Clique em uma reunião para carregar os detalhes e registrar a ata.
+                </p>
+              </div>
+
+              <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                {searchedMinutesMeetings.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/10 p-4 text-center text-sm text-muted-foreground">
+                    Nenhuma reunião encontrada com os filtros e busca aplicados.
+                  </div>
+                ) : (
+                  searchedMinutesMeetings.map(meeting => {
+                    const isSelected = selectedMinutesMeetingId === meeting.id;
+                    return (
+                      <button
+                        key={meeting.id}
+                        type="button"
+                        onClick={() => handleSelectMinutesMeeting(meeting.id)}
+                        className={cn(
+                          "w-full rounded-lg border p-3 text-left transition-all hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+                          isSelected
+                            ? "border-primary bg-primary/10 shadow-sm"
+                            : "border-muted-foreground/20 bg-background"
+                        )}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold text-foreground">{meeting.titulo}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatDisplayDateRange(meeting.data, meeting.data_fim)}
+                              {meeting.horario && (
+                                <>
+                                  {' '}• {meeting.horario.substring(0, 5)}
+                                  {meeting.horario_fim && ` - ${meeting.horario_fim.substring(0, 5)}`}
+                                </>
+                              )}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {meeting.cliente || INTERNAL_MEETING_PLACEHOLDER} • {getLocationDisplay(meeting.local)}
+                            </p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                              {getTipoLabel(meeting.tipo)}
+                            </Badge>
+                            <Badge
+                              variant="secondary"
+                              className={`text-xs ${
+                                meeting.agenda_type === 'pessoal'
+                                  ? 'bg-yellow-500/10 text-yellow-700 border-yellow-500/30'
+                                  : 'bg-green-500/10 text-green-700 border-green-500/30'
+                              }`}
+                            >
+                              {meeting.agenda_type === 'pessoal' ? 'Pessoal' : 'Compartilhado'}
+                            </Badge>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {selectedMinutesMeeting && (
+              <div className="space-y-4 rounded-lg border border-muted-foreground/20 bg-muted/10 p-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Título
+                    </p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {selectedMinutesMeeting.titulo}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Tipo e setor
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                        {getTipoLabel(selectedMinutesMeeting.tipo)}
+                      </Badge>
+                      <Badge
+                        variant="secondary"
+                        className={`text-xs ${
+                          selectedMinutesMeeting.agenda_type === 'pessoal'
+                            ? 'bg-yellow-500/10 text-yellow-700 border-yellow-500/30'
+                            : 'bg-green-500/10 text-green-700 border-green-500/30'
+                        }`}
+                      >
+                        {selectedMinutesMeeting.agenda_type === 'pessoal' ? 'Pessoal' : 'Compartilhado'}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Data e horário
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {formatDisplayDateRange(selectedMinutesMeeting.data, selectedMinutesMeeting.data_fim)}
+                      {selectedMinutesMeeting.horario && (
+                        <>
+                          {' '}• {selectedMinutesMeeting.horario.substring(0, 5)}
+                          {selectedMinutesMeeting.horario_fim && ` - ${selectedMinutesMeeting.horario_fim.substring(0, 5)}`}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Local
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {getLocationDisplay(selectedMinutesMeeting.local)}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Cliente ou responsável
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {selectedMinutesMeeting.cliente || INTERNAL_MEETING_PLACEHOLDER}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Participantes
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {selectedMinutesMeeting.attendees_display || 'Equipe'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground" htmlFor="minutes-description">
+                Conteúdo da ata
+              </label>
+              <Textarea
+                id="minutes-description"
+                placeholder="Descreva os principais pontos discutidos, decisões e próximos passos."
+                rows={8}
+                value={minutesText}
+                onChange={event => setMinutesText(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Utilize este campo para registrar o resumo da reunião, responsáveis e prazos definidos.
+              </p>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                variant="outline"
+                onClick={() => handleMinutesDialogOpenChange(false)}
+                disabled={isSavingMinutes}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleSaveMinutes}
+                disabled={
+                  isSavingMinutes || !selectedMinutesMeeting || minutesText.trim().length === 0
+                }
+              >
+                {isSavingMinutes ? 'Salvando...' : 'Salvar ata'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+
       {/* Lista de próximos agendamentos (AGORA APENAS HOJE E AMANHÃ) */}
       <Card className="border-primary/20 shadow-sm">
         <CardHeader className="pb-4">
