@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,13 +17,7 @@ import { ProjectDocuments } from "@/components/projects/ProjectDocuments";
 import { ClientContactsCard } from "@/components/client/ClientContactsCard";
 import { useAuth } from "@/state/auth";
 
-type EditableProjectStatus = "pendente" | "em_andamento" | "em_obra" | "finalizado";
-
-type ProjectStatus =
-  | EditableProjectStatus
-  | "orçamento"
-  | "aguardando_retorno"
-  | "concluído";
+type ProjectStatus = Database["public"]["Enums"]["project_status"];
 
 interface Project {
   id: string;
@@ -43,27 +38,18 @@ interface Project {
 }
 
 const statusLabel: Record<ProjectStatus, string> = {
-  pendente: "Pendente",
-  em_andamento: "Em Andamento",
-  em_obra: "Em Obra",
-  finalizado: "Finalizado",
   "orçamento": "Orçamento",
   aguardando_retorno: "Aguardando Retorno",
-  concluído: "Concluído",
+  em_andamento: "Em Andamento",
+  em_obra: "Em Obra",
+  "concluído": "Concluído",
 };
 
-const editableStatuses: { value: EditableProjectStatus; label: string }[] = [
-  { value: "pendente", label: "Pendente" },
-  { value: "em_andamento", label: "Em Andamento" },
-  { value: "em_obra", label: "Em Obra" },
-  { value: "finalizado", label: "Finalizado" },
+const editableStatuses: ProjectStatus[] = [
+  "em_andamento",
+  "em_obra",
+  "concluído",
 ];
-
-const toEditableStatus = (status: ProjectStatus): EditableProjectStatus => {
-  if (status === "concluído") return "finalizado";
-  if (status === "orçamento" || status === "aguardando_retorno") return "pendente";
-  return (status as EditableProjectStatus) || "pendente";
-};
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -85,7 +71,7 @@ export default function ProjectDetail() {
     visits_count: 0,
     meetings_count: 0,
     briefing_document: "",
-    status: "pendente" as EditableProjectStatus,
+    status: "em_andamento" as ProjectStatus,
   });
 
   // Não redirecionar colaboradores - eles podem ver detalhes do projeto
@@ -137,7 +123,7 @@ export default function ProjectDetail() {
           visits_count: projectData.visits_count || 0,
           meetings_count: projectData.meetings_count || 0,
           briefing_document: projectData.briefing_document || "",
-          status: toEditableStatus(projectData.status),
+          status: projectData.status,
         });
         document.title = `Projeto: ${projectData.title}`;
       }
@@ -200,7 +186,7 @@ export default function ProjectDetail() {
       visits_count: project.visits_count || 0,
       meetings_count: project.meetings_count || 0,
       briefing_document: project.briefing_document || "",
-      status: toEditableStatus(project.status),
+      status: project.status,
     });
     setIsEditing(false);
   };
@@ -334,7 +320,7 @@ export default function ProjectDetail() {
                 <Label htmlFor="status">Status do Projeto</Label>
                 <Select
                   value={editData.status}
-                  onValueChange={(value) => setEditData({ ...editData, status: value as EditableProjectStatus })}
+                  onValueChange={(value) => setEditData({ ...editData, status: value as ProjectStatus })}
                   disabled={saving}
                 >
                   <SelectTrigger id="status">
@@ -342,8 +328,8 @@ export default function ProjectDetail() {
                   </SelectTrigger>
                   <SelectContent>
                     {editableStatuses.map((status) => (
-                      <SelectItem key={status.value} value={status.value}>
-                        {status.label}
+                      <SelectItem key={status} value={status}>
+                        {statusLabel[status]}
                       </SelectItem>
                     ))}
                   </SelectContent>

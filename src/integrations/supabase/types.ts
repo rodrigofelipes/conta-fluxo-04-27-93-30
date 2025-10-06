@@ -199,37 +199,64 @@ export type Database = {
       }
       client_documents: {
         Row: {
+          chunks_uploaded: number | null
           client_id: string
           created_at: string
           document_name: string
           document_type: string
+          file_hash: string | null
           file_path: string | null
           file_size: number | null
           id: string
+          total_chunks: number | null
           updated_at: string
+          upload_completed_at: string | null
+          upload_progress: number | null
+          upload_started_at: string | null
+          upload_status: string | null
           uploaded_by: string
+          verification_metadata: Json | null
+          verified_at: string | null
         }
         Insert: {
+          chunks_uploaded?: number | null
           client_id: string
           created_at?: string
           document_name: string
           document_type: string
+          file_hash?: string | null
           file_path?: string | null
           file_size?: number | null
           id?: string
+          total_chunks?: number | null
           updated_at?: string
+          upload_completed_at?: string | null
+          upload_progress?: number | null
+          upload_started_at?: string | null
+          upload_status?: string | null
           uploaded_by: string
+          verification_metadata?: Json | null
+          verified_at?: string | null
         }
         Update: {
+          chunks_uploaded?: number | null
           client_id?: string
           created_at?: string
           document_name?: string
           document_type?: string
+          file_hash?: string | null
           file_path?: string | null
           file_size?: number | null
           id?: string
+          total_chunks?: number | null
           updated_at?: string
+          upload_completed_at?: string | null
+          upload_progress?: number | null
+          upload_started_at?: string | null
+          upload_status?: string | null
           uploaded_by?: string
+          verification_metadata?: Json | null
+          verified_at?: string | null
         }
         Relationships: []
       }
@@ -456,6 +483,88 @@ export type Database = {
           whatsapp_status?: string
         }
         Relationships: []
+      }
+      document_events_log: {
+        Row: {
+          created_at: string | null
+          document_id: string | null
+          event_type: string
+          id: string
+          metadata: Json | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          document_id?: string | null
+          event_type: string
+          id?: string
+          metadata?: Json | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          document_id?: string | null
+          event_type?: string
+          id?: string
+          metadata?: Json | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_events_log_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "client_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      document_share_tokens: {
+        Row: {
+          access_count: number | null
+          created_at: string | null
+          created_by: string
+          document_id: string
+          expires_at: string
+          id: string
+          last_accessed_at: string | null
+          revoked_at: string | null
+          scope: string | null
+          token: string
+        }
+        Insert: {
+          access_count?: number | null
+          created_at?: string | null
+          created_by: string
+          document_id: string
+          expires_at: string
+          id?: string
+          last_accessed_at?: string | null
+          revoked_at?: string | null
+          scope?: string | null
+          token: string
+        }
+        Update: {
+          access_count?: number | null
+          created_at?: string | null
+          created_by?: string
+          document_id?: string
+          expires_at?: string
+          id?: string
+          last_accessed_at?: string | null
+          revoked_at?: string | null
+          scope?: string | null
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_share_tokens_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "client_documents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       expenses: {
         Row: {
@@ -1245,6 +1354,75 @@ export type Database = {
           },
         ]
       }
+      upload_metrics: {
+        Row: {
+          chunks_count: number | null
+          client_id: string | null
+          created_at: string | null
+          document_id: string | null
+          error_message: string | null
+          file_size: number
+          hash_duration_ms: number | null
+          id: string
+          retry_count: number | null
+          success: boolean
+          upload_duration_ms: number | null
+          upload_method: string
+          upload_speed_mbps: number | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          chunks_count?: number | null
+          client_id?: string | null
+          created_at?: string | null
+          document_id?: string | null
+          error_message?: string | null
+          file_size: number
+          hash_duration_ms?: number | null
+          id?: string
+          retry_count?: number | null
+          success: boolean
+          upload_duration_ms?: number | null
+          upload_method: string
+          upload_speed_mbps?: number | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          chunks_count?: number | null
+          client_id?: string | null
+          created_at?: string | null
+          document_id?: string | null
+          error_message?: string | null
+          file_size?: number
+          hash_duration_ms?: number | null
+          id?: string
+          retry_count?: number | null
+          success?: boolean
+          upload_duration_ms?: number | null
+          upload_method?: string
+          upload_speed_mbps?: number | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "upload_metrics_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "upload_metrics_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "client_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_alerts: {
         Row: {
           alert_type: string
@@ -1338,6 +1516,10 @@ export type Database = {
           updated_count: number
         }[]
       }
+      calculate_client_storage_usage: {
+        Args: { client_id_param: string }
+        Returns: number
+      }
       calculate_phase_loss: {
         Args: { phase_id_param: string }
         Returns: {
@@ -1350,6 +1532,14 @@ export type Database = {
       can_manage_phase: {
         Args: { phase_id_param: string; user_id_param: string }
         Returns: boolean
+      }
+      cleanup_orphaned_uploads: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          expired_tokens_count: number
+          incomplete_uploads_count: number
+          orphaned_files_count: number
+        }[]
       }
       complete_phase: {
         Args: { phase_id_param: string; user_id_param: string }
