@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,12 +11,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
-import { Calendar as CalendarIcon, Plus, Clock, MapPin, Edit, Trash2, ChevronLeft, ChevronRight, X, Gift } from "lucide-react";
+import {
+  Calendar as CalendarIcon,
+  Plus,
+  Clock,
+  MapPin,
+  Edit,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Gift,
+  NotebookPen
+} from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { toast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -192,6 +205,14 @@ interface Colaborador {
   email: string;
 }
 
+type MinutesGroup = {
+  type: AgendaItem["tipo"];
+  locations: {
+    location: string;
+    items: AgendaItem[];
+  }[];
+};
+
 const tiposReuniao = [
   {
     value: "reuniao_cliente",
@@ -255,6 +276,14 @@ export default function Agenda() {
     isMasterAdmin: boolean;
   } | null>(null);
   const [sectorFilter, setSectorFilter] = useState<'todos' | 'pessoal' | 'compartilhada'>('todos');
+  const [activeTab, setActiveTab] = useState<'agenda' | 'atas'>('agenda');
+  const [minutesTypeFilter, setMinutesTypeFilter] = useState<'all' | AgendaItem['tipo']>('all');
+  const [minutesLocationFilter, setMinutesLocationFilter] = useState<'all' | string>('all');
+  const [minutesDialogOpen, setMinutesDialogOpen] = useState(false);
+  const [selectedMinutesMeetingId, setSelectedMinutesMeetingId] = useState<string>("");
+  const [selectedMinutesMeeting, setSelectedMinutesMeeting] = useState<AgendaItem | null>(null);
+  const [minutesText, setMinutesText] = useState("");
+  const [isSavingMinutes, setIsSavingMinutes] = useState(false);
 
   // Hook para acessar as cores da paleta selecionada
   const { selectedGradient, gradientOptions } = useGradientDatabase();
@@ -610,6 +639,82 @@ export default function Agenda() {
     }
   };
 
+  const handleMinutesDialogOpenChange = (open: boolean) => {
+    if (!open) {
+      setSelectedMinutesMeetingId("");
+      setSelectedMinutesMeeting(null);
+      setMinutesText("");
+    }
+    setMinutesDialogOpen(open);
+  };
+
+  const handleSelectMinutesMeeting = (meetingId: string) => {
+    const meeting = agenda.find(item => item.id === meetingId) || null;
+    setSelectedMinutesMeetingId(meetingId);
+    setSelectedMinutesMeeting(meeting);
+    setMinutesText(meeting?.descricao || "");
+  };
+
+  const handleSaveMinutes = async () => {
+    if (!selectedMinutesMeeting) {
+      toast({
+        title: "Selecione a reunião",
+        description: "Escolha uma reunião para registrar a ata.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const trimmedMinutes = minutesText.trim();
+    if (trimmedMinutes.length === 0) {
+      toast({
+        title: "Ata obrigatória",
+        description: "Escreva os principais pontos antes de salvar.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setIsSavingMinutes(true);
+
+      const { error } = await supabase
+        .from('agenda')
+        .update({ descricao: trimmedMinutes })
+        .eq('id', selectedMinutesMeeting.id);
+
+      if (error) throw error;
+
+      setAgenda(prev =>
+        prev.map(item =>
+          item.id === selectedMinutesMeeting.id
+            ? { ...item, descricao: trimmedMinutes }
+            : item
+        )
+      );
+
+      setSelectedMinutesMeeting(current =>
+        current ? { ...current, descricao: trimmedMinutes } : current
+      );
+
+      toast({
+        title: "Ata registrada",
+        description: "As informações foram salvas com sucesso."
+      });
+
+      handleMinutesDialogOpenChange(false);
+    } catch (error) {
+      console.error('Erro ao salvar ata:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível salvar a ata. Tente novamente.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSavingMinutes(false);
+    }
+  };
+
   const getTipoColor = (tipo: string) => {
     return tiposReuniao.find(t => t.value === tipo)?.color || "bg-gray-500";
   };
@@ -619,6 +724,115 @@ export default function Agenda() {
   const getTipoGradient = (tipo: string) => {
     return tiposReuniao.find(t => t.value === tipo)?.gradient || "linear-gradient(135deg, #6b7280 0%, #9ca3af 100%)";
   };
+  const getLocationDisplay = (location?: string | null) => {
+    if (!location) return "Local não informado";
+    const trimmed = location.trim();
+    return trimmed.length > 0 ? trimmed : "Local não informado";
+  };
+
+  const filteredAgendaBySector = useMemo(() => {
+    return agenda.filter(item => {
+      if (sectorFilter === 'todos') return true;
+      return item.agenda_type === sectorFilter;
+    });
+  }, [agenda, sectorFilter]);
+
+  const availableMinutesTypes = useMemo(() => {
+    const unique = new Set<AgendaItem['tipo']>();
+    filteredAgendaBySector.forEach(item => unique.add(item.tipo));
+    return Array.from(unique);
+  }, [filteredAgendaBySector]);
+
+  const sortedMinutesTypes = useMemo(() => {
+    return [...availableMinutesTypes].sort((a, b) => getTipoLabel(a).localeCompare(getTipoLabel(b), 'pt-BR'));
+  }, [availableMinutesTypes]);
+
+  const availableMinutesLocations = useMemo(() => {
+    const unique = new Set<string>();
+    filteredAgendaBySector.forEach(item => unique.add(getLocationDisplay(item.local)));
+    return Array.from(unique).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [filteredAgendaBySector]);
+
+  const sortedAgendaForMinutes = useMemo(() => {
+    return [...agenda].sort((a, b) => {
+      const dateComparison = b.data.localeCompare(a.data);
+      if (dateComparison !== 0) return dateComparison;
+
+      if (a.horario && b.horario) {
+        return b.horario.localeCompare(a.horario);
+      }
+
+      if (a.horario) return -1;
+      if (b.horario) return 1;
+      return 0;
+    });
+  }, [agenda]);
+
+  useEffect(() => {
+    if (minutesTypeFilter !== 'all' && !availableMinutesTypes.includes(minutesTypeFilter)) {
+      setMinutesTypeFilter('all');
+    }
+  }, [availableMinutesTypes, minutesTypeFilter]);
+
+  useEffect(() => {
+    if (minutesLocationFilter !== 'all' && !availableMinutesLocations.includes(minutesLocationFilter)) {
+      setMinutesLocationFilter('all');
+    }
+  }, [availableMinutesLocations, minutesLocationFilter]);
+
+  const minutesGroups = useMemo<MinutesGroup[]>(() => {
+    const filtered = filteredAgendaBySector
+      .filter(item => minutesTypeFilter === 'all' || item.tipo === minutesTypeFilter)
+      .filter(item => minutesLocationFilter === 'all' || getLocationDisplay(item.local) === minutesLocationFilter);
+
+    const typeMap = new Map<AgendaItem['tipo'], Map<string, AgendaItem[]>>();
+
+    filtered.forEach(item => {
+      const locationKey = getLocationDisplay(item.local);
+      if (!typeMap.has(item.tipo)) {
+        typeMap.set(item.tipo, new Map());
+      }
+      const locationMap = typeMap.get(item.tipo)!;
+      if (!locationMap.has(locationKey)) {
+        locationMap.set(locationKey, []);
+      }
+      locationMap.get(locationKey)!.push(item);
+    });
+
+    const result: MinutesGroup[] = Array.from(typeMap.entries()).map(([type, locationMap]) => ({
+      type,
+      locations: Array.from(locationMap.entries())
+        .map(([location, items]) => ({
+          location,
+          items: [...items].sort((a, b) => {
+            const dateComparison = a.data.localeCompare(b.data);
+            if (dateComparison !== 0) return dateComparison;
+            if (a.horario && b.horario) {
+              return a.horario.localeCompare(b.horario);
+            }
+            return 0;
+          })
+        }))
+        .sort((a, b) => a.location.localeCompare(b.location, 'pt-BR'))
+    }));
+
+    return result.sort((a, b) => getTipoLabel(a.type).localeCompare(getTipoLabel(b.type), 'pt-BR'));
+  }, [filteredAgendaBySector, minutesTypeFilter, minutesLocationFilter]);
+
+  const minutesSummary = useMemo(() => {
+    const filtered = filteredAgendaBySector
+      .filter(item => minutesTypeFilter === 'all' || item.tipo === minutesTypeFilter)
+      .filter(item => minutesLocationFilter === 'all' || getLocationDisplay(item.local) === minutesLocationFilter);
+
+    const uniqueTypes = new Set(filtered.map(item => item.tipo));
+    const uniqueLocations = new Set(filtered.map(item => getLocationDisplay(item.local)));
+
+    return {
+      total: filtered.length,
+      types: uniqueTypes.size,
+      locations: uniqueLocations.size
+    };
+  }, [filteredAgendaBySector, minutesTypeFilter, minutesLocationFilter]);
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -686,7 +900,22 @@ export default function Agenda() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader title="Agenda" subtitle="Organização de reuniões, visitas e apresentações" />
       
-      <div className="space-y-3 md:space-y-4">
+      <Tabs
+        value={activeTab}
+        onValueChange={value => setActiveTab(value as 'agenda' | 'atas')}
+        className="space-y-4 md:space-y-6"
+      >
+        <TabsList className="grid w-full grid-cols-2 sm:inline-flex sm:w-auto">
+          <TabsTrigger value="agenda" className="w-full">
+            Agenda
+          </TabsTrigger>
+          <TabsTrigger value="atas" className="w-full">
+            Atas
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="agenda" className="space-y-4 md:space-y-6">
+          <div className="space-y-3 md:space-y-4">
         {/* Primeira linha - Navegação do Calendário e Botão Novo Agendamento */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 md:gap-3">
           <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -1557,6 +1786,150 @@ export default function Agenda() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <Dialog open={minutesDialogOpen} onOpenChange={handleMinutesDialogOpenChange}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Registrar ata de reunião</DialogTitle>
+            <DialogDescription>
+              Selecione um compromisso existente para preencher automaticamente os dados e registrar a ata.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground" htmlFor="minutes-meeting-select">
+                Reunião
+              </label>
+              <Select
+                value={selectedMinutesMeetingId}
+                onValueChange={handleSelectMinutesMeeting}
+              >
+                <SelectTrigger id="minutes-meeting-select" className="h-11 w-full">
+                  <SelectValue placeholder="Selecione a reunião" />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {sortedAgendaForMinutes.map(meeting => (
+                    <SelectItem key={meeting.id} value={meeting.id}>
+                      {`${formatDisplayDateRange(meeting.data, meeting.data_fim)} • ${meeting.titulo}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Os detalhes da reunião são preenchidos automaticamente após a seleção.
+              </p>
+            </div>
+
+            {selectedMinutesMeeting && (
+              <div className="space-y-4 rounded-lg border border-muted-foreground/20 bg-muted/10 p-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Título
+                    </p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {selectedMinutesMeeting.titulo}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Tipo e setor
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                        {getTipoLabel(selectedMinutesMeeting.tipo)}
+                      </Badge>
+                      <Badge
+                        variant="secondary"
+                        className={`text-xs ${
+                          selectedMinutesMeeting.agenda_type === 'pessoal'
+                            ? 'bg-yellow-500/10 text-yellow-700 border-yellow-500/30'
+                            : 'bg-green-500/10 text-green-700 border-green-500/30'
+                        }`}
+                      >
+                        {selectedMinutesMeeting.agenda_type === 'pessoal' ? 'Pessoal' : 'Compartilhado'}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Data e horário
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {formatDisplayDateRange(selectedMinutesMeeting.data, selectedMinutesMeeting.data_fim)}
+                      {selectedMinutesMeeting.horario && (
+                        <>
+                          {' '}• {selectedMinutesMeeting.horario.substring(0, 5)}
+                          {selectedMinutesMeeting.horario_fim && ` - ${selectedMinutesMeeting.horario_fim.substring(0, 5)}`}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Local
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {getLocationDisplay(selectedMinutesMeeting.local)}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Cliente ou responsável
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {selectedMinutesMeeting.cliente || INTERNAL_MEETING_PLACEHOLDER}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Participantes
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {selectedMinutesMeeting.attendees_display || 'Equipe'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground" htmlFor="minutes-description">
+                Conteúdo da ata
+              </label>
+              <Textarea
+                id="minutes-description"
+                placeholder="Descreva os principais pontos discutidos, decisões e próximos passos."
+                rows={8}
+                value={minutesText}
+                onChange={event => setMinutesText(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Utilize este campo para registrar o resumo da reunião, responsáveis e prazos definidos.
+              </p>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                variant="outline"
+                onClick={() => handleMinutesDialogOpenChange(false)}
+                disabled={isSavingMinutes}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleSaveMinutes}
+                disabled={
+                  isSavingMinutes || !selectedMinutesMeeting || minutesText.trim().length === 0
+                }
+              >
+                {isSavingMinutes ? 'Salvando...' : 'Salvar ata'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Lista de próximos agendamentos (AGORA APENAS HOJE E AMANHÃ) */}
       <Card className="border-primary/20 shadow-sm">
         <CardHeader className="pb-4">
@@ -1638,8 +2011,223 @@ export default function Agenda() {
         </CardContent>
       </Card>
       
-      <HolidayDialog open={isHolidayDialogOpen} onOpenChange={setIsHolidayDialogOpen} onHolidayCreated={loadData} />
-      <HolidaySyncDialog open={isHolidaySyncDialogOpen} onOpenChange={setIsHolidaySyncDialogOpen} onHolidaysSynced={loadData} />
+          <HolidayDialog open={isHolidayDialogOpen} onOpenChange={setIsHolidayDialogOpen} onHolidayCreated={loadData} />
+          <HolidaySyncDialog
+            open={isHolidaySyncDialogOpen}
+            onOpenChange={setIsHolidaySyncDialogOpen}
+            onHolidaysSynced={loadData}
+          />
+        </TabsContent>
+
+        <TabsContent value="atas" className="space-y-4 md:space-y-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="grid flex-1 min-w-0 gap-2 md:grid-cols-2 lg:grid-cols-3">
+              <Select
+                value={sectorFilter}
+                onValueChange={(value: 'todos' | 'pessoal' | 'compartilhada') => setSectorFilter(value)}
+              >
+                <SelectTrigger className="h-11 w-full">
+                  <SelectValue placeholder="Filtrar por setor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos os setores</SelectItem>
+                  <SelectItem value="pessoal">Setor pessoal</SelectItem>
+                  <SelectItem value="compartilhada">Setor compartilhado</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={minutesTypeFilter}
+                onValueChange={value => setMinutesTypeFilter(value as 'all' | AgendaItem['tipo'])}
+              >
+                <SelectTrigger className="h-11 w-full">
+                  <SelectValue placeholder="Tipo de reunião" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os tipos</SelectItem>
+                  {sortedMinutesTypes.map(tipo => (
+                    <SelectItem key={tipo} value={tipo}>
+                      {getTipoLabel(tipo)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={minutesLocationFilter}
+                onValueChange={value => setMinutesLocationFilter(value)}
+              >
+                <SelectTrigger className="h-11 w-full">
+                  <SelectValue placeholder="Local" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os locais</SelectItem>
+                  {availableMinutesLocations.map(location => (
+                    <SelectItem key={location} value={location}>
+                      {location}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              onClick={() => handleMinutesDialogOpenChange(true)}
+              className="h-11 w-full md:w-auto"
+              disabled={sortedAgendaForMinutes.length === 0}
+            >
+              <NotebookPen className="mr-2 h-4 w-4" />
+              Registrar ata
+            </Button>
+          </div>
+
+          <Card className="border-muted-foreground/10 bg-card/50">
+            <CardContent className="grid gap-4 py-6 sm:grid-cols-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Atas cadastradas</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{minutesSummary.total}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tipos de reunião</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{minutesSummary.types}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Locais registrados</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{minutesSummary.locations}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {minutesGroups.length === 0 ? (
+            <Card className="border-dashed border-muted-foreground/40 bg-card/40">
+              <CardContent className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+                <NotebookPen className="h-10 w-10 text-muted-foreground/60" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Nenhuma ata encontrada</p>
+                  <p className="text-xs text-muted-foreground/80">
+                    Cadastre agendamentos ou ajuste os filtros para visualizar as atas.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              {minutesGroups.map(group => {
+                const totalGroupMinutes = group.locations.reduce(
+                  (total, location) => total + location.items.length,
+                  0
+                );
+
+                return (
+                  <div key={group.type} className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="flex h-10 w-10 items-center justify-center rounded-full text-white shadow-sm"
+                          style={{ background: getTipoGradient(group.type) }}
+                        >
+                          <NotebookPen className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-foreground">{getTipoLabel(group.type)}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {totalGroupMinutes} {totalGroupMinutes === 1 ? 'ata registrada' : 'atas registradas'}
+                          </p>
+                        </div>
+                      </div>
+                      <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                        {totalGroupMinutes} {totalGroupMinutes === 1 ? 'registro' : 'registros'}
+                      </Badge>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {group.locations.map(locationGroup => (
+                        <Card
+                          key={`${group.type}-${locationGroup.location}`}
+                          className="border-muted-foreground/20 bg-card/80 shadow-sm transition-colors hover:border-primary/30"
+                        >
+                          <CardHeader className="pb-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3">
+                                <div className="rounded-md bg-primary/10 p-2 text-primary">
+                                  <MapPin className="h-4 w-4" />
+                                </div>
+                                <div>
+                                  <CardTitle className="text-base font-semibold text-foreground">
+                                    {locationGroup.location}
+                                  </CardTitle>
+                                  <p className="text-xs text-muted-foreground">
+                                    {locationGroup.items.length}{' '}
+                                    {locationGroup.items.length === 1 ? 'reunião registrada' : 'reuniões registradas'}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            {locationGroup.items.map(item => (
+                              <div
+                                key={item.id}
+                                className="space-y-3 rounded-lg border border-muted-foreground/10 bg-background/60 p-4"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                  <div className="text-sm font-semibold text-foreground">
+                                    {formatDisplayDateRange(item.data, item.data_fim)}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <Badge
+                                      variant="secondary"
+                                      className={`text-xs ${
+                                        item.agenda_type === 'pessoal'
+                                          ? 'bg-yellow-500/10 text-yellow-700 border-yellow-500/30'
+                                          : 'bg-green-500/10 text-green-700 border-green-500/30'
+                                      }`}
+                                    >
+                                      {item.agenda_type === 'pessoal' ? 'Pessoal' : 'Compartilhada'}
+                                    </Badge>
+                                    <span>
+                                      {item.horario.substring(0, 5)}
+                                      {item.horario_fim && ` - ${item.horario_fim.substring(0, 5)}`}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2 text-sm text-muted-foreground">
+                                  <div className="flex items-center gap-2">
+                                    <CalendarIcon className="h-4 w-4" />
+                                    <span>{item.cliente || INTERNAL_MEETING_PLACEHOLDER}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Clock className="h-4 w-4" />
+                                    <span>Participantes: {item.attendees_display || 'Equipe'}</span>
+                                  </div>
+                                </div>
+
+                                {item.descricao ? (
+                                  <div className="rounded-md border border-muted-foreground/10 bg-card/70 p-3 text-sm leading-relaxed text-foreground">
+                                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
+                                      Resumo da ata
+                                    </div>
+                                    <p>{item.descricao}</p>
+                                  </div>
+                                ) : (
+                                  <p className="text-xs italic text-muted-foreground/80">
+                                    Nenhuma observação registrada para esta reunião.
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
