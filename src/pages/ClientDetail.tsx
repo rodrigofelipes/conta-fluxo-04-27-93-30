@@ -465,14 +465,11 @@ export default function ClientDetail() {
 
     setIsDeletingDocument(true);
     try {
-
       if (documentToDelete.file_path) {
         const { error: storageError } = await supabase
           .storage
           .from('client-documents')
           .remove([documentToDelete.file_path]);
-
-
 
         if (storageError && storageError.message && storageError.message.toLowerCase().includes('not found')) {
           console.warn('Arquivo não encontrado no storage, prosseguindo com exclusão do registro.');
@@ -481,26 +478,28 @@ export default function ClientDetail() {
         }
       }
 
-      const { data: deletedRows, error: dbError } = await supabase
+      const { error: dbError } = await supabase
         .from('client_documents')
         .delete()
-
         .eq('id', doc.id);
 
       if (dbError) throw dbError;
-      if (!deletedRows || deletedRows.length === 0) {
-        throw new Error('Documento não encontrado no banco de dados.');
-      }
+
+      // Atualiza estado imediatamente para feedback visual rápido
+      setDocuments((prev) => prev.filter((d) => d.id !== documentToDelete.id));
 
       toast({ title: 'Documento excluído', description: 'O documento foi removido com sucesso.' });
 
-
-      setDocuments((prev) => prev.filter((doc) => doc.id !== documentToDelete.id));
-
-
       setIsDeleteDocumentDialogOpen(false);
       setDocumentToDelete(null);
-      await fetchClientDocuments();
+
+      // Recarrega lista completa do servidor para garantir sincronização
+      try {
+        await fetchClientDocuments();
+      } catch (fetchError) {
+        console.error('Erro ao recarregar documentos após exclusão:', fetchError);
+        // Não exibe erro ao usuário pois a exclusão foi bem-sucedida
+      }
     } catch (error) {
       console.error(error);
       toast({ title: 'Erro', description: 'Não foi possível excluir o documento.', variant: 'destructive' });
