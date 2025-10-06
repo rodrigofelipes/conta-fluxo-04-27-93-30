@@ -15,8 +15,10 @@ import {
   AlertCircle,
   Plus,
   CreditCard,
-  Filter
+  Filter,
+  ChevronDown
 } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -42,6 +44,8 @@ interface FinancialTransaction {
   client?: string;
   transaction_category: string;
   transaction_type: string;
+  recurrence_type?: string | null;
+  created_at: string;
 }
 
 interface Client {
@@ -80,6 +84,7 @@ export function UnifiedFinancialTab({
   const [viewFilter, setViewFilter] = useState<ViewFilter>('all');
   const [isInstallmentDialogOpen, setIsInstallmentDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [openTransactionGroups, setOpenTransactionGroups] = useState<Record<string, boolean>>({});
 
   const installmentForm = useForm<z.infer<typeof installmentFormSchema>>({
     resolver: zodResolver(installmentFormSchema),
@@ -227,6 +232,97 @@ export function UnifiedFinancialTab({
     }).format(value);
   };
 
+  type TransactionListItem =
+    | { type: 'single'; transaction: FinancialTransaction }
+    | {
+        type: 'group';
+        key: string;
+        description: string;
+        transactions: FinancialTransaction[];
+        totalAmount: number;
+        firstDate: string;
+        lastDate: string;
+        client?: string;
+        transaction_category: string;
+        transaction_type: string;
+        statusInfo: { label: string; color: string };
+        pendingCount: number;
+        paidCount: number;
+        overdueCount: number;
+      };
+
+  const groupTransactions = (transactionList: FinancialTransaction[]): TransactionListItem[] => {
+    const groups = new Map<string, FinancialTransaction[]>();
+
+    transactionList.forEach(transaction => {
+      if (transaction.recurrence_type === 'monthly') {
+        const key = `${transaction.description}|${transaction.created_at}`;
+        const existing = groups.get(key) ?? [];
+        existing.push(transaction);
+        groups.set(key, existing);
+      }
+    });
+
+    const items: TransactionListItem[] = [];
+    const seenGroups = new Set<string>();
+
+    transactionList.forEach(transaction => {
+      if (transaction.recurrence_type === 'monthly') {
+        const key = `${transaction.description}|${transaction.created_at}`;
+        if (seenGroups.has(key)) {
+          return;
+        }
+        seenGroups.add(key);
+
+        const groupItems = groups.get(key) ?? [transaction];
+        const sortedItems = [...groupItems].sort(
+          (a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime()
+        );
+        const totalAmount = sortedItems.reduce((sum, item) => sum + item.amount, 0);
+
+        const hasPending = sortedItems.some(item => item.status === 'pending');
+        const hasPaid = sortedItems.some(item => item.status === 'paid');
+        const hasOverdue = sortedItems.some(item => item.status === 'overdue');
+
+        let statusLabel = 'Parcelado';
+        let statusColor = getStatusColor('pending');
+        if (hasPending && !hasPaid && !hasOverdue) {
+          statusLabel = 'Pendente';
+          statusColor = getStatusColor('pending');
+        } else if (!hasPending && hasPaid && !hasOverdue) {
+          statusLabel = 'Pago/Recebido';
+          statusColor = getStatusColor('paid');
+        } else if (hasPending && hasPaid) {
+          statusLabel = 'Em andamento';
+        } else if (hasOverdue) {
+          statusLabel = 'Em Atraso';
+          statusColor = getStatusColor('overdue');
+        }
+
+        items.push({
+          type: 'group',
+          key,
+          description: transaction.description,
+          transactions: sortedItems,
+          totalAmount,
+          firstDate: sortedItems[0]?.transaction_date ?? transaction.transaction_date,
+          lastDate: sortedItems[sortedItems.length - 1]?.transaction_date ?? transaction.transaction_date,
+          client: transaction.client,
+          transaction_category: transaction.transaction_category,
+          transaction_type: transaction.transaction_type,
+          statusInfo: { label: statusLabel, color: statusColor },
+          pendingCount: sortedItems.filter(item => item.status === 'pending').length,
+          paidCount: sortedItems.filter(item => item.status === 'paid').length,
+          overdueCount: sortedItems.filter(item => item.status === 'overdue').length,
+        });
+      } else {
+        items.push({ type: 'single', transaction });
+      }
+    });
+
+    return items;
+  };
+
   const getFilteredData = () => {
     switch (viewFilter) {
       case 'receivables':
@@ -241,6 +337,7 @@ export function UnifiedFinancialTab({
   };
 
   const filteredData = getFilteredData();
+  const groupedTransactions = groupTransactions(filteredData.transactions);
 
   const renderSummaryCards = () => {
     if (viewFilter === 'receivables' || viewFilter === 'all') {
@@ -526,57 +623,127 @@ export function UnifiedFinancialTab({
                 <div className="text-sm">Clique em "Nova Cobrança Parcelada" para começar</div>
               </div>
             )
-          ) : (
-            // Tabela de transações
-            filteredData.transactions.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Descrição</TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Categoria</TableHead>
-                    <TableHead>Valor</TableHead>
-                    <TableHead>Data</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredData.transactions.map((transaction) => (
-                    <TableRow key={transaction.id}>
-                      <TableCell className="font-medium">
-                        {transaction.description}
-                      </TableCell>
-                      <TableCell>{transaction.client || '-'}</TableCell>
-                      <TableCell>
-                        <Badge className={getCategoryColor(transaction.transaction_category)}>
-                          {getCategoryLabel(transaction.transaction_category)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className={`font-semibold ${
-                        transaction.transaction_type === 'income' ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {formatCurrency(transaction.amount)}
-                      </TableCell>
-                      <TableCell>
-                        {format(new Date(transaction.transaction_date), "dd/MM/yyyy", { locale: ptBR })}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getStatusColor(transaction.status)}>
-                          {getStatusLabel(transaction.status)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {transaction.status === 'pending' && (
-                          <Button size="sm" variant="outline">
-                            {transaction.transaction_type === 'income' ? 'Marcar Recebido' : 'Marcar Pago'}
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+           ) : (
+            // Tabela/Lista de transações
+            groupedTransactions.length > 0 ? (
+              <div className="space-y-4">
+                {groupedTransactions.map((item) => {
+                  if (item.type === 'single') {
+                    const transaction = item.transaction;
+                    return (
+                      <div key={`single-${transaction.id}`} className="flex flex-col gap-4 rounded-lg border p-4 md:flex-row md:items-center md:justify-between">
+                        <div className="flex-1">
+                          <div className="mb-2 flex flex-wrap items-center gap-2">
+                            <h4 className="font-medium">{transaction.description}</h4>
+                            <Badge className={getStatusColor(transaction.status)}>
+                              {getStatusLabel(transaction.status)}
+                            </Badge>
+                            <Badge className={getCategoryColor(transaction.transaction_category)}>
+                              {getCategoryLabel(transaction.transaction_category)}
+                            </Badge>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                            <span className={transaction.transaction_type === 'income' ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
+                              {formatCurrency(transaction.amount)}
+                            </span>
+                            <span>{format(new Date(transaction.transaction_date), "dd/MM/yyyy", { locale: ptBR })}</span>
+                            {transaction.client && <span>{transaction.client}</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {transaction.status === 'pending' && (
+                            <Button size="sm" variant="outline">
+                              {transaction.transaction_type === 'income' ? 'Marcar Recebido' : 'Marcar Pago'}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const isOpen = Boolean(openTransactionGroups[item.key]);
+
+                  return (
+                    <Collapsible
+                      key={`group-${item.key}`}
+                      open={isOpen}
+                      onOpenChange={open =>
+                        setOpenTransactionGroups(prev => ({
+                          ...prev,
+                          [item.key]: open,
+                        }))
+                      }
+                    >
+                      <div className="rounded-lg border">
+                        <CollapsibleTrigger asChild>
+                          <button
+                            type="button"
+                            className="flex w-full flex-col gap-3 p-4 text-left transition-colors hover:bg-muted/40"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h4 className="font-medium">{item.description}</h4>
+                                <Badge variant="outline">Parcelado ({item.transactions.length}x)</Badge>
+                                <Badge className={item.statusInfo.color}>{item.statusInfo.label}</Badge>
+                                <Badge className={getCategoryColor(item.transaction_category)}>
+                                  {getCategoryLabel(item.transaction_category)}
+                                </Badge>
+                              </div>
+                              <ChevronDown
+                                className={`h-4 w-4 shrink-0 transition-transform ${isOpen ? '-rotate-180' : 'rotate-0'}`}
+                              />
+                            </div>
+                            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                              <span className={item.transaction_type === 'income' ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
+                                Total: {formatCurrency(item.totalAmount)}
+                              </span>
+                              <span>
+                                {format(new Date(item.firstDate), "dd/MM/yyyy", { locale: ptBR })} - {format(new Date(item.lastDate), "dd/MM/yyyy", { locale: ptBR })}
+                              </span>
+                              {item.pendingCount > 0 && <span>{item.pendingCount} pendente(s)</span>}
+                              {item.paidCount > 0 && <span>{item.paidCount} pago(s)</span>}
+                              {item.overdueCount > 0 && <span>{item.overdueCount} em atraso</span>}
+                              {item.client && <span>{item.client}</span>}
+                            </div>
+                          </button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="space-y-3 border-t p-4">
+                          {item.transactions.map((transaction, index) => (
+                            <div
+                              key={`${item.key}-${transaction.id}`}
+                              className="flex flex-col gap-3 rounded-md border p-3 md:flex-row md:items-center md:justify-between"
+                            >
+                              <div className="space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="font-medium">
+                                    Parcela {index + 1} de {item.transactions.length}
+                                  </p>
+                                  <Badge className={getStatusColor(transaction.status)}>
+                                    {getStatusLabel(transaction.status)}
+                                  </Badge>
+                                </div>
+                                <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                                  <span className={transaction.transaction_type === 'income' ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
+                                    {formatCurrency(transaction.amount)}
+                                  </span>
+                                  <span>{format(new Date(transaction.transaction_date), "dd/MM/yyyy", { locale: ptBR })}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {transaction.status === 'pending' && (
+                                  <Button size="sm" variant="outline">
+                                    {transaction.transaction_type === 'income' ? 'Marcar Recebido' : 'Marcar Pago'}
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </CollapsibleContent>
+                      </div>
+                    </Collapsible>
+                  );
+                })}
+              </div>
             ) : (
               <div className="text-center py-12 text-muted-foreground">
                 <DollarSign className="w-12 h-12 mx-auto mb-4 opacity-50" />

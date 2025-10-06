@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, DollarSign, Calendar, User2, Trash2, Pencil, Tag } from "lucide-react";
+import { Plus, DollarSign, Calendar, User2, Trash2, Pencil, Tag, ChevronDown } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/state/auth";
@@ -95,6 +96,7 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
   const [savingIncome, setSavingIncome] = useState(false);
   const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null);
   const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
+  const [openInstallmentGroups, setOpenInstallmentGroups] = useState<Record<string, boolean>>({});
 
   const [categoryForm, setCategoryForm] = useState({
     name: "",
@@ -541,6 +543,127 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
     [incomes],
   );
 
+  type StatusBadgeVariant = "default" | "secondary" | "destructive" | "outline";
+
+  const getGroupStatusInfo = (installments: IncomeRecord[]): { label: string; variant: StatusBadgeVariant } => {
+    const hasPending = installments.some(item => item.status === 'pending');
+    const hasPaid = installments.some(item => item.status === 'paid');
+    const hasOverdue = installments.some(item => item.status === 'overdue');
+    const hasCancelled = installments.some(item => item.status === 'cancelled');
+
+    if (hasPending && !hasPaid && !hasOverdue && !hasCancelled) {
+      return { label: 'Pendente', variant: STATUS_VARIANTS['pending'] };
+    }
+
+    if (!hasPending && hasPaid && !hasOverdue && !hasCancelled) {
+      return { label: 'Recebida', variant: STATUS_VARIANTS['paid'] };
+    }
+
+    if (!hasPending && !hasPaid && hasCancelled) {
+      return { label: 'Cancelada', variant: STATUS_VARIANTS['cancelled'] };
+    }
+
+    if (hasPending && hasPaid) {
+      return { label: 'Em andamento', variant: 'outline' };
+    }
+
+    if (hasOverdue) {
+      return { label: 'Em Atraso', variant: STATUS_VARIANTS['overdue'] };
+    }
+
+    return { label: 'Parcelado', variant: 'outline' };
+  };
+
+  type IncomeListItem =
+    | { type: 'single'; income: IncomeRecord }
+    | {
+        type: 'installment';
+        key: string;
+        description: string;
+        incomes: IncomeRecord[];
+        totalAmount: number;
+        firstDueDate: string;
+        lastDueDate: string;
+        category?: FinancialCategory;
+        client_name?: string | null;
+        statusInfo: { label: string; variant: StatusBadgeVariant };
+        pendingCount: number;
+        paidCount: number;
+        overdueCount: number;
+        cancelledCount: number;
+      };
+
+  const incomeItems = useMemo<IncomeListItem[]>(() => {
+    const groups = new Map<string, IncomeRecord[]>();
+
+    incomes.forEach(income => {
+      if (income.recurrence_type === 'monthly') {
+        const key = `${income.description}|${income.created_at}`;
+        const existing = groups.get(key) ?? [];
+        existing.push(income);
+        groups.set(key, existing);
+      }
+    });
+
+    const items: IncomeListItem[] = [];
+    const seenGroups = new Set<string>();
+
+    incomes.forEach(income => {
+      if (income.recurrence_type === 'monthly') {
+        const key = `${income.description}|${income.created_at}`;
+        if (seenGroups.has(key)) {
+          return;
+        }
+        seenGroups.add(key);
+
+        const installments = groups.get(key) ?? [income];
+        const sortedInstallments = [...installments].sort(
+          (a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime()
+        );
+        const totalAmount = sortedInstallments.reduce((sum, item) => sum + item.amount, 0);
+
+        items.push({
+          type: 'installment',
+          key,
+          description: income.description,
+          incomes: sortedInstallments,
+          totalAmount,
+          firstDueDate: sortedInstallments[0]?.transaction_date ?? income.transaction_date,
+          lastDueDate:
+            sortedInstallments[sortedInstallments.length - 1]?.transaction_date ?? income.transaction_date,
+          category: income.category,
+          client_name: income.client_name,
+          statusInfo: getGroupStatusInfo(sortedInstallments),
+          pendingCount: sortedInstallments.filter(item => item.status === 'pending').length,
+          paidCount: sortedInstallments.filter(item => item.status === 'paid').length,
+          overdueCount: sortedInstallments.filter(item => item.status === 'overdue').length,
+          cancelledCount: sortedInstallments.filter(item => item.status === 'cancelled').length,
+        });
+      } else {
+        items.push({ type: 'single', income });
+      }
+    });
+
+    return items;
+  }, [incomes]);
+
+  useEffect(() => {
+    setOpenInstallmentGroups(prev => {
+      const validKeys = new Set(
+        incomeItems.filter(item => item.type === 'installment').map(item => item.key)
+      );
+
+      const next: Record<string, boolean> = {};
+      validKeys.forEach(key => {
+        if (prev[key]) {
+          next[key] = true;
+        }
+      });
+
+      return next;
+    });
+  }, [incomeItems]);
+
   const normalizedAmountPreview = parseAmount(incomeForm.amount);
   const installmentCountNumber = parseInt(incomeForm.installmentCount, 10);
   const showInstallmentPreview =
@@ -850,52 +973,138 @@ export function IncomeManagement({ onDataChange }: IncomeManagementProps) {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {incomes.map(income => (
-              <div key={income.id} className="flex items-center justify-between p-4 border rounded-lg">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h4 className="font-medium">{income.description}</h4>
-                    <Badge variant={STATUS_VARIANTS[income.status] || "outline"}>
-                      {STATUS_LABELS[income.status]}
-                    </Badge>
-                    {income.client_name && (
-                      <Badge variant="outline">{income.client_name}</Badge>
-                    )}
-                    {income.category && (
-                      <Badge variant={getCategoryTypeBadgeVariant(income.category.category_type)}>
-                        {income.category.name}
-                      </Badge>
-                    )}
+            {incomeItems.map(item => {
+              if (item.type === 'single') {
+                const income = item.income;
+                return (
+                  <div key={`single-${income.id}`} className="flex flex-col gap-4 rounded-lg border p-4 md:flex-row md:items-center md:justify-between">
+                    <div className="flex-1">
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <h4 className="font-medium">{income.description}</h4>
+                        <Badge variant={STATUS_VARIANTS[income.status] || "outline"}>
+                          {STATUS_LABELS[income.status]}
+                        </Badge>
+                        {income.client_name && (
+                          <Badge variant="outline">{income.client_name}</Badge>
+                        )}
+                        {income.category && (
+                          <Badge variant={getCategoryTypeBadgeVariant(income.category.category_type)}>
+                            {income.category.name}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                        <span>R$ {income.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                        <span>{new Date(income.transaction_date).toLocaleDateString("pt-BR")}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => startEditIncome(income)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      {income.status !== "paid" && income.status !== "cancelled" && (
+                        <Button size="sm" onClick={() => updateIncomeStatus(income.id, "paid")}>
+                          Marcar como Recebida
+                        </Button>
+                      )}
+                      <Button variant="destructive" size="sm" onClick={() => deleteIncome(income.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span>R$ {income.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-                    <span>{new Date(income.transaction_date).toLocaleDateString("pt-BR")}</span>
+                );
+              }
+
+              const isOpen = Boolean(openInstallmentGroups[item.key]);
+
+              return (
+                <Collapsible
+                  key={`group-${item.key}`}
+                  open={isOpen}
+                  onOpenChange={open =>
+                    setOpenInstallmentGroups(prev => ({
+                      ...prev,
+                      [item.key]: open,
+                    }))
+                  }
+                >
+                  <div className="rounded-lg border">
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex w-full flex-col gap-3 p-4 text-left transition-colors hover:bg-muted/40"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="font-medium">{item.description}</h4>
+                            <Badge variant="outline">Parcelado ({item.incomes.length}x)</Badge>
+                            <Badge variant={item.statusInfo.variant}>{item.statusInfo.label}</Badge>
+                            {item.client_name && (
+                              <Badge variant="outline">{item.client_name}</Badge>
+                            )}
+                            {item.category && (
+                              <Badge variant={getCategoryTypeBadgeVariant(item.category.category_type)}>
+                                {item.category.name}
+                              </Badge>
+                            )}
+                          </div>
+                          <ChevronDown
+                            className={`h-4 w-4 shrink-0 transition-transform ${isOpen ? '-rotate-180' : 'rotate-0'}`}
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                          <span>Total: R$ {item.totalAmount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                          <span>
+                            {new Date(item.firstDueDate).toLocaleDateString("pt-BR")} - {new Date(item.lastDueDate).toLocaleDateString("pt-BR")}
+                          </span>
+                          {item.pendingCount > 0 && <span>{item.pendingCount} pendente(s)</span>}
+                          {item.paidCount > 0 && <span>{item.paidCount} recebida(s)</span>}
+                          {item.overdueCount > 0 && <span>{item.overdueCount} em atraso</span>}
+                          {item.cancelledCount > 0 && <span>{item.cancelledCount} cancelada(s)</span>}
+                        </div>
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-3 border-t p-4">
+                      {item.incomes.map((installment, index) => (
+                        <div
+                          key={`${item.key}-${installment.id}`}
+                          className="flex flex-col gap-3 rounded-md border p-3 md:flex-row md:items-center md:justify-between"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-medium">
+                                Parcela {index + 1} de {item.incomes.length}
+                              </p>
+                              <Badge variant={STATUS_VARIANTS[installment.status]}>
+                                {STATUS_LABELS[installment.status]}
+                              </Badge>
+                            </div>
+                            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                              <span>R$ {installment.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                              <span>{new Date(installment.transaction_date).toLocaleDateString("pt-BR")}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" onClick={() => startEditIncome(installment)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            {installment.status === 'pending' && (
+                              <Button size="sm" onClick={() => updateIncomeStatus(installment.id, 'paid')}>
+                                Marcar como Recebida
+                              </Button>
+                            )}
+                            <Button variant="destructive" size="sm" onClick={() => deleteIncome(installment.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </CollapsibleContent>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => startEditIncome(income)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  {income.status !== "paid" && income.status !== "cancelled" && (
-                    <Button size="sm" onClick={() => updateIncomeStatus(income.id, "paid")}>
-                      Marcar como Recebida
-                    </Button>
-                  )}
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => deleteIncome(income.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-            {incomes.length === 0 && (
+                </Collapsible>
+              );
+            })}
+            {incomeItems.length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
                 Nenhuma receita cadastrada
               </div>
