@@ -263,6 +263,7 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
     const isApprovingBudget = selectedBudget.status !== 'approved' && values.status === 'approved';
     const canManageFinancial = user.role === 'admin' || user.role === 'supervisor';
 
+
     if (isApprovingBudget && canManageFinancial) {
       setPendingBudgetApproval({ budget: selectedBudget, values });
       setPaymentForm({
@@ -277,6 +278,7 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
       setIsPaymentModalOpen(true);
       return;
     }
+
 
     try {
       await updateBudgetRecord(selectedBudget.id, values);
@@ -904,7 +906,9 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2">
 
+
                   <FormLabel htmlFor="payment-description">Descrição</FormLabel>
+
 
                   <Input
                     id="payment-description"
@@ -918,7 +922,9 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
                 </div>
                 <div className="space-y-2">
 
+
                   <FormLabel htmlFor="payment-amount">Valor total</FormLabel>
+
 
                   <Input
                     id="payment-amount"
@@ -935,7 +941,9 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2">
 
+
                   <FormLabel htmlFor="payment-date">Data do primeiro recebimento</FormLabel>
+
 
                   <Input
                     id="payment-date"
@@ -949,7 +957,9 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
                 </div>
                 <div className="space-y-2">
 
+
                   <FormLabel htmlFor="payment-method">Forma de pagamento</FormLabel>
+
 
                   <Input
                     id="payment-method"
@@ -982,7 +992,9 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
                 {paymentForm.isInstallment && (
                   <div className="space-y-2">
 
+
                     <FormLabel htmlFor="installment-count">Número de parcelas</FormLabel>
+
 
                     <Input
                       id="installment-count"
@@ -999,6 +1011,7 @@ export function ClientBudgetsTab({ clientId, onProjectCreated }: ClientBudgetsTa
               </div>
 
               <div className="space-y-2">
+
 
                 <FormLabel htmlFor="payment-notes">Observações para o financeiro</FormLabel>
 
