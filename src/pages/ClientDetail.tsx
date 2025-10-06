@@ -161,7 +161,9 @@ export default function ClientDetail() {
     date: new Date().toISOString().split('T')[0],
     status: 'pending',
     reference: '',
-    payment_method: ''
+    payment_method: '',
+    isInstallment: false,
+    installmentCount: '1',
   });
 
   const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
@@ -345,23 +347,100 @@ export default function ClientDetail() {
       toast({ title: 'Erro', description: 'Preencha todos os campos obrigatórios.', variant: 'destructive' });
       return;
     }
+
+    const amountValue = Number.parseFloat(newFinancial.amount);
+    if (!Number.isFinite(amountValue)) {
+      toast({ title: 'Erro', description: 'Informe um valor válido para a transação.', variant: 'destructive' });
+      return;
+    }
+
+    const installmentCount = newFinancial.isInstallment
+      ? Number.parseInt(newFinancial.installmentCount, 10)
+      : 1;
+
+    if (newFinancial.isInstallment && (!Number.isFinite(installmentCount) || installmentCount < 1)) {
+      toast({ title: 'Erro', description: 'Informe um número válido de parcelas.', variant: 'destructive' });
+      return;
+    }
+
     try {
       const localDate = new Date(newFinancial.date + 'T12:00:00');
+      if (Number.isNaN(localDate.getTime())) {
+        toast({ title: 'Erro', description: 'Informe uma data válida para a transação.', variant: 'destructive' });
+        return;
+      }
+
       const formattedDate = localDate.toISOString().split('T')[0];
-      const { error } = await supabase.from('client_financials').insert({
-        client_id: id,
-        transaction_type: newFinancial.type,
-        description: newFinancial.description,
-        amount: parseFloat(newFinancial.amount),
-        transaction_date: formattedDate,
-        status: newFinancial.status,
-        reference_document: newFinancial.reference,
-        payment_method: newFinancial.payment_method,
-        created_by: user.id,
-      });
+      const entries: {
+        client_id: string;
+        transaction_type: string;
+        description: string;
+        amount: number;
+        transaction_date: string;
+        status: string;
+        reference_document: string;
+        payment_method: string;
+        created_by: string;
+      }[] = [];
+
+      if (newFinancial.isInstallment && installmentCount > 1) {
+        const totalInCents = Math.round(amountValue * 100);
+        const baseAmountInCents = Math.floor(totalInCents / installmentCount);
+        const remainder = totalInCents % installmentCount;
+
+        for (let index = 0; index < installmentCount; index += 1) {
+          const amountInCents = baseAmountInCents + (index < remainder ? 1 : 0);
+          const dueDate = new Date(localDate);
+          dueDate.setMonth(dueDate.getMonth() + index);
+
+          entries.push({
+            client_id: id,
+            transaction_type: newFinancial.type,
+            description: newFinancial.description,
+            amount: amountInCents / 100,
+            transaction_date: dueDate.toISOString().split('T')[0],
+            status: newFinancial.status,
+            reference_document: newFinancial.reference,
+            payment_method: newFinancial.payment_method,
+            created_by: user.id,
+          });
+        }
+      } else {
+        entries.push({
+          client_id: id,
+          transaction_type: newFinancial.type,
+          description: newFinancial.description,
+          amount: amountValue,
+          transaction_date: formattedDate,
+          status: newFinancial.status,
+          reference_document: newFinancial.reference,
+          payment_method: newFinancial.payment_method,
+          created_by: user.id,
+        });
+      }
+
+      const { error } = await supabase.from('client_financials').insert(entries);
       if (error) throw error;
-      toast({ title: 'Sucesso', description: 'Transação adicionada com sucesso!' });
-      setNewFinancial({ type: '', description: '', amount: '', date: new Date().toISOString().split('T')[0], status: 'pending', reference: '', payment_method: '' });
+
+      toast({
+        title: 'Sucesso',
+        description:
+          newFinancial.isInstallment && installmentCount > 1
+            ? `${installmentCount} parcelas criadas com sucesso!`
+            : 'Transação adicionada com sucesso!',
+      });
+
+      setNewFinancial({
+        type: '',
+        description: '',
+        amount: '',
+        date: new Date().toISOString().split('T')[0],
+        status: 'pending',
+        reference: '',
+        payment_method: '',
+        isInstallment: false,
+        installmentCount: '1',
+      });
       loadClientData();
     } catch (error) {
       console.error('Erro ao adicionar transação:', error);
@@ -567,6 +646,38 @@ export default function ClientDetail() {
     if (Number.isNaN(parsed.getTime())) return 'Sem data';
     return parsed.toLocaleDateString('pt-BR');
   };
+
+  const installmentPreview = useMemo(() => {
+    if (!newFinancial.isInstallment) return null;
+
+    const amountValue = Number.parseFloat(newFinancial.amount);
+    const count = Number.parseInt(newFinancial.installmentCount, 10);
+
+    if (!Number.isFinite(amountValue) || amountValue <= 0 || !Number.isFinite(count) || count < 2) {
+      return null;
+    }
+
+    const averageAmount = amountValue / count;
+
+    let firstDate: Date | null = null;
+    let lastDate: Date | null = null;
+
+    if (newFinancial.date) {
+      const baseDate = new Date(`${newFinancial.date}T12:00:00`);
+      if (!Number.isNaN(baseDate.getTime())) {
+        firstDate = new Date(baseDate);
+        lastDate = new Date(baseDate);
+        lastDate.setMonth(lastDate.getMonth() + (count - 1));
+      }
+    }
+
+    return {
+      count,
+      averageAmount,
+      firstDate,
+      lastDate,
+    } as const;
+  }, [newFinancial]);
 
   const totalIncome = useMemo(
     () =>
@@ -1262,6 +1373,68 @@ export default function ClientDetail() {
                             </SelectContent>
                           </Select>
                         </div>
+                        <div className="rounded-lg border bg-muted/50 p-3 flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-medium">Pagamento parcelado</p>
+                            <p className="text-xs text-muted-foreground">
+                              Habilite para dividir o valor em parcelas mensais automaticamente.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={newFinancial.isInstallment}
+                            onCheckedChange={(checked) =>
+                              setNewFinancial((prev) => {
+                                const parsed = Number.parseInt(prev.installmentCount, 10);
+                                return {
+                                  ...prev,
+                                  isInstallment: checked,
+                                  installmentCount:
+                                    checked && (!Number.isFinite(parsed) || parsed < 2)
+                                      ? '2'
+                                      : checked
+                                        ? prev.installmentCount
+                                        : '1',
+                                };
+                              })
+                            }
+                          />
+                        </div>
+                        {newFinancial.isInstallment && (
+                          <div className="space-y-2">
+                            <Label>Número de Parcelas</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={newFinancial.installmentCount}
+                              onChange={(event) =>
+                                setNewFinancial((prev) => ({
+                                  ...prev,
+                                  installmentCount: event.target.value,
+                                }))
+                              }
+                              placeholder="2"
+                            />
+                          </div>
+                        )}
+                        {newFinancial.isInstallment && installmentPreview && (
+                          <div className="text-xs text-muted-foreground rounded-md border bg-muted/40 p-3 space-y-1">
+                            <p>
+                              Serão criadas{' '}
+                              <span className="font-medium text-foreground">{installmentPreview.count} parcelas</span>{' '}
+                              com valor médio de{' '}
+                              <span className="font-medium text-foreground">
+                                {formatMoney(installmentPreview.averageAmount)}
+                              </span>
+                              .
+                            </p>
+                            {installmentPreview.firstDate && installmentPreview.lastDate && (
+                              <p>
+                                Vencimentos de {installmentPreview.firstDate.toLocaleDateString('pt-BR')} até{' '}
+                                {installmentPreview.lastDate.toLocaleDateString('pt-BR')}.
+                              </p>
+                            )}
+                          </div>
+                        )}
                         <div className="space-y-2">
                           <Label>Referência</Label>
                           <Input value={newFinancial.reference} onChange={(e) => setNewFinancial({ ...newFinancial, reference: e.target.value })} placeholder="Ex: PIX-001, TED-002" />
@@ -1620,6 +1793,68 @@ export default function ClientDetail() {
                             </SelectContent>
                           </Select>
                         </div>
+                        <div className="rounded-lg border bg-muted/50 p-3 flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-medium">Pagamento parcelado</p>
+                            <p className="text-xs text-muted-foreground">
+                              Habilite para dividir o valor em parcelas mensais automaticamente.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={newFinancial.isInstallment}
+                            onCheckedChange={(checked) =>
+                              setNewFinancial((prev) => {
+                                const parsed = Number.parseInt(prev.installmentCount, 10);
+                                return {
+                                  ...prev,
+                                  isInstallment: checked,
+                                  installmentCount:
+                                    checked && (!Number.isFinite(parsed) || parsed < 2)
+                                      ? '2'
+                                      : checked
+                                        ? prev.installmentCount
+                                        : '1',
+                                };
+                              })
+                            }
+                          />
+                        </div>
+                        {newFinancial.isInstallment && (
+                          <div className="space-y-2">
+                            <Label>Número de Parcelas</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={newFinancial.installmentCount}
+                              onChange={(event) =>
+                                setNewFinancial((prev) => ({
+                                  ...prev,
+                                  installmentCount: event.target.value,
+                                }))
+                              }
+                              placeholder="2"
+                            />
+                          </div>
+                        )}
+                        {newFinancial.isInstallment && installmentPreview && (
+                          <div className="text-xs text-muted-foreground rounded-md border bg-muted/40 p-3 space-y-1">
+                            <p>
+                              Serão criadas{' '}
+                              <span className="font-medium text-foreground">{installmentPreview.count} parcelas</span>{' '}
+                              com valor médio de{' '}
+                              <span className="font-medium text-foreground">
+                                {formatMoney(installmentPreview.averageAmount)}
+                              </span>
+                              .
+                            </p>
+                            {installmentPreview.firstDate && installmentPreview.lastDate && (
+                              <p>
+                                Vencimentos de {installmentPreview.firstDate.toLocaleDateString('pt-BR')} até{' '}
+                                {installmentPreview.lastDate.toLocaleDateString('pt-BR')}.
+                              </p>
+                            )}
+                          </div>
+                        )}
                         <div className="space-y-2">
                           <Label>Referência</Label>
                           <Input value={newFinancial.reference} onChange={(e) => setNewFinancial({ ...newFinancial, reference: e.target.value })} placeholder="Ex: PIX-001, TED-002" />
