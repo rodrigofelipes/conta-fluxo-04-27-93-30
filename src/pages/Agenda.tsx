@@ -282,6 +282,8 @@ export default function Agenda() {
 
 
 
+
+
   // Hook para acessar as cores da paleta selecionada
   const { selectedGradient, gradientOptions } = useGradientDatabase();
 
@@ -642,7 +644,9 @@ export default function Agenda() {
       setSelectedMinutesMeeting(null);
       setMinutesText("");
     }
+
     setIsMinutesDialogOpen(open);
+
   };
 
   const handleSelectMinutesMeeting = (meetingId: string) => {
@@ -749,6 +753,8 @@ export default function Agenda() {
     filteredAgendaBySector.forEach(item => unique.add(getLocationDisplay(item.local)));
     return Array.from(unique).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [filteredAgendaBySector]);
+
+
 
 
 
@@ -1770,7 +1776,9 @@ export default function Agenda() {
         </AlertDialogContent>
       </AlertDialog>
 
+
       <Dialog open={isMinutesDialogOpen} onOpenChange={handleMinutesDialogOpenChange}>
+
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Registrar ata de reunião</DialogTitle>
@@ -2005,6 +2013,7 @@ export default function Agenda() {
 
         <TabsContent value="atas" className="space-y-4 md:space-y-6">
 
+
           <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
             <Select
               value={sectorFilter}
@@ -2053,6 +2062,7 @@ export default function Agenda() {
                 ))}
               </SelectContent>
             </Select>
+
 
           </div>
 
