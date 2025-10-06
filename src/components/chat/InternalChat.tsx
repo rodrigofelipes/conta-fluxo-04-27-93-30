@@ -44,51 +44,48 @@ export function InternalChat() {
   };
 
   const loadMessages = useCallback(async (contact: InternalContact) => {
-    if (!contact) {
-      return;
-    }
 
-    const currentUserId = user?.id;
-    const isGroupChat = contact.isGroup || contact.id === GENERAL_CHAT_ID;
+
+    if (!user) return;
+
+
 
     try {
-      if (isGroupChat) {
+
+      if (contact.isGroup) {
         const { data, error } = await supabase
           .from('group_messages')
-          .select('id, message, created_at, user_id, user_name')
+
+          .select('*')
+
           .order('created_at', { ascending: true });
 
-        if (error) {
-          throw error;
-        }
+        if (error) throw error;
 
-        const groupMessages: InternalMessage[] = (data ?? []).map((msg) => ({
+        const groupMessages: InternalMessage[] = (data || []).map((msg) => ({
           id: msg.id,
           content: msg.message,
           timestamp: msg.created_at,
-          isOutgoing: currentUserId ? msg.user_id === currentUserId : false,
-          from_user_name: msg.user_name || "",
-          to_user_name: contact.name,
+
+          isOutgoing: msg.user_id === user.id,
+          from_user_name: msg.user_name,
+
+          to_user_name: "Chat Geral",
+
         }));
 
         setMessages(groupMessages);
         return;
       }
 
-      if (!currentUserId) {
-        console.warn('Usuário não disponível para carregar mensagens privadas.');
-        return;
-      }
 
-      const orFilter = [
-        `and(from_user_id.eq.${currentUserId},to_user_id.eq.${contact.id})`,
-        `and(from_user_id.eq.${contact.id},to_user_id.eq.${currentUserId})`,
-      ].join(',');
 
       const { data, error } = await supabase
         .from('messages')
-        .select('id, message, created_at, from_user_id, to_user_id, from_user_name, to_user_name, viewed_at')
-        .or(orFilter)
+        .select('*')
+        .or(`and(from_user_id.eq.${user.id},to_user_id.eq.${contact.id}),and(from_user_id.eq.${contact.id},to_user_id.eq.${user.id})`)
+
+
         .order('created_at', { ascending: true });
 
       if (error) {
@@ -174,18 +171,16 @@ export function InternalChat() {
     }
   };
 
-  const handleContactSelect = useCallback((contact: InternalContact) => {
+
+  const handleContactSelect = useCallback(async (contact: InternalContact) => {
     setSelectedContact(contact);
     setNewMessage("");
     setMobileContactsOpen(false);
-    setMessages([]);
-  }, []);
 
-  useEffect(() => {
-    if (selectedContact) {
-      loadMessages(selectedContact);
-    }
-  }, [selectedContact, loadMessages]);
+
+    await loadMessages(contact);
+  }, [loadMessages]);
+
 
   // Realtime updates
   useEffect(() => {
