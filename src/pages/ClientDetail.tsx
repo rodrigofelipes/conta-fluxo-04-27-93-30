@@ -793,6 +793,28 @@ export default function ClientDetail() {
     return labels[status?.toLowerCase?.()] || status || '—';
   };
 
+  const getTransactionTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      payment_received: 'Pagamento Recebido',
+      payment_sent: 'Pagamento Enviado',
+      income: 'Receita',
+      expense: 'Despesa',
+    };
+
+    const normalizedType = type?.toLowerCase?.();
+    if (normalizedType && labels[normalizedType]) {
+      return labels[normalizedType];
+    }
+
+    if (!type) return '—';
+
+    return type
+      .split('_')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  };
+
   const composeEmailSummary = useCallback(
     (sections: EmailSummarySections) => {
       const lines: string[] = [];
@@ -1812,7 +1834,7 @@ export default function ClientDetail() {
                                     <div className="flex items-center gap-3 mb-1">
                                       <h4 className="font-semibold text-foreground">{financial.description}</h4>
                                       <Badge variant="secondary" className={`${financial.transaction_type === 'income' || financial.transaction_type === 'payment_received' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'}`}>
-                                        {financial.transaction_type}
+                                        {getTransactionTypeLabel(financial.transaction_type)}
                                       </Badge>
                                     </div>
                                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -1880,7 +1902,7 @@ export default function ClientDetail() {
                                       </button>
                                       <Badge variant="outline">Parcelado ({item.transactions.length}x)</Badge>
                                       <Badge variant="secondary" className={`${firstTransaction.transaction_type === 'income' || firstTransaction.transaction_type === 'payment_received' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'}`}>
-                                        {firstTransaction.transaction_type}
+                                        {getTransactionTypeLabel(firstTransaction.transaction_type)}
                                       </Badge>
                                     </div>
                                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
