@@ -77,7 +77,7 @@ interface Financial {
   amount: number;
   transaction_date: string;
   status: string;
-  reference_document: string;
+  reference_document: string | null;
   payment_method?: string;
   created_at?: string;
 }
@@ -626,6 +626,66 @@ export default function ClientDetail() {
       outros: 'Outros'
     } as const;
     return (labels as any)[method] || method;
+  };
+
+  const formatReferenceDocument = (reference?: string | null) => {
+    if (!reference) return null;
+
+    try {
+      const parsed = JSON.parse(reference) as Record<string, unknown> | null;
+
+      if (parsed && typeof parsed === 'object') {
+        const { source } = parsed;
+
+        if (source === 'budget_approval') {
+          const details: string[] = [];
+
+          const installmentNumberRaw = parsed.installmentNumber;
+          const totalInstallmentsRaw = parsed.totalInstallments;
+
+          const installmentNumber =
+            typeof installmentNumberRaw === 'number'
+              ? installmentNumberRaw
+              : Number.parseInt(String(installmentNumberRaw ?? ''), 10);
+          const totalInstallments =
+            typeof totalInstallmentsRaw === 'number'
+              ? totalInstallmentsRaw
+              : Number.parseInt(String(totalInstallmentsRaw ?? ''), 10);
+
+          if (
+            Number.isFinite(installmentNumber) &&
+            installmentNumber > 0 &&
+            Number.isFinite(totalInstallments) &&
+            totalInstallments > 0
+          ) {
+            details.push(`Parcela ${installmentNumber}/${totalInstallments}`);
+          }
+
+          const approvedAt = parsed.approvedAt;
+          if (typeof approvedAt === 'string') {
+            const approvedDate = new Date(approvedAt);
+            if (!Number.isNaN(approvedDate.getTime())) {
+              details.push(`Aprovado em ${approvedDate.toLocaleDateString('pt-BR')}`);
+            }
+          }
+
+          const notes = typeof parsed.notes === 'string' ? parsed.notes.trim() : '';
+          if (notes) {
+            details.push(notes);
+          }
+
+          if (details.length === 0) {
+            return 'Aprovação de orçamento';
+          }
+
+          return `Aprovação de orçamento • ${details.join(' • ')}`;
+        }
+      }
+    } catch (error) {
+      // Se não for um JSON válido, retorna o valor original
+    }
+
+    return reference;
   };
 
   const currencyFormatter = useMemo(
@@ -1740,6 +1800,7 @@ export default function ClientDetail() {
                       return items.map((item) => {
                         if (item.type === 'single') {
                           const financial = item.financial;
+                          const formattedReference = formatReferenceDocument(financial.reference_document);
                           return (
                             <div key={financial.id} className="group border-2 border-border/50 rounded-xl p-5 hover:border-green-300 dark:hover:border-green-700 transition-all duration-300 hover:shadow-lg bg-gradient-to-r from-card to-muted/20">
                               <div className="flex items-center justify-between">
@@ -1765,10 +1826,10 @@ export default function ClientDetail() {
                                           {getPaymentMethodLabel(financial.payment_method)}
                                         </div>
                                       )}
-                                      {financial.reference_document && (
+                                      {formattedReference && (
                                         <div className="flex items-center gap-1">
                                           <FileText className="h-3 w-3" />
-                                          {financial.reference_document}
+                                          {formattedReference}
                                         </div>
                                       )}
                                     </div>
@@ -1840,46 +1901,49 @@ export default function ClientDetail() {
                             {isOpen && (
                               <div className="border-t border-border/50 bg-muted/20 p-4">
                                 <div className="space-y-3">
-                                  {item.transactions.map((transaction, index) => (
-                                    <div key={transaction.id} className="border border-border/50 rounded-lg p-4 bg-card">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex-1">
-                                          <div className="flex items-center gap-3 mb-2">
-                                            <span className="font-medium">Parcela {index + 1} de {item.transactions.length}</span>
-                                            <Badge
-                                              variant={transaction.status === 'completed' ? 'default' : transaction.status === 'pending' ? 'secondary' : 'destructive'}
-                                              className="text-xs"
-                                            >
-                                              {transaction.status === 'completed' ? 'Concluído' : transaction.status === 'pending' ? 'Pendente' : 'Cancelado'}
-                                            </Badge>
-                                          </div>
-                                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                                            <div className="flex items-center gap-1">
-                                              <Calendar className="h-3 w-3" />
-                                              {new Date(transaction.transaction_date).toLocaleDateString('pt-BR')}
+                                  {item.transactions.map((transaction, index) => {
+                                    const formattedReference = formatReferenceDocument(transaction.reference_document);
+                                    return (
+                                      <div key={transaction.id} className="border border-border/50 rounded-lg p-4 bg-card">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex-1">
+                                            <div className="flex items-center gap-3 mb-2">
+                                              <span className="font-medium">Parcela {index + 1} de {item.transactions.length}</span>
+                                              <Badge
+                                                variant={transaction.status === 'completed' ? 'default' : transaction.status === 'pending' ? 'secondary' : 'destructive'}
+                                                className="text-xs"
+                                              >
+                                                {transaction.status === 'completed' ? 'Concluído' : transaction.status === 'pending' ? 'Pendente' : 'Cancelado'}
+                                              </Badge>
                                             </div>
-                                            {transaction.payment_method && (
+                                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
                                               <div className="flex items-center gap-1">
-                                                <CreditCard className="h-3 w-3" />
-                                                {getPaymentMethodLabel(transaction.payment_method)}
+                                                <Calendar className="h-3 w-3" />
+                                                {new Date(transaction.transaction_date).toLocaleDateString('pt-BR')}
                                               </div>
-                                            )}
-                                            {transaction.reference_document && (
-                                              <div className="flex items-center gap-1">
-                                                <FileText className="h-3 w-3" />
-                                                {transaction.reference_document}
-                                              </div>
-                                            )}
+                                              {transaction.payment_method && (
+                                                <div className="flex items-center gap-1">
+                                                  <CreditCard className="h-3 w-3" />
+                                                  {getPaymentMethodLabel(transaction.payment_method)}
+                                                </div>
+                                              )}
+                                              {formattedReference && (
+                                                <div className="flex items-center gap-1">
+                                                  <FileText className="h-3 w-3" />
+                                                  {formattedReference}
+                                                </div>
+                                              )}
+                                            </div>
                                           </div>
-                                        </div>
-                                        <div className="text-right">
-                                          <div className={`text-xl font-bold ${firstTransaction.transaction_type === 'income' || firstTransaction.transaction_type === 'payment_received' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                            {formatMoney(transaction.amount)}
+                                          <div className="text-right">
+                                            <div className={`text-xl font-bold ${firstTransaction.transaction_type === 'income' || firstTransaction.transaction_type === 'payment_received' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                              {formatMoney(transaction.amount)}
+                                            </div>
                                           </div>
                                         </div>
                                       </div>
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               </div>
                             )}
