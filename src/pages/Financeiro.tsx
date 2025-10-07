@@ -857,31 +857,30 @@ export default function Financeiro() {
   }, [transactions, manualExpenses, getTransactionCategoryLabel]);
 
   const overviewItems = useMemo<OverviewListItem[]>(() => {
-
-    const groups = new Map<string, OverviewRecord[]>();
+    const groups = new Map<string, { records: OverviewRecord[]; description: string }>();
     const singles: OverviewRecord[] = [];
 
     overviewRecords.forEach(record => {
-      const isInstallment =
-        (record.recurrence_type === "monthly" || record.recurrence_type === "yearly") &&
-        Boolean(record.created_at);
+      const grouping = getInstallmentGroupingKey(record);
 
-      if (isInstallment) {
-        const keyParts = [record.type, record.description, record.origin, record.created_at ?? ""];
-        if (record.origin === "client" && record.clientId) {
-          keyParts.push(record.clientId);
-        }
-        if (record.origin === "operational" && record.category) {
-          keyParts.push(record.category);
-        }
-        const key = keyParts.join("|");
-        const existing = groups.get(key) ?? [];
-        existing.push(record);
-        groups.set(key, existing);
-
-      } else {
+      if (!grouping) {
         singles.push(record);
+        return;
       }
+
+      const existing = groups.get(grouping.key);
+      if (existing) {
+        existing.records.push(record);
+        if (!existing.description && grouping.baseDescription) {
+          existing.description = grouping.baseDescription;
+        }
+        return;
+      }
+
+      groups.set(grouping.key, {
+        records: [record],
+        description: grouping.baseDescription || record.description,
+      });
     });
 
     const items: OverviewListItem[] = singles.map(record => ({
@@ -893,8 +892,7 @@ export default function Financeiro() {
     const statusKeys: OverviewStatusKey[] = ["pending", "paid", "overdue", "cancelled"];
 
 
-    groups.forEach((records, key) => {
-
+    groups.forEach(({ records, description }, key) => {
       if (records.length <= 1) {
         const [record] = records;
         if (record) {
@@ -928,9 +926,7 @@ export default function Financeiro() {
       items.push({
         type: "installment",
         key,
-
-        description: firstRecord?.description ?? "Parcelado",
-
+        description: description?.trim() || firstRecord?.description || "Parcelado",
         typeValue: firstRecord?.type ?? "expense",
         origin: firstRecord?.origin ?? "operational",
         category: firstRecord?.category ?? "Sem categoria",
