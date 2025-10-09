@@ -146,14 +146,18 @@ function parseDriveErrorPayload(payload: unknown): DriveErrorDetail[] {
   return messages;
 }
 
+
 function isSharedDriveAccessError(errors: DriveErrorDetail[]): boolean {
   return errors.some((error) =>
     (error.message ?? '').toLowerCase().includes('service accounts do not have access to shared drives'),
+
   );
 }
 
 const SHARED_DRIVE_GUIDE_URL =
   'https://developers.google.com/workspace/drive/api/guides/service-accounts#shared-drives';
+
+
 
 function buildSharedDriveAccessErrorMessage(): string {
   return [
@@ -163,12 +167,15 @@ function buildSharedDriveAccessErrorMessage(): string {
   ].join(' ');
 }
 
+
 function formatDriveErrorMessage(baseMessage: string, payload: unknown): string {
   const driveErrors = parseDriveErrorPayload(payload);
 
   if (isSharedDriveAccessError(driveErrors)) {
     return buildSharedDriveAccessErrorMessage();
   }
+
+
 
   const detailedMessage = driveErrors.find((error) => Boolean(error.message))?.message;
   return detailedMessage ? `${baseMessage} - ${detailedMessage}` : baseMessage;
@@ -370,6 +377,7 @@ export async function uploadFileToDrive(options: UploadOptions): Promise<UploadR
       xhr.responseType = 'json';
       xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
       xhr.setRequestHeader('Content-Type', contentType);
+
 
 
       xhr.upload.onprogress = (event) => {
