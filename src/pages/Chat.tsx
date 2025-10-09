@@ -17,7 +17,19 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { MessageSquare, Phone, Search, Send, Trash2, X, Menu, ArrowLeft } from "lucide-react";
+import {
+  MessageSquare,
+  Phone,
+  Search,
+  Send,
+  Trash2,
+  X,
+  Menu,
+  ArrowLeft,
+  Mic,
+  Square,
+  Loader2,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
 import { toast } from "@/hooks/use-toast";
@@ -25,6 +37,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { useCustomNotifications } from "@/hooks/useCustomNotifications";
 import { NotificationCenter } from "@/components/NotificationCenter";
 import { FileUpload, UploadedFileInfo } from "@/components/chat/FileUpload";
+import { AudioRecorder } from "@/components/chat/AudioRecorder";
 import { MediaMessage } from "@/components/chat/MediaMessage";
 import { InternalChat } from "@/components/chat/InternalChat";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -166,6 +179,16 @@ export default function Chat() {
     const size = bytes / Math.pow(k, i);
     return `${size.toFixed(size > 100 ? 0 : 1)} ${units[i]}`;
   };
+
+  const formatRecordingDuration = useCallback((seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const secs = Math.floor(seconds % 60)
+      .toString()
+      .padStart(2, "0");
+    return `${mins}:${secs}`;
+  }, []);
 
   const getSignedUrlForPath = useCallback(async (storagePath: string) => {
     try {
@@ -569,9 +592,9 @@ export default function Chat() {
           const caption = index === 0 && hasText ? newMessage.trim() : undefined;
 
           const viewUrl = attachment.webViewLink || attachment.webContentLink || '';
-          const signedUrl = isValidHttpUrl(viewUrl) ? viewUrl : '';
+          const accessibleUrl = isValidHttpUrl(viewUrl) ? viewUrl : '';
 
-          if (!isValidHttpUrl(signedUrl)) {
+          if (!accessibleUrl) {
             throw new Error(
               "Não foi possível gerar um link válido para o arquivo anexado. Verifique suas permissões e tente novamente."
             );
@@ -579,7 +602,7 @@ export default function Chat() {
 
           await sendWhatsApp({
             to: contactPhone,
-            mediaUrl: signedUrl,
+            mediaUrl: accessibleUrl,
             mediaType: attachment.fileType,
             fileName: attachment.fileName,
             caption,
@@ -613,7 +636,7 @@ export default function Chat() {
             .insert({
               message_id: savedMessage.id,
               file_name: attachment.fileName,
-              file_path: attachment.driveFileId,
+              file_path: accessibleUrl,
               file_type: attachment.fileType,
               file_size: attachment.fileSize,
               uploaded_by: user.id,
@@ -630,8 +653,8 @@ export default function Chat() {
             fileName: attachment.fileName,
             fileType: attachment.fileType,
             fileSize: attachment.fileSize,
-            url: attachment.webViewLink || attachment.webContentLink || '',
-            storagePath: attachment.driveFileId,
+            url: accessibleUrl,
+            storagePath: undefined,
           };
 
           const newChatMessage: ChatMessage = {
@@ -1244,18 +1267,21 @@ export default function Chat() {
 
                 {/* Input de Mensagem */}
                 <div className="p-4 border-t bg-background flex-shrink-0 space-y-3">
-                  <FileUpload
-                    onFileUploaded={(file) => {
-                      setPendingAttachments((prev) => [...prev, file]);
-                      toast({
-                        title: 'Arquivo anexado',
-                        description: `${file.fileName} está pronto para envio.`,
-                      });
-                    }}
-                    disabled={!selectedContact || isSending}
-                    clientId={selectedContact?.id}
-                    clientName={selectedContact?.name}
-                  />
+                  <div className="space-y-3">
+                    <FileUpload
+                      onFileUploaded={(file) => {
+                        setPendingAttachments((prev) => [...prev, file]);
+                        toast({
+                          title: 'Arquivo anexado',
+                          description: `${file.fileName} está pronto para envio.`,
+                        });
+                      }}
+                      disabled={!selectedContact || isSending}
+                      clientId={selectedContact?.id}
+                      clientName={selectedContact?.name}
+                    />
+
+                  </div>
 
                   {pendingAttachments.length > 0 && (
                     <div className="space-y-2 rounded-lg border border-dashed border-muted bg-muted/40 p-3">
@@ -1285,29 +1311,115 @@ export default function Chat() {
                       </div>
                     </div>
                   )}
+                  <AudioRecorder
+                    onRecordingComplete={(file) => {
+                      setPendingAttachments((prev) => [...prev, file]);
+                    }}
+                    disabled={!selectedContact || isSending}
+                    clientId={selectedContact?.id}
+                    clientName={selectedContact?.name}
+                  >
+                    {({
+                      isRecording,
+                      isUploading,
+                      recordingTime,
+                      startRecording,
+                      stopRecording,
+                      cancelRecording,
+                    }) => {
+                      const hasMessageContent =
+                        newMessage.trim().length > 0 || pendingAttachments.length > 0;
+                      const baseDisabled = !selectedContact || isSending;
+                      const micDisabled = baseDisabled || isUploading;
+                      const sendDisabled = baseDisabled || isUploading || !hasMessageContent;
 
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Digite sua mensagem..."
-                      value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          sendMessage();
-                        }
-                      }}
-                      className="flex-1"
-                      disabled={!selectedContact || isSending}
-                    />
-                    <Button
-                      onClick={sendMessage}
-                      size="icon"
-                      disabled={(!newMessage.trim() && pendingAttachments.length === 0) || isSending}
-                    >
-                      <Send className="h-4 w-4" />
-                    </Button>
-                  </div>
+                      if (isRecording) {
+                        return (
+                          <div className="flex items-center gap-2">
+                            <div className="flex flex-1 items-center gap-2 rounded-full bg-destructive/10 px-4 py-2">
+                              <span className="relative flex h-2 w-2">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive/60" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-destructive" />
+                              </span>
+                              <span className="text-sm font-medium text-destructive">
+                                Gravando áudio • {formatRecordingDuration(recordingTime)}
+                              </span>
+                            </div>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="destructive"
+                              onClick={stopRecording}
+                              disabled={isUploading}
+                              className="h-10 w-10"
+                            >
+                              <Square className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              onClick={cancelRecording}
+                              disabled={isUploading}
+                              className="h-10 w-10"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Digite sua mensagem..."
+                              value={newMessage}
+                              onChange={(e) => setNewMessage(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  sendMessage();
+                                }
+                              }}
+                              className="flex-1"
+                              disabled={baseDisabled}
+                            />
+                            {hasMessageContent ? (
+                              <Button
+                                onClick={sendMessage}
+                                size="icon"
+                                disabled={sendDisabled}
+                              >
+                                <Send className="h-4 w-4" />
+                              </Button>
+                            ) : (
+                              <Button
+                                type="button"
+                                size="icon"
+                                onClick={() => startRecording()}
+                                disabled={micDisabled}
+                                className="h-10 w-10"
+                              >
+                                {isUploading ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Mic className="h-4 w-4" />
+                                )}
+                              </Button>
+                            )}
+                          </div>
+
+                          {isUploading && (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground pl-1">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Enviando áudio...
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }}
+                  </AudioRecorder>
                 </div>
               </div>
             </>
