@@ -2,17 +2,42 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
-const GOOGLE_CLIENT_ID = 'YOUR_CLIENT_ID'; // Será configurado pelo usuário
 const SCOPES = 'https://www.googleapis.com/auth/drive';
 
 export function useGoogleDriveAuth() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+  const [clientId, setClientId] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
-    checkAuthorization();
+    const init = async () => {
+      await fetchClientId();
+      await checkAuthorization();
+    };
+    init();
   }, []);
+
+  const fetchClientId = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('google-client-id');
+      
+      if (error) throw error;
+      
+      if (data?.clientId) {
+        setClientId(data.clientId);
+      } else {
+        throw new Error('Client ID não recebido');
+      }
+    } catch (error) {
+      console.error('Error fetching client ID:', error);
+      toast({
+        title: 'Erro de configuração',
+        description: 'Não foi possível obter as configurações do Google OAuth',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const checkAuthorization = async () => {
     try {
@@ -40,11 +65,20 @@ export function useGoogleDriveAuth() {
   };
 
   const authorize = async () => {
+    if (!clientId) {
+      toast({
+        title: 'Configuração pendente',
+        description: 'Aguarde o carregamento das configurações',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
       const redirectUri = `${window.location.origin}/google-drive-callback`;
       
       const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-      authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+      authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('response_type', 'code');
       authUrl.searchParams.set('scope', SCOPES);
