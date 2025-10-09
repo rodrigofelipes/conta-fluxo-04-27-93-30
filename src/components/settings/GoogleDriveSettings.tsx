@@ -6,38 +6,23 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { useGoogleDriveAuth } from "@/hooks/useGoogleDriveAuth";
 import { Cloud, CheckCircle, XCircle, RefreshCw, HardDrive, FolderOpen } from "lucide-react";
 
 export function GoogleDriveSettings() {
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
+  const { isAuthorized, isChecking, authorize, revoke } = useGoogleDriveAuth();
   const [testing, setTesting] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
   const [rootFolderId, setRootFolderId] = useState(import.meta.env.VITE_GOOGLE_DRIVE_ROOT_FOLDER_ID || '');
   const [stats, setStats] = useState({ totalFiles: 0, totalSize: 0 });
 
-  useEffect(() => {
-    checkConnection();
-  }, []);
+  const connectionStatus = isChecking ? 'checking' : isAuthorized ? 'connected' : 'disconnected';
 
-  const checkConnection = async () => {
-    try {
-      setConnectionStatus('checking');
-      const { data, error } = await supabase.functions.invoke('google-drive-token');
-      
-      if (error) throw error;
-      
-      if (data?.access_token) {
-        setConnectionStatus('connected');
-        await loadStats();
-      } else {
-        setConnectionStatus('disconnected');
-      }
-    } catch (error) {
-      console.error('Erro ao verificar conexão:', error);
-      setConnectionStatus('disconnected');
+  useEffect(() => {
+    if (isAuthorized) {
+      loadStats();
     }
-  };
+  }, [isAuthorized]);
 
   const loadStats = async () => {
     try {
@@ -57,6 +42,15 @@ export function GoogleDriveSettings() {
   };
 
   const testConnection = async () => {
+    if (!isAuthorized) {
+      toast({
+        title: "Não autorizado",
+        description: "Por favor, autorize o acesso ao Google Drive primeiro",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       setTesting(true);
       const { data, error } = await supabase.functions.invoke('google-drive-token');
@@ -68,7 +62,6 @@ export function GoogleDriveSettings() {
           title: "Conexão bem-sucedida",
           description: "Google Drive está configurado e acessível",
         });
-        setConnectionStatus('connected');
         await loadStats();
       } else {
         throw new Error('Token não recebido');
@@ -80,7 +73,6 @@ export function GoogleDriveSettings() {
         description: error.message || "Não foi possível conectar ao Google Drive",
         variant: "destructive",
       });
-      setConnectionStatus('disconnected');
     } finally {
       setTesting(false);
     }
@@ -160,14 +152,22 @@ export function GoogleDriveSettings() {
           )}
 
           <div className="flex gap-2">
-            <Button onClick={testConnection} disabled={testing} variant="outline">
-              {testing && <RefreshCw className="mr-2 size-4 animate-spin" />}
-              Testar Conexão
-            </Button>
-            <Button onClick={checkConnection} disabled={testing} variant="ghost">
-              <RefreshCw className="mr-2 size-4" />
-              Atualizar Status
-            </Button>
+            {!isAuthorized ? (
+              <Button onClick={authorize} disabled={isChecking}>
+                <Cloud className="mr-2 size-4" />
+                Autorizar Google Drive
+              </Button>
+            ) : (
+              <>
+                <Button onClick={testConnection} disabled={testing} variant="outline">
+                  {testing && <RefreshCw className="mr-2 size-4 animate-spin" />}
+                  Testar Conexão
+                </Button>
+                <Button onClick={revoke} variant="ghost">
+                  Revogar Acesso
+                </Button>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -207,11 +207,11 @@ export function GoogleDriveSettings() {
               <Cloud className="size-5 text-primary" />
             </div>
             <div className="space-y-1">
-              <h4 className="font-medium">Service Account Configurada</h4>
+              <h4 className="font-medium">Autenticação OAuth 2.0</h4>
               <p className="text-sm text-muted-foreground">
-                O sistema está usando autenticação via Service Account do Google Cloud.
-                Os arquivos são enviados para uma pasta compartilhada no Google Drive,
-                não requerendo login individual dos usuários.
+                O sistema usa OAuth 2.0 para acessar o Google Drive do usuário.
+                Cada usuário precisa autorizar o acesso individualmente.
+                Os tokens são armazenados de forma segura e renovados automaticamente.
               </p>
             </div>
           </div>
