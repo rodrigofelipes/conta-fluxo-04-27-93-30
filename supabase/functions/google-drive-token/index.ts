@@ -13,7 +13,7 @@ if (!SERVICE_ACCOUNT_JSON) {
   console.error("Missing GOOGLE_SERVICE_ACCOUNT environment variable");
 }
 
-const SCOPES = ["https://www.googleapis.com/auth/drive.file"];
+const SCOPES = ["https://www.googleapis.com/auth/drive"];
 
 function base64UrlEncode(input: Uint8Array): string {
   return btoa(String.fromCharCode(...input))
