@@ -1,5 +1,7 @@
 
+
 import { useCallback, useEffect, useRef, useState } from "react";
+
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -14,6 +16,8 @@ interface AudioRecorderProps {
   disabled?: boolean;
   clientId?: string;
   clientName?: string;
+
+
 
 
 }
@@ -40,6 +44,8 @@ export function AudioRecorder({
   disabled,
   clientId,
   clientName,
+
+
 
 
 }: AudioRecorderProps) {
@@ -246,6 +252,7 @@ export function AudioRecorder({
       description: "O áudio gravado não foi salvo.",
     });
   };
+
 
 
 

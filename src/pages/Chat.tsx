@@ -592,9 +592,9 @@ export default function Chat() {
           const caption = index === 0 && hasText ? newMessage.trim() : undefined;
 
           const viewUrl = attachment.webViewLink || attachment.webContentLink || '';
-          const signedUrl = isValidHttpUrl(viewUrl) ? viewUrl : '';
+          const accessibleUrl = isValidHttpUrl(viewUrl) ? viewUrl : '';
 
-          if (!isValidHttpUrl(signedUrl)) {
+          if (!accessibleUrl) {
             throw new Error(
               "Não foi possível gerar um link válido para o arquivo anexado. Verifique suas permissões e tente novamente."
             );
@@ -602,7 +602,7 @@ export default function Chat() {
 
           await sendWhatsApp({
             to: contactPhone,
-            mediaUrl: signedUrl,
+            mediaUrl: accessibleUrl,
             mediaType: attachment.fileType,
             fileName: attachment.fileName,
             caption,
@@ -636,7 +636,7 @@ export default function Chat() {
             .insert({
               message_id: savedMessage.id,
               file_name: attachment.fileName,
-              file_path: attachment.driveFileId,
+              file_path: accessibleUrl,
               file_type: attachment.fileType,
               file_size: attachment.fileSize,
               uploaded_by: user.id,
@@ -653,8 +653,8 @@ export default function Chat() {
             fileName: attachment.fileName,
             fileType: attachment.fileType,
             fileSize: attachment.fileSize,
-            url: attachment.webViewLink || attachment.webContentLink || '',
-            storagePath: attachment.driveFileId,
+            url: accessibleUrl,
+            storagePath: undefined,
           };
 
           const newChatMessage: ChatMessage = {
@@ -1290,6 +1290,7 @@ export default function Chat() {
                       clientId={selectedContact?.id}
                       clientName={selectedContact?.name}
                     />
+
 
                   </div>
 
