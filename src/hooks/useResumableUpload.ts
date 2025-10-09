@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback } from 'react';
-import * as tus from 'tus-js-client';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import {
@@ -9,7 +8,12 @@ import {
   type ValidationResult,
   type StorageConfig,
 } from '@/utils/fileValidation';
-import { useNumericFeatureFlag, useBooleanFeatureFlag } from './useFeatureFlag';
+import { useNumericFeatureFlag } from './useFeatureFlag';
+import {
+  uploadFileToDrive,
+  getDriveFileMetadata,
+  type DriveFileMetadata,
+} from '@/integrations/googleDrive/storage';
 
 interface UploadOptions {
   file: File;
@@ -41,7 +45,7 @@ export function useResumableUpload() {
     error: null,
   });
 
-  const uploadRef = useRef<tus.Upload | null>(null);
+  const uploadRef = useRef<XMLHttpRequest | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const metricsRef = useRef({
     hashStartTime: 0,
@@ -52,8 +56,6 @@ export function useResumableUpload() {
   });
 
   // Feature flags
-  const resumableEnabled = useBooleanFeatureFlag('enable_resumable_uploads', true);
-  const thresholdMB = useNumericFeatureFlag('resumable_threshold_mb', 100);
   const maxFileSizeGB = useNumericFeatureFlag('max_file_size_gb', 5);
   const clientQuotaGB = useNumericFeatureFlag('storage_quota_per_client_gb', 10);
 
@@ -127,72 +129,88 @@ export function useResumableUpload() {
    * Verificar arquivo após upload usando metadados do Storage
    */
   const verifyUploadedFile = useCallback(async (
-    filePath: string,
+    driveFileId: string,
     expectedSize: number,
     expectedHash: string,
-    documentId: string
+    documentId: string,
+    driveMetadata?: DriveFileMetadata | null,
   ): Promise<boolean> => {
     try {
       await logEvent('verification_started', documentId);
 
-      // Buscar metadados pelo path exato
-      const pathParts = filePath.split('/');
-      const fileName = pathParts[pathParts.length - 1];
-      const directory = pathParts.slice(0, -1).join('/');
-
-      const { data: fileList, error } = await supabase.storage
-        .from('client-documents')
-        .list(directory, {
-          limit: 1,
-          search: fileName,
-        });
-
-      if (error || !fileList || fileList.length === 0) {
+      const metadata = driveMetadata ?? await getDriveFileMetadata(driveFileId);
+      if (!metadata) {
         await logEvent('verification_failed', documentId, {
           reason: 'file_not_found',
-          error: error?.message,
+        });
+        toast({
+          title: 'Erro na verificação',
+          description: 'Arquivo não encontrado no Google Drive.',
+          variant: 'destructive',
         });
         return false;
       }
 
-      const fileInfo = fileList[0];
-      const actualSize = fileInfo.metadata?.size || 0;
-
-      // Verificar tamanho (tolerância de 1KB)
-      if (Math.abs(actualSize - expectedSize) > 1024) {
+      const actualSize = Number(metadata.size ?? 0);
+      if (Number.isNaN(actualSize) || Math.abs(actualSize - expectedSize) > 1024) {
         await logEvent('verification_failed', documentId, {
           reason: 'size_mismatch',
           expected: expectedSize,
           actual: actualSize,
         });
-        
+
         toast({
           title: 'Erro na verificação',
           description: `Tamanho divergente. Esperado: ${formatFileSize(expectedSize)}, obtido: ${formatFileSize(actualSize)}`,
           variant: 'destructive',
         });
-        
+
         return false;
       }
 
-      // Atualizar documento como verificado
+      const storedHash = metadata.appProperties?.sha256;
+      if (storedHash && storedHash !== expectedHash) {
+        await logEvent('verification_failed', documentId, {
+          reason: 'hash_mismatch',
+          expected: expectedHash,
+          actual: storedHash,
+        });
+
+        toast({
+          title: 'Erro na verificação',
+          description: 'Hash divergente do arquivo enviado.',
+          variant: 'destructive',
+        });
+
+        return false;
+      }
+
       await supabase
         .from('client_documents')
         .update({
           upload_status: 'verified',
           verified_at: new Date().toISOString(),
+          file_path: driveFileId,
+          file_size: actualSize,
           verification_metadata: {
-            actual_size: actualSize,
+            storage_provider: 'google_drive',
+            google_drive: {
+              file_id: driveFileId,
+              webViewLink: metadata.webViewLink ?? null,
+              webContentLink: metadata.webContentLink ?? null,
+              appProperties: metadata.appProperties ?? null,
+            },
             expected_hash: expectedHash,
-            verified_method: 'storage_api_exact_path',
             verified_at: new Date().toISOString(),
+            verified_method: 'google_drive_metadata',
           },
         })
         .eq('id', documentId);
 
       await logEvent('verification_completed', documentId, {
         size: actualSize,
-        hash: expectedHash,
+        hash: storedHash ?? expectedHash,
+        provider: 'google_drive',
       });
 
       return true;
@@ -306,7 +324,6 @@ export function useResumableUpload() {
 
       // 3. Criar registro no banco
       const sanitizedName = sanitizePath(file.name);
-      const filePath = `${clientId}/${crypto.randomUUID()}/${sanitizedName}`;
 
       const { data: document, error: dbError } = await supabase
         .from('client_documents')
@@ -315,7 +332,7 @@ export function useResumableUpload() {
           document_name: sanitizedName,
           document_type: file.type,
           file_size: file.size,
-          file_path: filePath,
+          file_path: sanitizedName,
           file_hash: hash,
           upload_status: 'uploading',
           upload_started_at: new Date().toISOString(),
@@ -329,32 +346,21 @@ export function useResumableUpload() {
       }
 
       setState(prev => ({ ...prev, documentId: document.id }));
-      await logEvent('upload_started', document.id, { file_path: filePath });
+      await logEvent('upload_started', document.id, { file_name: sanitizedName });
 
-      // 4. Decidir método de upload (resumable vs signed)
-      const useResumable = resumableEnabled && file.size > thresholdMB * 1024 * 1024;
       metricsRef.current.uploadStartTime = Date.now();
+      setState(prev => ({ ...prev, uploading: true, progress: 0 }));
 
-      if (useResumable) {
-        // Upload resumível via TUS
-        const upload = new tus.Upload(file, {
-          endpoint: `https://wcdyxxthaqzchjpharwh.supabase.co/storage/v1/upload/resumable`,
-          retryDelays: [0, 3000, 5000, 10000, 15000],
-          headers: {
-            authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-          },
-          metadata: {
-            bucketName: 'client-documents',
-            objectName: filePath,
-            contentType: file.type,
-            cacheControl: '3600',
-          },
-          onProgress: (bytesUploaded, bytesTotal) => {
-            const progress = Math.round((bytesUploaded / bytesTotal) * 100);
+      try {
+        const uploadResult = await uploadFileToDrive({
+          file,
+          clientId,
+          sanitizedName,
+          hash,
+          onProgress: (progress) => {
             setState(prev => ({ ...prev, progress, uploading: true }));
             onProgress?.(progress);
 
-            // Atualizar progresso no banco a cada 10%
             if (progress % 10 === 0) {
               supabase
                 .from('client_documents')
@@ -363,102 +369,77 @@ export function useResumableUpload() {
                 .then(() => {});
             }
           },
-          onError: async (error) => {
-            metricsRef.current.retryCount++;
-            metricsRef.current.uploadEndTime = Date.now();
-            
-            await logEvent('upload_failed', document.id, {
-              error: error.message,
-              retry_count: metricsRef.current.retryCount,
-            });
-            
-            await trackMetrics(document.id, file.size, 'resumable', false, error.message);
-            
-            setState(prev => ({
-              ...prev,
-              uploading: false,
-              error: error.message,
-            }));
-            
-            toast({
-              title: 'Erro no upload',
-              description: error.message,
-              variant: 'destructive',
-            });
-            
-            onError?.(error);
-          },
-          onSuccess: async () => {
-            metricsRef.current.uploadEndTime = Date.now();
-            
-            await logEvent('upload_completed', document.id);
-            await supabase
-              .from('client_documents')
-              .update({
-                upload_status: 'verifying',
-                upload_completed_at: new Date().toISOString(),
-                upload_progress: 100,
-              })
-              .eq('id', document.id);
-
-            // Verificar arquivo
-            const verified = await verifyUploadedFile(filePath, file.size, hash, document.id);
-            
-            await trackMetrics(document.id, file.size, 'resumable', verified);
-            
-            setState(prev => ({
-              ...prev,
-              uploading: false,
-              progress: 100,
-            }));
-
-            if (verified) {
-              toast({
-                title: 'Upload concluído',
-                description: 'Arquivo enviado e verificado com sucesso!',
-              });
-              onComplete?.(document.id);
-            } else {
-              toast({
-                title: 'Erro na verificação',
-                description: 'Arquivo enviado mas falhou na verificação de integridade.',
-                variant: 'destructive',
-              });
-              onError?.(new Error('Verification failed'));
-            }
+          onCreateRequest: (xhr) => {
+            uploadRef.current = xhr;
           },
         });
 
-        uploadRef.current = upload;
-        upload.start();
-      } else {
-        // Upload padrão via signed URL
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('client-documents')
-          .upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: false,
-          });
-
         metricsRef.current.uploadEndTime = Date.now();
+        uploadRef.current = null;
 
-        if (uploadError) {
-          await logEvent('upload_failed', document.id, { error: uploadError.message });
-          await trackMetrics(document.id, file.size, 'standard', false, uploadError.message);
-          throw uploadError;
-        }
+        await logEvent('upload_completed', document.id, { drive_file_id: uploadResult.id });
+        await supabase
+          .from('client_documents')
+          .update({
+            upload_status: 'verifying',
+            upload_completed_at: new Date().toISOString(),
+            upload_progress: 100,
+          })
+          .eq('id', document.id);
 
-        await logEvent('upload_completed', document.id);
-        
-        const verified = await verifyUploadedFile(filePath, file.size, hash, document.id);
-        await trackMetrics(document.id, file.size, 'standard', verified);
+        const verified = await verifyUploadedFile(
+          uploadResult.id,
+          uploadResult.size,
+          hash,
+          document.id,
+          uploadResult,
+        );
 
-        setState(prev => ({ ...prev, uploading: false, progress: 100 }));
+        await trackMetrics(document.id, file.size, 'google_drive', verified);
+
+        setState(prev => ({
+          ...prev,
+          uploading: false,
+          progress: 100,
+        }));
 
         if (verified) {
-          toast({ title: 'Upload concluído', description: 'Arquivo enviado com sucesso!' });
+          toast({
+            title: 'Upload concluído',
+            description: 'Arquivo enviado e verificado com sucesso!',
+          });
           onComplete?.(document.id);
+        } else {
+          toast({
+            title: 'Erro na verificação',
+            description: 'Arquivo enviado mas falhou na verificação de integridade.',
+            variant: 'destructive',
+          });
+          onError?.(new Error('Verification failed'));
         }
+      } catch (uploadError) {
+        metricsRef.current.uploadEndTime = Date.now();
+        uploadRef.current = null;
+
+        const message = uploadError instanceof Error ? uploadError.message : 'Falha no upload para o Google Drive';
+
+        await logEvent('upload_failed', document.id, { error: message });
+        await trackMetrics(document.id, file.size, 'google_drive', false, message);
+
+        setState(prev => ({
+          ...prev,
+          uploading: false,
+          error: message,
+        }));
+
+        toast({
+          title: 'Erro no upload',
+          description: message,
+          variant: 'destructive',
+        });
+
+        onError?.(uploadError instanceof Error ? uploadError : new Error(message));
+        return;
       }
     } catch (error) {
       console.error('Upload error:', error);
@@ -484,8 +465,6 @@ export function useResumableUpload() {
     logEvent,
     verifyUploadedFile,
     trackMetrics,
-    resumableEnabled,
-    thresholdMB,
     maxFileSizeGB,
     clientQuotaGB,
   ]);
@@ -496,34 +475,43 @@ export function useResumableUpload() {
   const pauseUpload = useCallback(async () => {
     if (uploadRef.current) {
       uploadRef.current.abort();
-      setState(prev => ({ ...prev, paused: true, uploading: false }));
-      
-      if (state.documentId) {
-        await logEvent('upload_paused', state.documentId, { progress: state.progress });
-        await supabase
-          .from('client_documents')
-          .update({ upload_status: 'paused' })
-          .eq('id', state.documentId);
-      }
+      uploadRef.current = null;
     }
+
+    setState(prev => ({ ...prev, paused: true, uploading: false }));
+
+    if (state.documentId) {
+      await logEvent('upload_paused', state.documentId, { progress: state.progress });
+      await supabase
+        .from('client_documents')
+        .update({ upload_status: 'paused' })
+        .eq('id', state.documentId);
+    }
+
+    toast({
+      title: 'Upload pausado',
+      description: 'Ao retomar será necessário reiniciar o envio do arquivo.',
+    });
   }, [state.documentId, state.progress, logEvent]);
 
   /**
    * Retomar upload
    */
   const resumeUpload = useCallback(async () => {
-    if (uploadRef.current) {
-      uploadRef.current.start();
-      setState(prev => ({ ...prev, paused: false, uploading: true }));
-      
-      if (state.documentId) {
-        await logEvent('upload_resumed', state.documentId, { progress: state.progress });
-        await supabase
-          .from('client_documents')
-          .update({ upload_status: 'uploading' })
-          .eq('id', state.documentId);
-      }
+    setState(prev => ({ ...prev, paused: false }));
+
+    if (state.documentId) {
+      await logEvent('upload_resumed', state.documentId, { progress: state.progress });
+      await supabase
+        .from('client_documents')
+        .update({ upload_status: 'uploading' })
+        .eq('id', state.documentId);
     }
+
+    toast({
+      title: 'Reinicie o envio',
+      description: 'Selecione o arquivo novamente para continuar o upload ao Google Drive.',
+    });
   }, [state.documentId, state.progress, logEvent]);
 
   /**
@@ -531,7 +519,7 @@ export function useResumableUpload() {
    */
   const cancelUpload = useCallback(async () => {
     if (uploadRef.current) {
-      uploadRef.current.abort(true);
+      uploadRef.current.abort();
       uploadRef.current = null;
     }
     

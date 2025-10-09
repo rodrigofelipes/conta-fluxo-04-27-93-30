@@ -71,3 +71,22 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+
+## Configuração do armazenamento no Google Drive
+
+O envio de documentos de clientes agora utiliza o Google Drive. Para que o upload funcione corretamente, configure os itens abaixo:
+
+1. **Credenciais do serviço Google**
+   - Crie uma conta de serviço no [Google Cloud Console](https://console.cloud.google.com/).
+   - Compartilhe a pasta do Drive (ou drive compartilhado) desejada com o e-mail da conta de serviço.
+   - No projeto Supabase, defina a variável de ambiente `GOOGLE_SERVICE_ACCOUNT` com o JSON completo das credenciais da conta de serviço.
+
+2. **Variáveis de ambiente do frontend**
+   - `VITE_GOOGLE_DRIVE_ROOT_FOLDER_ID`: ID da pasta no Drive onde os arquivos devem ser gravados (opcional, quando omitido os arquivos ficam na raiz da conta de serviço).
+   - `VITE_GOOGLE_DRIVE_TOKEN_CACHE_MS` (opcional): tempo de cache, em milissegundos, para reutilização do token emitido pela conta de serviço (valor padrão: `50000`).
+
+3. **Função Edge no Supabase**
+   - Implante a função `google-drive-token` localizada em `supabase/functions/google-drive-token`.
+   - Garanta que a função possua acesso à variável `GOOGLE_SERVICE_ACCOUNT` e às permissões de execução adequadas.
+
+Após configurar os itens acima, os uploads e exclusões de documentos passarão a ocorrer diretamente no Google Drive.
