@@ -1,14 +1,9 @@
-
-
 import { useCallback, useEffect, useRef, useState } from "react";
-
-
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Loader2, Mic, Square, X } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { uploadFileToDrive } from "@/integrations/googleDrive/storage";
-import { createHash } from "@/utils/fileValidation";
+import { supabase } from "@/integrations/supabase/client";
 import type { UploadedFileInfo } from "@/components/chat/FileUpload";
 
 interface AudioRecorderProps {
@@ -25,13 +20,6 @@ interface AudioRecorderProps {
     cancelRecording: () => void;
   }) => React.ReactNode;
 }
-
-const sanitizeFilename = (filename: string) =>
-  filename
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9.-]/g, "_")
-    .replace(/_{2,}/g, "_");
 
 const formatDuration = (seconds: number) => {
   const mins = Math.floor(seconds / 60)
@@ -122,30 +110,31 @@ export function AudioRecorder({
       const mimeType = blob.type || "audio/webm";
       const extension = mimeType.includes("mp4") ? "m4a" : "webm";
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const filename = sanitizeFilename(`gravacao-${timestamp}.${extension}`);
+      const filename = `audio-${timestamp}.${extension}`;
       const file = new File([blob], filename, { type: mimeType });
-      const hash = await createHash(file);
 
-      const uploadResult = await uploadFileToDrive({
-        file,
-        clientId: clientId || "chat-internal",
-        clientName: clientName || "Chat Interno",
-        sanitizedName: filename,
-        hash,
-        subfolder: "Chat",
-        onProgress: (progress) => {
-          setUploadProgress(progress);
-        },
-      });
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("chat-attachments")
+        .upload(`${clientId || "internal"}/${filename}`, file, {
+          contentType: mimeType,
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from("chat-attachments")
+        .getPublicUrl(uploadData.path);
 
       const uploadedFile: UploadedFileInfo = {
         id: crypto.randomUUID(),
         fileName: file.name,
         fileType: file.type,
         fileSize: file.size,
-        driveFileId: uploadResult.id,
-        webViewLink: uploadResult.webViewLink ?? null,
-        webContentLink: uploadResult.webContentLink ?? null,
+        storagePath: uploadData.path,
+        url: publicUrl,
       };
 
       onRecordingComplete(uploadedFile);

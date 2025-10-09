@@ -27,9 +27,11 @@ export interface UploadedFileInfo {
   fileName: string;
   fileType: string;
   fileSize: number;
-  driveFileId: string;
-  webViewLink: string | null;
-  webContentLink: string | null;
+  driveFileId?: string;
+  webViewLink?: string | null;
+  webContentLink?: string | null;
+  storagePath?: string;
+  url?: string;
 }
 
 export function FileUpload({ onFileUploaded, disabled, clientId, clientName }: FileUploadProps) {
