@@ -114,8 +114,18 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
       setLoading(true);
       
       // Buscar usuários do sistema (incluindo inativos) via Edge Function
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        throw new Error('Sessão expirada. Faça login novamente.');
+      }
+
       const { data: profilesResponse, error: profilesError } = await supabase
-        .functions.invoke('list-system-users');
+        .functions.invoke('list-system-users', {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
 
       if (profilesError) throw profilesError;
       if (!profilesResponse?.success) {
