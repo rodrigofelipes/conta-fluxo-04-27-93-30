@@ -339,23 +339,23 @@ export async function uploadFileToDrive(options: UploadOptions): Promise<UploadR
     supportsAllDrives: 'true',
   });
 
+
   const buildErrorMessage = (xhr: XMLHttpRequest) => {
     const statusText = xhr.statusText || `${xhr.status}`;
-    const baseMessage = `Falha ao enviar arquivo para o Google Drive: ${statusText}`;
-
-    const responsePayload = (() => {
-      if (xhr.response && typeof xhr.response === 'object') {
-        return xhr.response;
+    let details = '';
+    try {
+      const response = xhr.response ?? (xhr.responseText ? JSON.parse(xhr.responseText) : null);
+      if (response && typeof response === 'object') {
+        const message = (response as { error?: { message?: string }; message?: string }).error?.message
+          ?? (response as { message?: string }).message;
+        if (message) {
+          details = ` - ${message}`;
+        }
       }
-
-      if (xhr.responseText) {
-        return parseDriveErrorFromText(xhr.responseText);
-      }
-
-      return undefined;
-    })();
-
-    return formatDriveErrorMessage(baseMessage, responsePayload);
+    } catch (error) {
+      // Ignorar erro ao parsear resposta
+    }
+    return `Falha ao enviar arquivo para o Google Drive: ${statusText}${details}`;
   };
 
   const attemptUpload = async (authToken: string, isRetry = false): Promise<UploadResult> => {
@@ -370,6 +370,7 @@ export async function uploadFileToDrive(options: UploadOptions): Promise<UploadR
       xhr.responseType = 'json';
       xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
       xhr.setRequestHeader('Content-Type', contentType);
+
 
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable && onProgress) {
