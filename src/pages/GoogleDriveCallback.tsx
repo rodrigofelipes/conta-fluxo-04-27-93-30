@@ -1,12 +1,16 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGoogleDriveAuth } from '@/hooks/useGoogleDriveAuth';
 
 export default function GoogleDriveCallback() {
   const navigate = useNavigate();
   const { handleCallback } = useGoogleDriveAuth();
+  const hasProcessed = useRef(false);
 
   useEffect(() => {
+    // Previne processamento duplicado
+    if (hasProcessed.current) return;
+    
     const processCallback = async () => {
       const params = new URLSearchParams(window.location.search);
       const code = params.get('code');
@@ -19,13 +23,16 @@ export default function GoogleDriveCallback() {
       }
 
       if (code) {
+        hasProcessed.current = true;
         await handleCallback(code);
+        navigate('/settings');
+      } else {
         navigate('/settings');
       }
     };
 
     processCallback();
-  }, [handleCallback, navigate]);
+  }, []);
 
   return (
     <div className="flex items-center justify-center min-h-screen">
