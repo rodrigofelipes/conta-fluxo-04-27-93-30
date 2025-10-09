@@ -26,6 +26,7 @@ const getProxyUrl = (attachment: MediaMessageProps['attachment']) => {
 export function MediaMessage({ attachment }: MediaMessageProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [audioDuration, setAudioDuration] = useState<number>(0);
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -105,6 +106,13 @@ export function MediaMessage({ attachment }: MediaMessageProps) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const formatDuration = (seconds: number) => {
+    if (!seconds || isNaN(seconds)) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const isImage = attachment.fileType.startsWith('image/');
   const isVideo = attachment.fileType.startsWith('video/');
   const isAudio = attachment.fileType.startsWith('audio/');
@@ -161,18 +169,35 @@ export function MediaMessage({ attachment }: MediaMessageProps) {
             onClick={toggleAudio}
             variant="outline"
             size="sm"
-            className="h-10 w-10 p-0"
+            className="h-10 w-10 p-0 shrink-0"
           >
             {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
           </Button>
-          <div className="flex-1">
-            <p className="text-sm font-medium truncate">{attachment.fileName}</p>
-            <p className="text-xs text-muted-foreground">{formatFileSize(attachment.fileSize)}</p>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <Volume2 className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span className="text-sm font-medium">Áudio</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {formatDuration(audioDuration)}
+            </p>
           </div>
+          <Button
+            onClick={handleDownload}
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0 shrink-0"
+          >
+            <Download className="h-4 w-4" />
+          </Button>
           <audio
             ref={audioRef}
             src={proxyUrl}
             preload="metadata"
+            onLoadedMetadata={(e) => {
+              const audio = e.currentTarget;
+              setAudioDuration(audio.duration);
+            }}
             onEnded={() => setIsPlaying(false)}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
@@ -196,25 +221,26 @@ export function MediaMessage({ attachment }: MediaMessageProps) {
         </div>
       )}
 
-      <div className="border-t p-3 flex justify-between items-center">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {isImage && <Image className="h-3 w-3" />}
-          {isVideo && <Video className="h-3 w-3" />}
-          {isAudio && <Volume2 className="h-3 w-3" />}
-          {!isImage && !isVideo && !isAudio && <File className="h-3 w-3" />}
-          <span className="truncate max-w-20">{attachment.fileType}</span>
+      {!isAudio && (
+        <div className="border-t p-3 flex justify-between items-center">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {isImage && <Image className="h-3 w-3" />}
+            {isVideo && <Video className="h-3 w-3" />}
+            {!isImage && !isVideo && !isAudio && <File className="h-3 w-3" />}
+            <span className="truncate max-w-20">{attachment.fileType}</span>
+          </div>
+          
+          <Button
+            onClick={handleDownload}
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1"
+          >
+            <Download className="h-3 w-3" />
+            Download
+          </Button>
         </div>
-        
-        <Button
-          onClick={handleDownload}
-          variant="ghost"
-          size="sm"
-          className="h-8 gap-1"
-        >
-          <Download className="h-3 w-3" />
-          Download
-        </Button>
-      </div>
+      )}
     </div>
   );
 }
