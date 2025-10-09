@@ -1,4 +1,8 @@
-import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+
+
+import { useCallback, useEffect, useRef, useState } from "react";
+
+
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Loader2, Mic, Square, X } from "lucide-react";
@@ -12,17 +16,10 @@ interface AudioRecorderProps {
   disabled?: boolean;
   clientId?: string;
   clientName?: string;
-  children?: (props: AudioRecorderRenderProps) => ReactNode;
-}
 
-export interface AudioRecorderRenderProps {
-  isRecording: boolean;
-  isUploading: boolean;
-  recordingTime: number;
-  uploadProgress: number;
-  startRecording: () => Promise<void> | void;
-  stopRecording: () => void;
-  cancelRecording: () => void;
+
+
+
 }
 
 const sanitizeFilename = (filename: string) =>
@@ -47,7 +44,10 @@ export function AudioRecorder({
   disabled,
   clientId,
   clientName,
-  children,
+
+
+
+
 }: AudioRecorderProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -253,31 +253,8 @@ export function AudioRecorder({
     });
   };
 
-  const renderProps: AudioRecorderRenderProps = {
-    isRecording,
-    isUploading,
-    recordingTime,
-    uploadProgress,
-    startRecording,
-    stopRecording,
-    cancelRecording,
-  };
 
-  if (typeof children === "function") {
-    return (
-      <div className="space-y-2">
-        {children(renderProps)}
 
-        {(isUploading || uploadProgress > 0) && (
-          <Progress value={uploadProgress} className="h-2" />
-        )}
-
-        {error && !isRecording && !isUploading && (
-          <p className="text-xs text-destructive">{error}</p>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-2">
