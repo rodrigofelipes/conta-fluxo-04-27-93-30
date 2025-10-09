@@ -1,4 +1,6 @@
+
 import { useCallback, useEffect, useRef, useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Loader2, Mic, Square, X } from "lucide-react";
@@ -12,6 +14,8 @@ interface AudioRecorderProps {
   disabled?: boolean;
   clientId?: string;
   clientName?: string;
+
+
 }
 
 const sanitizeFilename = (filename: string) =>
@@ -36,6 +40,8 @@ export function AudioRecorder({
   disabled,
   clientId,
   clientName,
+
+
 }: AudioRecorderProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -240,6 +246,8 @@ export function AudioRecorder({
       description: "O áudio gravado não foi salvo.",
     });
   };
+
+
 
   return (
     <div className="space-y-2">
