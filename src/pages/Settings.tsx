@@ -32,8 +32,10 @@ import {
   CheckCircle,
   MessageSquare,
   Download,
-  Calendar
+  Calendar,
+  Cloud
 } from "lucide-react";
+import { GoogleDriveSettings } from "@/components/settings/GoogleDriveSettings";
 
 interface NotificationSettings {
   emailNotifications: boolean;
@@ -210,8 +212,8 @@ export default function Settings() {
   // Check if user is admin or Débora to show WhatsApp tab
   const showWhatsAppTab = user?.role === 'admin' || user?.name === 'Débora';
   const isAdmin = user?.role === 'admin';
-  const totalTabs = 3 + (showWhatsAppTab ? 1 : 0) + (isAdmin ? 1 : 0);
-  const gridColsClass = totalTabs === 5 ? 'grid-cols-5' : totalTabs === 4 ? 'grid-cols-4' : 'grid-cols-3';
+  const totalTabs = 4 + (showWhatsAppTab ? 1 : 0) + (isAdmin ? 1 : 0);
+  const gridColsClass = totalTabs === 6 ? 'grid-cols-6' : totalTabs === 5 ? 'grid-cols-5' : totalTabs === 4 ? 'grid-cols-4' : 'grid-cols-3';
 
   return (
     <div className="space-y-6">
@@ -233,6 +235,10 @@ export default function Settings() {
           <TabsTrigger value="notifications" className="flex items-center gap-2">
             <Bell className="size-4" />
             Notificações
+          </TabsTrigger>
+          <TabsTrigger value="googledrive" className="flex items-center gap-2">
+            <Cloud className="size-4" />
+            Google Drive
           </TabsTrigger>
           {showWhatsAppTab && (
             <TabsTrigger value="whatsapp" className="flex items-center gap-2">
@@ -547,6 +553,11 @@ export default function Settings() {
               ))}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Aba Google Drive */}
+        <TabsContent value="googledrive" className="space-y-4">
+          <GoogleDriveSettings />
         </TabsContent>
 
         {/* Aba WhatsApp */}

@@ -229,7 +229,7 @@ export function useResumableUpload() {
   const trackMetrics = useCallback(async (
     documentId: string,
     fileSize: number,
-    method: 'resumable' | 'signed' | 'standard',
+    method: 'resumable' | 'signed' | 'standard' | 'google_drive',
     success: boolean,
     errorMessage?: string
   ) => {
