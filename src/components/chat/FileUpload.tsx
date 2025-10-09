@@ -12,6 +12,8 @@ import { createHash } from "@/utils/fileValidation";
 interface FileUploadProps {
   onFileUploaded: (file: UploadedFileInfo) => void;
   disabled?: boolean;
+  clientId?: string;
+  clientName?: string;
 }
 
 interface UploadingFile {
@@ -30,7 +32,7 @@ export interface UploadedFileInfo {
   webContentLink: string | null;
 }
 
-export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
+export function FileUpload({ onFileUploaded, disabled, clientId, clientName }: FileUploadProps) {
   const { user } = useAuth();
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -142,13 +144,14 @@ export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
       // Calcular hash do arquivo
       const hash = await createHash(file);
 
-      // Upload para Google Drive (pasta Chat)
+      // Upload para Google Drive (pasta Chat do cliente)
       const uploadResult = await uploadFileToDrive({
         file,
-        clientId: 'chat-internal',
-        clientName: 'Chat Interno',
+        clientId: clientId || 'chat-internal',
+        clientName: clientName || 'Chat Interno',
         sanitizedName,
         hash,
+        subfolder: 'Chat', // Pasta Chat dentro da pasta do cliente
         onProgress: (progress) => {
           setUploadingFiles(prev =>
             prev.map(f =>

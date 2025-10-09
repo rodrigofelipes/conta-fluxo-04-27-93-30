@@ -1253,6 +1253,8 @@ export default function Chat() {
                       });
                     }}
                     disabled={!selectedContact || isSending}
+                    clientId={selectedContact?.id}
+                    clientName={selectedContact?.name}
                   />
 
                   {pendingAttachments.length > 0 && (

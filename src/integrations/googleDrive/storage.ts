@@ -16,6 +16,7 @@ interface UploadOptions {
   clientName?: string;
   sanitizedName: string;
   hash: string;
+  subfolder?: string;
   onProgress?: (progress: number) => void;
   onCreateRequest?: (xhr: XMLHttpRequest) => void;
 }
@@ -202,6 +203,72 @@ function parseDriveErrorFromText(text: string): unknown {
   }
 }
 
+async function ensureSubfolder(
+  token: string,
+  parentFolderId: string,
+  subfolderName: string,
+): Promise<string> {
+  const escapedSubfolderName = escapeForDriveQuery(subfolderName);
+  
+  // Procurar subfolder existente
+  const searchParams = new URLSearchParams({
+    q: `name='${escapedSubfolderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parentFolderId}' in parents`,
+    fields: 'files(id,name)',
+    pageSize: '1',
+    includeItemsFromAllDrives: 'true',
+    supportsAllDrives: 'true',
+  });
+
+  const searchResponse = await fetch(`${DRIVE_API_BASE}?${searchParams.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!searchResponse.ok) {
+    const errorPayload = parseDriveErrorFromText(await searchResponse.text());
+    throw new Error(
+      formatDriveErrorMessage('Não foi possível localizar subfolder no Google Drive', errorPayload),
+    );
+  }
+
+  const searchData = await searchResponse.json();
+  const existingFolder = searchData?.files?.[0];
+  
+  if (existingFolder?.id) {
+    return existingFolder.id;
+  }
+
+  // Criar nova subfolder
+  const createParams = new URLSearchParams({
+    supportsAllDrives: 'true',
+    fields: 'id,name',
+  });
+
+  const createResponse = await fetch(`${DRIVE_API_BASE}?${createParams.toString()}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json; charset=UTF-8',
+    },
+    body: JSON.stringify({
+      name: subfolderName,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentFolderId],
+    }),
+  });
+
+  if (!createResponse.ok) {
+    const errorPayload = parseDriveErrorFromText(await createResponse.text());
+    throw new Error(
+      formatDriveErrorMessage('Não foi possível criar subfolder no Google Drive', errorPayload),
+    );
+  }
+
+  const createData = await createResponse.json();
+  return createData.id;
+}
+
 async function ensureClientFolder(
   token: string,
   clientId: string,
@@ -328,9 +395,14 @@ async function ensureClientFolder(
 }
 
 export async function uploadFileToDrive(options: UploadOptions): Promise<UploadResult> {
-  const { file, clientId, clientName, sanitizedName, hash, onProgress, onCreateRequest } = options;
+  const { file, clientId, clientName, sanitizedName, hash, subfolder, onProgress, onCreateRequest } = options;
   const token = await getDriveAccessToken();
-  const folderId = await ensureClientFolder(token, clientId, clientName);
+  let folderId = await ensureClientFolder(token, clientId, clientName);
+  
+  // Se especificou subfolder, criar dentro da pasta do cliente
+  if (subfolder && folderId) {
+    folderId = await ensureSubfolder(token, folderId, subfolder);
+  }
 
   const metadata: Record<string, unknown> = {
     name: sanitizedName,
