@@ -105,11 +105,17 @@ async function ensureClientFolder(token: string, clientId: string): Promise<stri
     return undefined;
   }
 
-  const query = encodeURIComponent(
-    `name='${clientId}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${googleDriveConfig.rootFolderId}' in parents`,
-  );
+  const query = `name='${clientId}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${googleDriveConfig.rootFolderId}' in parents`;
 
-  const searchResponse = await fetch(`${DRIVE_API_BASE}?q=${query}&fields=files(id,name)&pageSize=1`, {
+  const searchParams = new URLSearchParams({
+    q: query,
+    fields: 'files(id,name)',
+    pageSize: '1',
+    includeItemsFromAllDrives: 'true',
+    supportsAllDrives: 'true',
+  });
+
+  const searchResponse = await fetch(`${DRIVE_API_BASE}?${searchParams.toString()}`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -126,7 +132,12 @@ async function ensureClientFolder(token: string, clientId: string): Promise<stri
     return existingId;
   }
 
-  const createResponse = await fetch(`${DRIVE_API_BASE}?fields=id,name`, {
+  const createParams = new URLSearchParams({
+    fields: 'id,name',
+    supportsAllDrives: 'true',
+  });
+
+  const createResponse = await fetch(`${DRIVE_API_BASE}?${createParams.toString()}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -175,7 +186,13 @@ export async function uploadFileToDrive(options: UploadOptions): Promise<UploadR
     if (onCreateRequest) {
       onCreateRequest(xhr);
     }
-    xhr.open('POST', `${DRIVE_UPLOAD_ENDPOINT}?uploadType=multipart&fields=id,name,size,webViewLink,webContentLink,appProperties`, true);
+    const uploadParams = new URLSearchParams({
+      uploadType: 'multipart',
+      fields: 'id,name,size,webViewLink,webContentLink,appProperties',
+      supportsAllDrives: 'true',
+    });
+
+    xhr.open('POST', `${DRIVE_UPLOAD_ENDPOINT}?${uploadParams.toString()}`, true);
     xhr.responseType = 'json';
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.setRequestHeader('Content-Type', contentType);
@@ -213,7 +230,12 @@ export async function uploadFileToDrive(options: UploadOptions): Promise<UploadR
 
 export async function getDriveFileMetadata(fileId: string): Promise<DriveFileMetadata | null> {
   const token = await getDriveAccessToken();
-  const response = await fetch(`${DRIVE_API_BASE}/${fileId}?fields=id,name,size,webViewLink,webContentLink,appProperties`, {
+  const metadataParams = new URLSearchParams({
+    fields: 'id,name,size,webViewLink,webContentLink,appProperties',
+    supportsAllDrives: 'true',
+  });
+
+  const response = await fetch(`${DRIVE_API_BASE}/${fileId}?${metadataParams.toString()}`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -241,7 +263,12 @@ export async function getDriveFileMetadata(fileId: string): Promise<DriveFileMet
 
 export async function downloadDriveFile(fileId: string): Promise<Blob> {
   const token = await getDriveAccessToken();
-  const response = await fetch(`${DRIVE_API_BASE}/${fileId}?alt=media`, {
+  const downloadParams = new URLSearchParams({
+    alt: 'media',
+    supportsAllDrives: 'true',
+  });
+
+  const response = await fetch(`${DRIVE_API_BASE}/${fileId}?${downloadParams.toString()}`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -257,7 +284,11 @@ export async function downloadDriveFile(fileId: string): Promise<Blob> {
 
 export async function deleteDriveFile(fileId: string): Promise<void> {
   const token = await getDriveAccessToken();
-  const response = await fetch(`${DRIVE_API_BASE}/${fileId}`, {
+  const deleteParams = new URLSearchParams({
+    supportsAllDrives: 'true',
+  });
+
+  const response = await fetch(`${DRIVE_API_BASE}/${fileId}?${deleteParams.toString()}`, {
     method: 'DELETE',
     headers: {
       Authorization: `Bearer ${token}`,
