@@ -130,20 +130,8 @@ export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
     setUploadingFiles(prev => [...prev, uploadingFile]);
 
     try {
-      // Create unique file path
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user?.id}/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-
-      // Upload file to Supabase Storage
-      const { data, error } = await supabase.storage
-        .from('chat-files')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: false,
-          contentType: file.type || undefined,
-        });
-
-      // Simulate progress completion
+      // Não precisa mais fazer upload aqui - será feito quando a mensagem for enviada
+      // Apenas mantém o arquivo em memória
       setUploadingFiles(prev =>
         prev.map(f =>
           f.id === fileId
