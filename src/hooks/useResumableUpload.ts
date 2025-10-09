@@ -18,6 +18,7 @@ import {
 interface UploadOptions {
   file: File;
   clientId: string;
+  clientName?: string;
   onProgress?: (progress: number) => void;
   onHashProgress?: (progress: number, estimatedTime?: number) => void;
   onComplete?: (documentId: string) => void;
@@ -270,7 +271,7 @@ export function useResumableUpload() {
    * Iniciar upload
    */
   const startUpload = useCallback(async (options: UploadOptions) => {
-    const { file, clientId, onProgress, onHashProgress, onComplete, onError } = options;
+    const { file, clientId, clientName, onProgress, onHashProgress, onComplete, onError } = options;
 
     try {
       // 1. Validação pré-upload
@@ -355,6 +356,7 @@ export function useResumableUpload() {
         const uploadResult = await uploadFileToDrive({
           file,
           clientId,
+          clientName,
           sanitizedName,
           hash,
           onProgress: (progress) => {
