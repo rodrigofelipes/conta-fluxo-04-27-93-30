@@ -1281,6 +1281,16 @@ export default function Chat() {
                       clientName={selectedContact?.name}
                     />
 
+
+                    <AudioRecorder
+                      onRecordingComplete={(file) => {
+                        setPendingAttachments((prev) => [...prev, file]);
+                      }}
+                      disabled={!selectedContact || isSending}
+                      clientId={selectedContact?.id}
+                      clientName={selectedContact?.name}
+                    />
+
                   </div>
 
                   {pendingAttachments.length > 0 && (
