@@ -36,8 +36,17 @@ let tokenCache: TokenCache | null = null;
 let pendingTokenPromise: Promise<string> | null = null;
 
 async function fetchServiceAccountToken(): Promise<{ access_token: string; expires_in: number }> {
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error('Sessão expirada. Faça login novamente.');
+  }
+
   const { data, error } = await supabase.functions.invoke(googleDriveConfig.serviceAccountTokenFunction, {
     method: 'POST',
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+    },
   });
 
   if (error) {

@@ -71,8 +71,17 @@ export function useGoogleDriveAuth() {
 
       const redirectUri = `${window.location.origin}/google-drive-callback`;
       
+      const accessToken = session.access_token;
+
+      if (!accessToken) {
+        throw new Error('Sessão expirada. Faça login novamente.');
+      }
+
       const { error } = await supabase.functions.invoke('google-oauth-callback', {
         body: { code, redirectUri },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
       });
 
       if (error) throw error;
