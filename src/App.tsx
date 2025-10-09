@@ -27,6 +27,7 @@ import AdminLogin from "./pages/auth/AdminLogin";
 import Forgot from "./pages/auth/ForgotPassword";
 import TwoFA from "./pages/auth/TwoFA";
 import NotFound from "./pages/NotFound";
+import GoogleDriveCallback from "./pages/GoogleDriveCallback";
 import { AuthProvider, ProtectedRoute, AdminRoute } from "./state/auth";
 import Signup from "./pages/auth/Signup";
 import { ThemeProvider } from "next-themes";
@@ -54,6 +55,7 @@ const App = () => (
               <Route path="/signup" element={<Signup />} />
               <Route path="/forgot" element={<Forgot />} />
               <Route path="/2fa" element={<TwoFA />} />
+              <Route path="/google-drive-callback" element={<GoogleDriveCallback />} />
 
               <Route
                 path="/"
