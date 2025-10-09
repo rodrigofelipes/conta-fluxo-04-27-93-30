@@ -146,29 +146,18 @@ function parseDriveErrorPayload(payload: unknown): DriveErrorDetail[] {
   return messages;
 }
 
-const SERVICE_ACCOUNT_SHARED_DRIVE_MESSAGE =
-  'service accounts do not have access to shared drives';
-const SERVICE_ACCOUNT_STORAGE_QUOTA_MESSAGE = 'service accounts do not have storage quota';
-
-function normalizeDriveErrorMessage(message: string | undefined): string {
-  return (message ?? '').toLowerCase();
-}
 
 function isSharedDriveAccessError(errors: DriveErrorDetail[]): boolean {
   return errors.some((error) =>
-    normalizeDriveErrorMessage(error.message).includes(SERVICE_ACCOUNT_SHARED_DRIVE_MESSAGE),
-  );
-}
+    (error.message ?? '').toLowerCase().includes('service accounts do not have access to shared drives'),
 
-function isServiceAccountStorageQuotaError(errors: DriveErrorDetail[]): boolean {
-  return errors.some((error) =>
-    normalizeDriveErrorMessage(error.message).includes(SERVICE_ACCOUNT_STORAGE_QUOTA_MESSAGE),
   );
 }
 
 const SHARED_DRIVE_GUIDE_URL =
   'https://developers.google.com/workspace/drive/api/guides/service-accounts#shared-drives';
-const STORAGE_QUOTA_GUIDE_URL = 'https://support.google.com/a/answer/7281227?hl=en';
+
+
 
 function buildSharedDriveAccessErrorMessage(): string {
   return [
@@ -178,13 +167,6 @@ function buildSharedDriveAccessErrorMessage(): string {
   ].join(' ');
 }
 
-function buildServiceAccountStorageQuotaErrorMessage(): string {
-  return [
-    'Não foi possível enviar o documento: a conta de serviço do Google Drive não possui cota de armazenamento disponível.',
-    'Armazene os arquivos em uma unidade compartilhada com a conta de serviço ou utilize delegação OAuth conforme as orientações oficiais:',
-    `${SHARED_DRIVE_GUIDE_URL} e ${STORAGE_QUOTA_GUIDE_URL}`,
-  ].join(' ');
-}
 
 function formatDriveErrorMessage(baseMessage: string, payload: unknown): string {
   const driveErrors = parseDriveErrorPayload(payload);
@@ -193,9 +175,7 @@ function formatDriveErrorMessage(baseMessage: string, payload: unknown): string 
     return buildSharedDriveAccessErrorMessage();
   }
 
-  if (isServiceAccountStorageQuotaError(driveErrors)) {
-    return buildServiceAccountStorageQuotaErrorMessage();
-  }
+
 
   const detailedMessage = driveErrors.find((error) => Boolean(error.message))?.message;
   return detailedMessage ? `${baseMessage} - ${detailedMessage}` : baseMessage;
@@ -366,23 +346,23 @@ export async function uploadFileToDrive(options: UploadOptions): Promise<UploadR
     supportsAllDrives: 'true',
   });
 
+
   const buildErrorMessage = (xhr: XMLHttpRequest) => {
     const statusText = xhr.statusText || `${xhr.status}`;
-    const baseMessage = `Falha ao enviar arquivo para o Google Drive: ${statusText}`;
-
-    const responsePayload = (() => {
-      if (xhr.response && typeof xhr.response === 'object') {
-        return xhr.response;
+    let details = '';
+    try {
+      const response = xhr.response ?? (xhr.responseText ? JSON.parse(xhr.responseText) : null);
+      if (response && typeof response === 'object') {
+        const message = (response as { error?: { message?: string }; message?: string }).error?.message
+          ?? (response as { message?: string }).message;
+        if (message) {
+          details = ` - ${message}`;
+        }
       }
-
-      if (xhr.responseText) {
-        return parseDriveErrorFromText(xhr.responseText);
-      }
-
-      return undefined;
-    })();
-
-    return formatDriveErrorMessage(baseMessage, responsePayload);
+    } catch (error) {
+      // Ignorar erro ao parsear resposta
+    }
+    return `Falha ao enviar arquivo para o Google Drive: ${statusText}${details}`;
   };
 
   const attemptUpload = async (authToken: string, isRetry = false): Promise<UploadResult> => {
@@ -397,6 +377,8 @@ export async function uploadFileToDrive(options: UploadOptions): Promise<UploadR
       xhr.responseType = 'json';
       xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
       xhr.setRequestHeader('Content-Type', contentType);
+
+
 
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable && onProgress) {
