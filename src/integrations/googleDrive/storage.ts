@@ -13,6 +13,7 @@ export interface DriveFileMetadata {
 interface UploadOptions {
   file: File;
   clientId: string;
+  clientName?: string;
   sanitizedName: string;
   hash: string;
   onProgress?: (progress: number) => void;
@@ -100,36 +101,99 @@ function buildMultipartRequestBody(file: File, metadata: Record<string, unknown>
   };
 }
 
-async function ensureClientFolder(token: string, clientId: string): Promise<string | undefined> {
+function escapeForDriveQuery(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+async function ensureClientFolder(
+  token: string,
+  clientId: string,
+  clientName?: string,
+): Promise<string | undefined> {
   if (!googleDriveConfig.rootFolderId) {
     return undefined;
   }
 
-  const query = `name='${clientId}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${googleDriveConfig.rootFolderId}' in parents`;
+  const folderName = clientName?.trim() || clientId;
+  const escapedFolderName = escapeForDriveQuery(folderName);
+  const searchQueries = [
+    `appProperties has { key='clientId' and value='${escapeForDriveQuery(clientId)}' } and mimeType='application/vnd.google-apps.folder' and trashed=false and '${googleDriveConfig.rootFolderId}' in parents`,
+  ];
 
-  const searchParams = new URLSearchParams({
-    q: query,
-    fields: 'files(id,name)',
-    pageSize: '1',
-    includeItemsFromAllDrives: 'true',
-    supportsAllDrives: 'true',
-  });
-
-  const searchResponse = await fetch(`${DRIVE_API_BASE}?${searchParams.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  if (!searchResponse.ok) {
-    const error = await searchResponse.text();
-    throw new Error(`Não foi possível localizar pasta do cliente no Google Drive: ${error}`);
+  if (clientName && clientName.trim().length > 0) {
+    searchQueries.push(
+      `name='${escapedFolderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${googleDriveConfig.rootFolderId}' in parents`,
+    );
   }
 
-  const searchData = await searchResponse.json();
-  const existingId = searchData?.files?.[0]?.id as string | undefined;
-  if (existingId) {
-    return existingId;
+  // Fallback to previous behaviour to avoid duplicating folders that were created with the client ID
+  searchQueries.push(
+    `name='${escapeForDriveQuery(clientId)}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${googleDriveConfig.rootFolderId}' in parents`,
+  );
+
+  for (const query of searchQueries) {
+    const searchParams = new URLSearchParams({
+      q: query,
+      fields: 'files(id,name)',
+      pageSize: '1',
+      includeItemsFromAllDrives: 'true',
+      supportsAllDrives: 'true',
+    });
+
+    const searchResponse = await fetch(`${DRIVE_API_BASE}?${searchParams.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!searchResponse.ok) {
+      const error = await searchResponse.text();
+      throw new Error(`Não foi possível localizar pasta do cliente no Google Drive: ${error}`);
+    }
+
+    const searchData = await searchResponse.json();
+    const existingFolder = searchData?.files?.[0];
+    if (existingFolder?.id) {
+      if (existingFolder.name !== folderName) {
+        const updateParams = new URLSearchParams({
+          supportsAllDrives: 'true',
+          fields: 'id,name',
+        });
+
+        const updateResponse = await fetch(`${DRIVE_API_BASE}/${existingFolder.id}?${updateParams.toString()}`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json; charset=UTF-8',
+          },
+          body: JSON.stringify({
+            name: folderName,
+            appProperties: { clientId },
+          }),
+        });
+
+        if (!updateResponse.ok) {
+          const error = await updateResponse.text();
+          throw new Error(`Não foi possível atualizar pasta do cliente no Google Drive: ${error}`);
+        }
+      } else {
+        // Atualiza appProperties caso não esteja configurado
+        await fetch(`${DRIVE_API_BASE}/${existingFolder.id}?supportsAllDrives=true&fields=id`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json; charset=UTF-8',
+          },
+          body: JSON.stringify({
+            appProperties: { clientId },
+          }),
+        }).catch(() => {
+          // Silenciar erros ao tentar atualizar propriedades quando não é necessário
+        });
+      }
+
+      return existingFolder.id as string;
+    }
   }
 
   const createParams = new URLSearchParams({
@@ -144,9 +208,10 @@ async function ensureClientFolder(token: string, clientId: string): Promise<stri
       'Content-Type': 'application/json; charset=UTF-8',
     },
     body: JSON.stringify({
-      name: clientId,
+      name: folderName,
       mimeType: 'application/vnd.google-apps.folder',
       parents: [googleDriveConfig.rootFolderId],
+      appProperties: { clientId },
     }),
   });
 
@@ -160,9 +225,9 @@ async function ensureClientFolder(token: string, clientId: string): Promise<stri
 }
 
 export async function uploadFileToDrive(options: UploadOptions): Promise<UploadResult> {
-  const { file, clientId, sanitizedName, hash, onProgress, onCreateRequest } = options;
+  const { file, clientId, clientName, sanitizedName, hash, onProgress, onCreateRequest } = options;
   const token = await getDriveAccessToken();
-  const folderId = await ensureClientFolder(token, clientId);
+  const folderId = await ensureClientFolder(token, clientId, clientName);
 
   const metadata: Record<string, unknown> = {
     name: sanitizedName,

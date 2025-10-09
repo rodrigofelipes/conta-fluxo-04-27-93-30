@@ -514,6 +514,7 @@ export default function ClientDetail() {
       const uploadResult = await uploadFileToDrive({
         file,
         clientId: id,
+        clientName: client?.name,
         sanitizedName: sanitizedFileName,
         hash,
       });
