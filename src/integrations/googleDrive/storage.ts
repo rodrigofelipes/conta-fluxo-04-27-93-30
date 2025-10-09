@@ -105,6 +105,114 @@ function escapeForDriveQuery(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
+interface DriveErrorDetail {
+  message?: string;
+  reason?: string;
+}
+
+function parseDriveErrorPayload(payload: unknown): DriveErrorDetail[] {
+  if (payload === null || payload === undefined) {
+    return [];
+  }
+
+  if (typeof payload !== 'object') {
+    if (typeof payload === 'string' && payload.trim().length > 0) {
+      return [{ message: payload }];
+    }
+    return [];
+  }
+
+  const errorPayload = payload as {
+    error?: { message?: string; errors?: Array<{ message?: string; reason?: string }> };
+    message?: string;
+  };
+
+  const messages: DriveErrorDetail[] = [];
+
+  if (Array.isArray(errorPayload.error?.errors)) {
+    for (const error of errorPayload.error.errors) {
+      messages.push({ message: error?.message, reason: error?.reason });
+    }
+  }
+
+  if (errorPayload.error?.message) {
+    messages.push({ message: errorPayload.error.message });
+  }
+
+  if (errorPayload.message) {
+    messages.push({ message: errorPayload.message });
+  }
+
+  return messages;
+}
+
+const SERVICE_ACCOUNT_SHARED_DRIVE_MESSAGE =
+  'service accounts do not have access to shared drives';
+const SERVICE_ACCOUNT_STORAGE_QUOTA_MESSAGE = 'service accounts do not have storage quota';
+
+function normalizeDriveErrorMessage(message: string | undefined): string {
+  return (message ?? '').toLowerCase();
+}
+
+function isSharedDriveAccessError(errors: DriveErrorDetail[]): boolean {
+  return errors.some((error) =>
+    normalizeDriveErrorMessage(error.message).includes(SERVICE_ACCOUNT_SHARED_DRIVE_MESSAGE),
+  );
+}
+
+function isServiceAccountStorageQuotaError(errors: DriveErrorDetail[]): boolean {
+  return errors.some((error) =>
+    normalizeDriveErrorMessage(error.message).includes(SERVICE_ACCOUNT_STORAGE_QUOTA_MESSAGE),
+  );
+}
+
+const SHARED_DRIVE_GUIDE_URL =
+  'https://developers.google.com/workspace/drive/api/guides/service-accounts#shared-drives';
+const STORAGE_QUOTA_GUIDE_URL = 'https://support.google.com/a/answer/7281227?hl=en';
+
+function buildSharedDriveAccessErrorMessage(): string {
+  return [
+    'Não foi possível enviar o documento: a conta de serviço configurada não possui acesso à unidade compartilhada do Google Drive informada.',
+    'Compartilhe a unidade com a conta de serviço e conceda permissão de Gerente ou configure OAuth delegation conforme a documentação oficial:',
+    SHARED_DRIVE_GUIDE_URL,
+  ].join(' ');
+}
+
+function buildServiceAccountStorageQuotaErrorMessage(): string {
+  return [
+    'Não foi possível enviar o documento: a conta de serviço do Google Drive não possui cota de armazenamento disponível.',
+    'Armazene os arquivos em uma unidade compartilhada com a conta de serviço ou utilize delegação OAuth conforme as orientações oficiais:',
+    `${SHARED_DRIVE_GUIDE_URL} e ${STORAGE_QUOTA_GUIDE_URL}`,
+  ].join(' ');
+}
+
+function formatDriveErrorMessage(baseMessage: string, payload: unknown): string {
+  const driveErrors = parseDriveErrorPayload(payload);
+
+  if (isSharedDriveAccessError(driveErrors)) {
+    return buildSharedDriveAccessErrorMessage();
+  }
+
+  if (isServiceAccountStorageQuotaError(driveErrors)) {
+    return buildServiceAccountStorageQuotaErrorMessage();
+  }
+
+  const detailedMessage = driveErrors.find((error) => Boolean(error.message))?.message;
+  return detailedMessage ? `${baseMessage} - ${detailedMessage}` : baseMessage;
+}
+
+function parseDriveErrorFromText(text: string): unknown {
+  if (!text) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    return text;
+  }
+}
+
 async function ensureClientFolder(
   token: string,
   clientId: string,
@@ -147,8 +255,10 @@ async function ensureClientFolder(
     });
 
     if (!searchResponse.ok) {
-      const error = await searchResponse.text();
-      throw new Error(`Não foi possível localizar pasta do cliente no Google Drive: ${error}`);
+      const errorPayload = parseDriveErrorFromText(await searchResponse.text());
+      throw new Error(
+        formatDriveErrorMessage('Não foi possível localizar pasta do cliente no Google Drive', errorPayload),
+      );
     }
 
     const searchData = await searchResponse.json();
@@ -173,8 +283,10 @@ async function ensureClientFolder(
         });
 
         if (!updateResponse.ok) {
-          const error = await updateResponse.text();
-          throw new Error(`Não foi possível atualizar pasta do cliente no Google Drive: ${error}`);
+          const errorPayload = parseDriveErrorFromText(await updateResponse.text());
+          throw new Error(
+            formatDriveErrorMessage('Não foi possível atualizar pasta do cliente no Google Drive', errorPayload),
+          );
         }
       } else {
         // Atualiza appProperties caso não esteja configurado
@@ -216,8 +328,10 @@ async function ensureClientFolder(
   });
 
   if (!createResponse.ok) {
-    const error = await createResponse.text();
-    throw new Error(`Não foi possível criar pasta do cliente no Google Drive: ${error}`);
+    const errorPayload = parseDriveErrorFromText(await createResponse.text());
+    throw new Error(
+      formatDriveErrorMessage('Não foi possível criar pasta do cliente no Google Drive', errorPayload),
+    );
   }
 
   const createdData = await createResponse.json();
@@ -246,51 +360,94 @@ export async function uploadFileToDrive(options: UploadOptions): Promise<UploadR
 
   const { body, contentType } = buildMultipartRequestBody(file, metadata);
 
-  return new Promise<UploadResult>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    if (onCreateRequest) {
-      onCreateRequest(xhr);
-    }
-    const uploadParams = new URLSearchParams({
-      uploadType: 'multipart',
-      fields: 'id,name,size,webViewLink,webContentLink,appProperties',
-      supportsAllDrives: 'true',
-    });
-
-    xhr.open('POST', `${DRIVE_UPLOAD_ENDPOINT}?${uploadParams.toString()}`, true);
-    xhr.responseType = 'json';
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    xhr.setRequestHeader('Content-Type', contentType);
-
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && onProgress) {
-        const progress = Math.round((event.loaded / event.total) * 100);
-        onProgress(progress);
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        const response = xhr.response as DriveFileMetadata;
-        resolve({
-          id: response.id,
-          name: response.name,
-          size: Number(response.size ?? file.size),
-          webViewLink: response.webViewLink,
-          webContentLink: response.webContentLink,
-          appProperties: response.appProperties ?? null,
-        });
-      } else {
-        reject(new Error(`Falha ao enviar arquivo para o Google Drive: ${xhr.statusText || xhr.status}`));
-      }
-    };
-
-    xhr.onerror = () => {
-      reject(new Error('Erro de rede durante upload para o Google Drive'));
-    };
-
-    xhr.send(body);
+  const uploadParams = new URLSearchParams({
+    uploadType: 'multipart',
+    fields: 'id,name,size,webViewLink,webContentLink,appProperties',
+    supportsAllDrives: 'true',
   });
+
+  const buildErrorMessage = (xhr: XMLHttpRequest) => {
+    const statusText = xhr.statusText || `${xhr.status}`;
+    const baseMessage = `Falha ao enviar arquivo para o Google Drive: ${statusText}`;
+
+    const responsePayload = (() => {
+      if (xhr.response && typeof xhr.response === 'object') {
+        return xhr.response;
+      }
+
+      if (xhr.responseText) {
+        return parseDriveErrorFromText(xhr.responseText);
+      }
+
+      return undefined;
+    })();
+
+    return formatDriveErrorMessage(baseMessage, responsePayload);
+  };
+
+  const attemptUpload = async (authToken: string, isRetry = false): Promise<UploadResult> => {
+    return new Promise<UploadResult>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      if (onCreateRequest) {
+        onCreateRequest(xhr);
+      }
+
+      xhr.open('POST', `${DRIVE_UPLOAD_ENDPOINT}?${uploadParams.toString()}`, true);
+      xhr.responseType = 'json';
+      xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+      xhr.setRequestHeader('Content-Type', contentType);
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          onProgress(progress);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const response = xhr.response as DriveFileMetadata;
+          resolve({
+            id: response.id,
+            name: response.name,
+            size: Number(response.size ?? file.size),
+            webViewLink: response.webViewLink,
+            webContentLink: response.webContentLink,
+            appProperties: response.appProperties ?? null,
+          });
+          return;
+        }
+
+        if (!isRetry && (xhr.status === 401 || xhr.status === 403)) {
+          void (async () => {
+            try {
+              const refreshedToken = await getDriveAccessToken(true);
+              const retryResult = await attemptUpload(refreshedToken, true);
+              resolve(retryResult);
+            } catch (retryError) {
+              if (retryError instanceof Error) {
+                reject(retryError);
+              } else {
+                reject(new Error('Falha ao renovar token do Google Drive'));
+              }
+            }
+          })();
+          return;
+        }
+
+        reject(new Error(buildErrorMessage(xhr)));
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Erro de rede durante upload para o Google Drive'));
+      };
+
+      xhr.send(body);
+    });
+  };
+
+  return attemptUpload(token);
 }
 
 export async function getDriveFileMetadata(fileId: string): Promise<DriveFileMetadata | null> {
@@ -311,8 +468,10 @@ export async function getDriveFileMetadata(fileId: string): Promise<DriveFileMet
   }
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Não foi possível obter metadados do Google Drive: ${error}`);
+    const errorPayload = parseDriveErrorFromText(await response.text());
+    throw new Error(
+      formatDriveErrorMessage('Não foi possível obter metadados do Google Drive', errorPayload),
+    );
   }
 
   const data = await response.json();
@@ -340,8 +499,10 @@ export async function downloadDriveFile(fileId: string): Promise<Blob> {
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Não foi possível baixar o arquivo do Google Drive: ${error}`);
+    const errorPayload = parseDriveErrorFromText(await response.text());
+    throw new Error(
+      formatDriveErrorMessage('Não foi possível baixar o arquivo do Google Drive', errorPayload),
+    );
   }
 
   return await response.blob();
@@ -365,7 +526,9 @@ export async function deleteDriveFile(fileId: string): Promise<void> {
   }
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Não foi possível remover o arquivo do Google Drive: ${error}`);
+    const errorPayload = parseDriveErrorFromText(await response.text());
+    throw new Error(
+      formatDriveErrorMessage('Não foi possível remover o arquivo do Google Drive', errorPayload),
+    );
   }
 }
