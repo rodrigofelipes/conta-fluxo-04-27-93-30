@@ -591,10 +591,19 @@ export default function Chat() {
           const attachment = pendingAttachments[index];
           const caption = index === 0 && hasText ? newMessage.trim() : undefined;
 
-          const viewUrl = attachment.webViewLink || attachment.webContentLink || '';
-          const accessibleUrl = isValidHttpUrl(viewUrl) ? viewUrl : '';
+          const candidateUrls = [
+            attachment.url,
+            attachment.webContentLink,
+            attachment.webViewLink,
+          ].filter(Boolean) as string[];
 
-          if (!accessibleUrl) {
+          let accessibleUrl = candidateUrls.find((candidate) => isValidHttpUrl(candidate)) || '';
+
+          if (!accessibleUrl && attachment.storagePath) {
+            accessibleUrl = await getSignedUrlForPath(attachment.storagePath);
+          }
+
+          if (!isValidHttpUrl(accessibleUrl)) {
             throw new Error(
               "Não foi possível gerar um link válido para o arquivo anexado. Verifique suas permissões e tente novamente."
             );
