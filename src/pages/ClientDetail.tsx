@@ -26,6 +26,12 @@ import {
 import { ArrowLeft, Plus, Phone, Mail, MessageSquare, Calendar, FileText, DollarSign, Building, Upload, Download, X, MapPin, User, Eye, Trash2, CreditCard, Send, ChevronDown } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  uploadFileToDrive,
+  getDriveFileMetadata,
+  downloadDriveFile,
+  deleteDriveFile,
+} from "@/integrations/googleDrive/storage";
 import { useAuth } from "@/state/auth";
 import { ProjectTimeline } from "@/components/projects/ProjectTimeline";
 import { ClientProjectsTab } from "@/components/projects/ClientProjectsTab";
@@ -68,6 +74,8 @@ interface Document {
   // URLs preparadas para visualizar/baixar
   view_url?: string | null;
   download_url?: string | null;
+  storage_provider?: 'supabase' | 'google_drive';
+  drive_file_id?: string | null;
 }
 
 interface Financial {
@@ -236,7 +244,43 @@ export default function ClientDetail() {
     }));
 
     const docsWithUrls: Document[] = await Promise.all(
-      docsWithUploader.map(async (doc) => {
+      docsWithUploader.map(async (doc: any) => {
+        const verificationMetadata = doc.verification_metadata as Record<string, any> | null;
+        const storageProvider = verificationMetadata?.storage_provider ?? null;
+
+        if (storageProvider === 'google_drive' || verificationMetadata?.google_drive || (!storageProvider && doc.file_path && doc.file_path.length > 0 && !doc.file_path.includes('/'))) {
+          let viewUrl = verificationMetadata?.google_drive?.webViewLink ?? null;
+          let downloadUrl = verificationMetadata?.google_drive?.webContentLink ?? null;
+          let fileSize = doc.file_size;
+
+          if ((!viewUrl || !downloadUrl || !fileSize) && doc.file_path) {
+            try {
+              const metadata = await getDriveFileMetadata(doc.file_path);
+              if (metadata) {
+                viewUrl = viewUrl ?? metadata.webViewLink ?? null;
+                downloadUrl = downloadUrl ?? metadata.webContentLink ?? null;
+                if (!fileSize && metadata.size) {
+                  const parsedSize = Number(metadata.size);
+                  if (!Number.isNaN(parsedSize)) {
+                    fileSize = parsedSize;
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Erro ao obter metadados do Google Drive:', error);
+            }
+          }
+
+          return {
+            ...doc,
+            file_size: fileSize ?? doc.file_size,
+            storage_provider: 'google_drive',
+            drive_file_id: doc.file_path,
+            view_url: viewUrl,
+            download_url: downloadUrl ?? viewUrl ?? null,
+          } as Document;
+        }
+
         try {
           const { data: signed, error: signedError } = await supabase
             .storage
@@ -244,10 +288,10 @@ export default function ClientDetail() {
             .createSignedUrl(doc.file_path, 60 * 60, { download: doc.document_name });
 
           if (signedError) throw signedError;
-          return { ...doc, view_url: signed?.signedUrl, download_url: signed?.signedUrl };
+          return { ...doc, storage_provider: 'supabase', view_url: signed?.signedUrl, download_url: signed?.signedUrl };
         } catch (e) {
           const { data: pub } = supabase.storage.from('client-documents').getPublicUrl(doc.file_path);
-          return { ...doc, view_url: pub?.publicUrl || null, download_url: pub?.publicUrl || null };
+          return { ...doc, storage_provider: 'supabase', view_url: pub?.publicUrl || null, download_url: pub?.publicUrl || null };
         }
       })
     );
@@ -461,25 +505,41 @@ export default function ClientDetail() {
         .replace(/[^a-zA-Z0-9.-]/g, '_')
         .replace(/_{2,}/g, '_')
         .toLowerCase();
+      const arrayBuffer = await file.arrayBuffer();
+      const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+      const hash = Array.from(new Uint8Array(hashBuffer))
+        .map(byte => byte.toString(16).padStart(2, '0'))
+        .join('');
 
-      const fileName = `${id}/${Date.now()}-${sanitizedFileName}`;
-      const { data: storageData, error: storageError } = await supabase
-        .storage
-        .from('client-documents')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: true,
-          contentType: file.type || 'application/octet-stream',
-        });
-      if (storageError) throw storageError;
+      const uploadResult = await uploadFileToDrive({
+        file,
+        clientId: id,
+        sanitizedName: sanitizedFileName,
+        hash,
+      });
 
       const { error: insertError } = await supabase.from('client_documents').insert({
         client_id: id,
         document_name: file.name,
         document_type: file.type || 'application/octet-stream',
-        file_path: storageData.path,
-        file_size: file.size,
+        file_path: uploadResult.id,
+        file_size: uploadResult.size,
+        file_hash: hash,
         uploaded_by: user.id,
+        upload_status: 'verified',
+        upload_started_at: new Date().toISOString(),
+        upload_completed_at: new Date().toISOString(),
+        verified_at: new Date().toISOString(),
+        verification_metadata: {
+          storage_provider: 'google_drive',
+          google_drive: {
+            file_id: uploadResult.id,
+            webViewLink: uploadResult.webViewLink ?? null,
+            webContentLink: uploadResult.webContentLink ?? null,
+          },
+          expected_hash: hash,
+          verified_method: 'google_drive_metadata',
+        },
       });
       if (insertError) throw insertError;
 
@@ -494,7 +554,19 @@ export default function ClientDetail() {
 
   const handlePreviewDocument = async (doc: Document) => {
     try {
-      // Gera um link atualizado para evitar expiração
+      if (doc.storage_provider === 'google_drive') {
+        let url = doc.view_url;
+        if ((!url || url.length === 0) && doc.drive_file_id) {
+          const metadata = await getDriveFileMetadata(doc.drive_file_id);
+          url = metadata?.webViewLink ?? metadata?.webContentLink ?? null;
+        }
+
+        if (!url) throw new Error('URL não disponível');
+        window.open(url, '_blank');
+        return;
+      }
+
+      // Gera um link atualizado para evitar expiração (Supabase)
       const { data: signed } = await supabase
         .storage
         .from('client-documents')
@@ -509,6 +581,21 @@ export default function ClientDetail() {
 
   const handleDownloadDocument = async (doc: Document) => {
     try {
+      if (doc.storage_provider === 'google_drive') {
+        const fileId = doc.drive_file_id ?? doc.file_path;
+        if (!fileId) throw new Error('Arquivo não disponível');
+        const blob = await downloadDriveFile(fileId);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = doc.document_name || 'documento';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        return;
+      }
+
       const { data, error } = await supabase
         .storage
         .from('client-documents')
@@ -546,7 +633,13 @@ export default function ClientDetail() {
 
     setIsDeletingDocument(true);
     try {
-      if (documentToDelete.file_path) {
+      if (doc.storage_provider === 'google_drive' && doc.file_path) {
+        try {
+          await deleteDriveFile(doc.file_path);
+        } catch (driveError) {
+          console.error('Erro ao remover arquivo do Google Drive:', driveError);
+        }
+      } else if (documentToDelete.file_path) {
         const { error: storageError } = await supabase
           .storage
           .from('client-documents')
