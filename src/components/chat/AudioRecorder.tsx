@@ -16,10 +16,14 @@ interface AudioRecorderProps {
   disabled?: boolean;
   clientId?: string;
   clientName?: string;
-
-
-
-
+  children?: (props: {
+    isRecording: boolean;
+    isUploading: boolean;
+    recordingTime: number;
+    startRecording: () => void;
+    stopRecording: () => void;
+    cancelRecording: () => void;
+  }) => React.ReactNode;
 }
 
 const sanitizeFilename = (filename: string) =>
@@ -44,10 +48,7 @@ export function AudioRecorder({
   disabled,
   clientId,
   clientName,
-
-
-
-
+  children,
 }: AudioRecorderProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -252,10 +253,23 @@ export function AudioRecorder({
       description: "O áudio gravado não foi salvo.",
     });
   };
+  // If children render prop is provided, use it
+  if (children) {
+    return (
+      <>
+        {children({
+          isRecording,
+          isUploading,
+          recordingTime,
+          startRecording,
+          stopRecording,
+          cancelRecording,
+        })}
+      </>
+    );
+  }
 
-
-
-
+  // Default UI
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">

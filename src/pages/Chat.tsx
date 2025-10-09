@@ -1267,32 +1267,18 @@ export default function Chat() {
 
                 {/* Input de Mensagem */}
                 <div className="p-4 border-t bg-background flex-shrink-0 space-y-3">
-                  <div className="space-y-3">
-                    <FileUpload
-                      onFileUploaded={(file) => {
-                        setPendingAttachments((prev) => [...prev, file]);
-                        toast({
-                          title: 'Arquivo anexado',
-                          description: `${file.fileName} está pronto para envio.`,
-                        });
-                      }}
-                      disabled={!selectedContact || isSending}
-                      clientId={selectedContact?.id}
-                      clientName={selectedContact?.name}
-                    />
-
-
-                    <AudioRecorder
-                      onRecordingComplete={(file) => {
-                        setPendingAttachments((prev) => [...prev, file]);
-                      }}
-                      disabled={!selectedContact || isSending}
-                      clientId={selectedContact?.id}
-                      clientName={selectedContact?.name}
-                    />
-
-
-                  </div>
+                  <FileUpload
+                    onFileUploaded={(file) => {
+                      setPendingAttachments((prev) => [...prev, file]);
+                      toast({
+                        title: 'Arquivo anexado',
+                        description: `${file.fileName} está pronto para envio.`,
+                      });
+                    }}
+                    disabled={!selectedContact || isSending}
+                    clientId={selectedContact?.id}
+                    clientName={selectedContact?.name}
+                  />
 
                   {pendingAttachments.length > 0 && (
                     <div className="space-y-2 rounded-lg border border-dashed border-muted bg-muted/40 p-3">
