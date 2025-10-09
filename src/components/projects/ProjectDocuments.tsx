@@ -1,8 +1,13 @@
-import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Upload, Download, FileText, Trash2, Image, FileVideo, FileArchive, FileAudio, Calendar } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/state/auth';
+import { uploadFileToDrive, getDriveFileMetadata, downloadDriveFile } from '@/integrations/googleDrive/storage';
+import { createHash } from '@/utils/fileValidation';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -11,23 +16,9 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-
-import {
-  Upload,
-  FileText,
-  Download,
-  Calendar,
-  Trash2,
-  Image,
-  FileVideo,
-  FileArchive,
-  FileAudio
-} from "lucide-react";
-import { toast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/state/auth";
+import { Progress } from '@/components/ui/progress';
 
 interface ProjectDocument {
   id: string;
@@ -51,9 +42,7 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<ProjectDocument | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-
   const [uploadProgress, setUploadProgress] = useState(0);
-
 
   useEffect(() => {
     loadDocuments();
@@ -89,15 +78,8 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
     setUploading(true);
     setUploadProgress(0);
 
-    const progressInterval = globalThis.setInterval(() => {
-      setUploadProgress(prev => {
-        const nextValue = prev + 10;
-        return nextValue >= 90 ? 90 : nextValue;
-      });
-    }, 300);
-
     try {
-      // Sanitiza o nome do arquivo para evitar caracteres inválidos no Storage
+      // Sanitizar nome do arquivo
       const sanitizedFileName = file.name
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
@@ -105,26 +87,38 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
         .replace(/_{2,}/g, '_')
         .toLowerCase();
 
-      // Upload do arquivo para o Supabase Storage
-      const fileName = `${projectId}/${Date.now()}_${sanitizedFileName}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('project-documents')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: true,
-          contentType: file.type || 'application/octet-stream',
-        });
+      // Calcular hash do arquivo
+      const hash = await createHash(file);
 
-      if (uploadError) throw uploadError;
+      // Buscar nome do projeto para usar como nome da pasta
+      const { data: projectData } = await supabase
+        .from('projects')
+        .select('title, client_id')
+        .eq('id', projectId)
+        .single();
 
-      // Salvar informações do documento na tabela
+      const projectName = projectData?.title || projectId;
+
+      // Upload para Google Drive
+      const uploadResult = await uploadFileToDrive({
+        file,
+        clientId: projectData?.client_id || projectId,
+        clientName: `Projeto: ${projectName}`,
+        sanitizedName: sanitizedFileName,
+        hash,
+        onProgress: (progress) => {
+          setUploadProgress(Math.min(progress, 95));
+        }
+      });
+
+      // Salvar metadados no banco
       const { data: docData, error: docError } = await supabase
         .from('project_documents')
         .insert({
           project_id: projectId,
           document_name: file.name,
           document_type: getDocumentType(file.name),
-          file_path: uploadData.path,
+          file_path: uploadResult.id, // ID do Google Drive
           file_size: file.size,
           uploaded_by: user.id
         })
@@ -133,36 +127,37 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
 
       if (docError) throw docError;
 
-      // Adicionar o documento à lista
+      // Adicionar documento à lista
       setDocuments(prev => [docData, ...prev]);
       event.target.value = '';
 
       setUploadProgress(100);
 
       toast({
-        title: "Sucesso",
-        description: "Documento enviado com sucesso!"
+        title: 'Upload concluído',
+        description: `${file.name} foi enviado para o Google Drive com sucesso.`,
       });
-    } catch (error) {
-      console.error('Erro ao enviar documento:', error);
-      setUploadProgress(0);
-      toast({
-        title: "Erro",
-        description: "Erro ao enviar documento. Tente novamente.",
-        variant: "destructive"
-      });
-    } finally {
-      globalThis.clearInterval(progressInterval);
-      setUploading(false);
-      globalThis.setTimeout(() => {
+
+      setTimeout(() => {
         setUploadProgress(0);
-      }, 500);
+        setUploading(false);
+      }, 1000);
+
+    } catch (error) {
+      console.error('Erro no upload:', error);
+      setUploading(false);
+      setUploadProgress(0);
+
+      toast({
+        title: 'Erro no upload',
+        description: error instanceof Error ? error.message : 'Não foi possível enviar o arquivo.',
+        variant: 'destructive',
+      });
     }
   };
 
   const getDocumentType = (fileName: string): string => {
     const extension = fileName.split('.').pop()?.toLowerCase();
-
     if (!extension) return 'other';
 
     if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension)) return 'image';
@@ -199,48 +194,38 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const handleDownload = async (document: ProjectDocument) => {
+  const handleDownload = async (doc: ProjectDocument) => {
     try {
-      const { data, error } = await supabase.storage
-        .from('project-documents')
-        .download(document.file_path);
-
-      if (error) throw error;
-
-      // Criar URL para download
-      const url = URL.createObjectURL(data);
-      const a = globalThis.document.createElement('a');
+      const fileId = doc.file_path;
+      if (!fileId) throw new Error('Arquivo não disponível');
+      
+      const blob = await downloadDriveFile(fileId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
       a.href = url;
-      a.download = document.document_name;
-      globalThis.document.body.appendChild(a);
+      a.download = doc.document_name || 'documento';
+      document.body.appendChild(a);
       a.click();
-      globalThis.document.body.removeChild(a);
+      a.remove();
       URL.revokeObjectURL(url);
 
       toast({
-        title: "Sucesso",
-        description: `Download de "${document.document_name}" iniciado`
+        title: 'Download concluído',
+        description: `${doc.document_name} foi baixado do Google Drive com sucesso.`,
       });
     } catch (error) {
       console.error('Erro ao fazer download:', error);
       toast({
-        title: "Erro",
-        description: "Erro ao fazer download do documento",
-        variant: "destructive"
+        title: 'Erro no download',
+        description: error instanceof Error ? error.message : 'Não foi possível baixar o arquivo.',
+        variant: 'destructive',
       });
     }
   };
 
   const handleDelete = async (document: ProjectDocument) => {
     try {
-      // Deletar do storage
-      const { error: storageError } = await supabase.storage
-        .from('project-documents')
-        .remove([document.file_path]);
-
-      if (storageError) throw storageError;
-
-      // Deletar da tabela
+      // Deletar do banco
       const { error: dbError } = await supabase
         .from('project_documents')
         .delete()
@@ -248,19 +233,20 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
 
       if (dbError) throw dbError;
 
-      // Remover da lista
+      // Nota: arquivos no Google Drive permanecem (não deletamos automaticamente)
+
       setDocuments(prev => prev.filter(doc => doc.id !== document.id));
 
       toast({
-        title: "Sucesso",
-        description: "Documento excluído com sucesso!"
+        title: 'Documento removido',
+        description: 'O documento foi removido da lista com sucesso.',
       });
     } catch (error) {
       console.error('Erro ao excluir documento:', error);
       toast({
-        title: "Erro",
-        description: "Erro ao excluir documento. Tente novamente.",
-        variant: "destructive"
+        title: 'Erro',
+        description: 'Erro ao excluir documento. Tente novamente.',
+        variant: 'destructive'
       });
       throw error;
     }
@@ -311,7 +297,7 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => globalThis.document.getElementById('document-upload')?.click()}
+            onClick={() => document.getElementById('document-upload')?.click()}
             disabled={uploading}
             className="gap-2"
           >
@@ -324,7 +310,7 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
         {(uploading || uploadProgress > 0) && (
           <div className="mb-4 space-y-2">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>{uploadProgress === 100 ? 'Finalizando envio...' : 'Enviando documento...'}</span>
+              <span>{uploadProgress === 100 ? 'Finalizando envio...' : 'Enviando para Google Drive...'}</span>
               <span>{uploadProgress}%</span>
             </div>
             <Progress value={uploadProgress} />
@@ -349,6 +335,7 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
                         <Calendar className="h-3 w-3" />
                         {new Date(doc.created_at).toLocaleDateString('pt-BR')}
                       </div>
+                      <span className="text-green-600">Google Drive</span>
                     </div>
                   </div>
                 </div>
@@ -380,12 +367,12 @@ export function ProjectDocuments({ projectId }: ProjectDocumentsProps) {
             </div>
             <h3 className="font-medium mb-2">Nenhum documento anexado</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Adicione documentos relacionados ao projeto como plantas, contratos, fotos, etc.
+              Adicione documentos relacionados ao projeto. Serão armazenados no Google Drive.
             </p>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => globalThis.document.getElementById('document-upload')?.click()}
+              onClick={() => document.getElementById('document-upload')?.click()}
               disabled={uploading}
               className="gap-2"
             >

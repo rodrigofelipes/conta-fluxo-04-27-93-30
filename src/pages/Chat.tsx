@@ -568,10 +568,8 @@ export default function Chat() {
           const attachment = pendingAttachments[index];
           const caption = index === 0 && hasText ? newMessage.trim() : undefined;
 
-          const existingUrl = attachment.downloadUrl;
-          const signedUrl = isValidHttpUrl(existingUrl)
-            ? existingUrl
-            : await getSignedUrlForPath(attachment.storagePath);
+          const viewUrl = attachment.webViewLink || attachment.webContentLink || '';
+          const signedUrl = isValidHttpUrl(viewUrl) ? viewUrl : '';
 
           if (!isValidHttpUrl(signedUrl)) {
             throw new Error(
@@ -615,7 +613,7 @@ export default function Chat() {
             .insert({
               message_id: savedMessage.id,
               file_name: attachment.fileName,
-              file_path: attachment.storagePath,
+              file_path: attachment.driveFileId,
               file_type: attachment.fileType,
               file_size: attachment.fileSize,
               uploaded_by: user.id,
@@ -632,8 +630,8 @@ export default function Chat() {
             fileName: attachment.fileName,
             fileType: attachment.fileType,
             fileSize: attachment.fileSize,
-            url: attachment.storagePath ? buildMediaProxyUrl(attachment.storagePath) : signedUrl,
-            storagePath: attachment.storagePath,
+            url: attachment.webViewLink || attachment.webContentLink || '',
+            storagePath: attachment.driveFileId,
           };
 
           const newChatMessage: ChatMessage = {

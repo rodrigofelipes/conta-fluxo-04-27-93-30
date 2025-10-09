@@ -4,9 +4,10 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Paperclip, X, FileText, Image, Video, Mic, File } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/state/auth";
 import { toast } from "@/hooks/use-toast";
+import { uploadFileToDrive } from "@/integrations/googleDrive/storage";
+import { createHash } from "@/utils/fileValidation";
 
 interface FileUploadProps {
   onFileUploaded: (file: UploadedFileInfo) => void;
@@ -24,8 +25,9 @@ export interface UploadedFileInfo {
   fileName: string;
   fileType: string;
   fileSize: number;
-  storagePath: string;
-  downloadUrl: string;
+  driveFileId: string;
+  webViewLink: string | null;
+  webContentLink: string | null;
 }
 
 export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
@@ -130,58 +132,41 @@ export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
     setUploadingFiles(prev => [...prev, uploadingFile]);
 
     try {
-      // Create unique file path
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user?.id}/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      // Sanitizar nome do arquivo
+      const sanitizedName = file.name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9.-]/g, '_')
+        .replace(/_{2,}/g, '_');
 
-      // Upload file to Supabase Storage
-      const { data, error } = await supabase.storage
-        .from('chat-files')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: false,
-          contentType: file.type || undefined,
-        });
+      // Calcular hash do arquivo
+      const hash = await createHash(file);
 
-      // Simulate progress completion
-      setUploadingFiles(prev =>
-        prev.map(f =>
-          f.id === fileId
-            ? { ...f, progress: 100 }
-            : f
-        )
-      );
-
-      if (error) throw error;
-
-      let signedUrl = "";
-      try {
-        const { data: signedData, error: signedError } = await supabase.storage
-          .from('chat-files')
-          .createSignedUrl(fileName, 3600);
-
-        if (signedError) {
-          console.error('Erro ao gerar URL assinada:', signedError);
-        } else {
-          signedUrl = signedData.signedUrl;
+      // Upload para Google Drive (pasta Chat)
+      const uploadResult = await uploadFileToDrive({
+        file,
+        clientId: 'chat-internal',
+        clientName: 'Chat Interno',
+        sanitizedName,
+        hash,
+        onProgress: (progress) => {
+          setUploadingFiles(prev =>
+            prev.map(f =>
+              f.id === fileId ? { ...f, progress } : f
+            )
+          );
         }
-      } catch (error) {
-        console.error('Erro inesperado ao gerar URL assinada:', error);
-      }
+      });
 
-      // Update progress to 100%
-      setUploadingFiles(prev =>
-        prev.map(f => f.id === fileId ? { ...f, progress: 100 } : f)
-      );
-
-      // Notify parent component
+      // Notify parent component with Google Drive info
       onFileUploaded({
         id: fileId,
         fileName: file.name,
         fileType: file.type,
         fileSize: file.size,
-        storagePath: data.path,
-        downloadUrl: signedUrl || ""
+        driveFileId: uploadResult.id,
+        webViewLink: uploadResult.webViewLink ?? null,
+        webContentLink: uploadResult.webContentLink ?? null,
       });
 
       // Remove from uploading list after short delay
@@ -191,7 +176,7 @@ export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
 
       toast({
         title: "Upload concluído",
-        description: `${file.name} foi enviado com sucesso.`
+        description: `${file.name} foi enviado para o Google Drive com sucesso.`
       });
 
     } catch (error) {
@@ -200,7 +185,7 @@ export function FileUpload({ onFileUploaded, disabled }: FileUploadProps) {
       
       toast({
         title: "Erro no upload",
-        description: `Não foi possível enviar ${file.name}.`,
+        description: error instanceof Error ? error.message : `Não foi possível enviar ${file.name}.`,
         variant: "destructive"
       });
     }
