@@ -246,51 +246,93 @@ export async function uploadFileToDrive(options: UploadOptions): Promise<UploadR
 
   const { body, contentType } = buildMultipartRequestBody(file, metadata);
 
-  return new Promise<UploadResult>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    if (onCreateRequest) {
-      onCreateRequest(xhr);
-    }
-    const uploadParams = new URLSearchParams({
-      uploadType: 'multipart',
-      fields: 'id,name,size,webViewLink,webContentLink,appProperties',
-      supportsAllDrives: 'true',
-    });
-
-    xhr.open('POST', `${DRIVE_UPLOAD_ENDPOINT}?${uploadParams.toString()}`, true);
-    xhr.responseType = 'json';
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    xhr.setRequestHeader('Content-Type', contentType);
-
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && onProgress) {
-        const progress = Math.round((event.loaded / event.total) * 100);
-        onProgress(progress);
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        const response = xhr.response as DriveFileMetadata;
-        resolve({
-          id: response.id,
-          name: response.name,
-          size: Number(response.size ?? file.size),
-          webViewLink: response.webViewLink,
-          webContentLink: response.webContentLink,
-          appProperties: response.appProperties ?? null,
-        });
-      } else {
-        reject(new Error(`Falha ao enviar arquivo para o Google Drive: ${xhr.statusText || xhr.status}`));
-      }
-    };
-
-    xhr.onerror = () => {
-      reject(new Error('Erro de rede durante upload para o Google Drive'));
-    };
-
-    xhr.send(body);
+  const uploadParams = new URLSearchParams({
+    uploadType: 'multipart',
+    fields: 'id,name,size,webViewLink,webContentLink,appProperties',
+    supportsAllDrives: 'true',
   });
+
+  const buildErrorMessage = (xhr: XMLHttpRequest) => {
+    const statusText = xhr.statusText || `${xhr.status}`;
+    let details = '';
+    try {
+      const response = xhr.response ?? (xhr.responseText ? JSON.parse(xhr.responseText) : null);
+      if (response && typeof response === 'object') {
+        const message = (response as { error?: { message?: string }; message?: string }).error?.message
+          ?? (response as { message?: string }).message;
+        if (message) {
+          details = ` - ${message}`;
+        }
+      }
+    } catch (error) {
+      // Ignorar erro ao parsear resposta
+    }
+    return `Falha ao enviar arquivo para o Google Drive: ${statusText}${details}`;
+  };
+
+  const attemptUpload = async (authToken: string, isRetry = false): Promise<UploadResult> => {
+    return new Promise<UploadResult>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      if (onCreateRequest) {
+        onCreateRequest(xhr);
+      }
+
+      xhr.open('POST', `${DRIVE_UPLOAD_ENDPOINT}?${uploadParams.toString()}`, true);
+      xhr.responseType = 'json';
+      xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+      xhr.setRequestHeader('Content-Type', contentType);
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          onProgress(progress);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const response = xhr.response as DriveFileMetadata;
+          resolve({
+            id: response.id,
+            name: response.name,
+            size: Number(response.size ?? file.size),
+            webViewLink: response.webViewLink,
+            webContentLink: response.webContentLink,
+            appProperties: response.appProperties ?? null,
+          });
+          return;
+        }
+
+        if (!isRetry && (xhr.status === 401 || xhr.status === 403)) {
+          void (async () => {
+            try {
+              const refreshedToken = await getDriveAccessToken(true);
+              const retryResult = await attemptUpload(refreshedToken, true);
+              resolve(retryResult);
+            } catch (retryError) {
+              if (retryError instanceof Error) {
+                reject(retryError);
+              } else {
+                reject(new Error('Falha ao renovar token do Google Drive'));
+              }
+            }
+          })();
+          return;
+        }
+
+        reject(new Error(buildErrorMessage(xhr)));
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Erro de rede durante upload para o Google Drive'));
+      };
+
+      xhr.send(body);
+    });
+  };
+
+  return attemptUpload(token);
 }
 
 export async function getDriveFileMetadata(fileId: string): Promise<DriveFileMetadata | null> {
