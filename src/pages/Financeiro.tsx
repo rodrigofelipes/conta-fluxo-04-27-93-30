@@ -705,13 +705,8 @@ export default function Financeiro() {
       }));
 
       setCategories(mappedCategories);
-      setPaymentLinks(resolvedPaymentLinks);
-      setOnlinePayments(resolvedOnlinePayments);
-      setOnlineInstallments((installmentsData ?? []) as PaymentInstallmentRecord[]);
-
       setPaymentLinks((paymentLinksData ?? []) as PaymentLinkRecord[]);
       setOnlinePayments((onlinePaymentsData ?? []) as OnlinePaymentTransaction[]);
-
       setOnlineInstallments((installmentsData ?? []) as PaymentInstallmentRecord[]);
 
     } catch (error) {
