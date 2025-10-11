@@ -34,6 +34,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { ClientFinancialTab } from "@/components/financial/ClientFinancialTab";
 import { ExpenseManagement } from "@/components/financial/ExpenseManagement";
 import { IncomeManagement } from "@/components/financial/IncomeManagement";
+import { PaymentLinkGenerator } from "@/components/payments/PaymentLinkGenerator";
+import { PaymentLinksTable } from "@/components/payments/PaymentLinksTable";
+import type { PaymentLinkRow } from "@/components/payments/PaymentLinksTable";
 
 /** *********************************************
  *  FinancialCategoryManagement
@@ -494,6 +497,34 @@ const categorias = {
 const FINANCE_TABS = ["overview", "clients", "fluxo", "relatorios", "cadastro"] as const;
 type FinanceTab = (typeof FINANCE_TABS)[number];
 
+type PaymentLinkRecord = PaymentLinkRow;
+
+interface OnlinePaymentTransaction {
+  id: string;
+  client_id: string;
+  payment_link_id: string | null;
+  client_financial_id: string | null;
+  installment_id: string | null;
+  stripe_payment_id: string | null;
+  stripe_session_id: string | null;
+  amount: number;
+  status: 'pending' | 'processing' | 'succeeded' | 'failed' | 'cancelled';
+  payment_method: string | null;
+  payment_date: string | null;
+  created_at: string;
+  error_message: string | null;
+}
+
+interface PaymentInstallmentRecord {
+  id: string;
+  client_id: string;
+  installment_number: number;
+  total_installments: number;
+  amount: number;
+  due_date: string;
+  status: string;
+}
+
 export default function Financeiro() {
   const location = useLocation();
 
@@ -502,6 +533,9 @@ export default function Financeiro() {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [horasColaboradores, setHorasColaboradores] = useState<HorasColaborador[]>([]);
   const [manualExpenses, setManualExpenses] = useState<ManualExpense[]>([]);
+  const [paymentLinks, setPaymentLinks] = useState<PaymentLinkRecord[]>([]);
+  const [onlinePayments, setOnlinePayments] = useState<OnlinePaymentTransaction[]>([]);
+  const [onlineInstallments, setOnlineInstallments] = useState<PaymentInstallmentRecord[]>([]);
 
   const [categories, setCategories] = useState<Category[]>([]);
 
@@ -592,6 +626,27 @@ export default function Financeiro() {
         .order('name', { ascending: true });
       if (categoriesError) throw categoriesError;
 
+      const { data: paymentLinksData, error: paymentLinksError } = await supabase
+        .from('payment_links')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (paymentLinksError) throw paymentLinksError;
+
+      const { data: onlinePaymentsData, error: onlinePaymentsError } = await supabase
+        .from('payment_transactions')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (onlinePaymentsError) throw onlinePaymentsError;
+
+      const { data: installmentsData, error: installmentsError } = await supabase
+        .from('payment_installments')
+        .select('*')
+        .order('due_date', { ascending: true })
+        .limit(200);
+      if (installmentsError) throw installmentsError;
+
       const clientMap = new Map<string, string>();
       (clientsData ?? []).forEach(client => clientMap.set(client.id, client.name));
 
@@ -635,6 +690,9 @@ export default function Financeiro() {
       }));
 
       setCategories(mappedCategories);
+      setPaymentLinks((paymentLinksData ?? []) as PaymentLinkRecord[]);
+      setOnlinePayments((onlinePaymentsData ?? []) as OnlinePaymentTransaction[]);
+      setOnlineInstallments((installmentsData ?? []) as PaymentInstallmentRecord[]);
 
     } catch (error) {
       console.error('Erro ao carregar dados financeiros:', error);
@@ -708,6 +766,15 @@ export default function Financeiro() {
   const totalDespesas = transactions
     .filter(t => t.transaction_type === "expense" && t.status === "paid")
     .reduce((acc, t) => acc + t.amount, 0) + manualExpensesPaid;
+
+  const activeOnlineLinks = useMemo(() => paymentLinks.filter(link => link.status === 'active').length, [paymentLinks]);
+  const completedOnlineLinks = useMemo(() => paymentLinks.filter(link => link.status === 'completed').length, [paymentLinks]);
+  const totalOnlineReceived = useMemo(
+    () => onlinePayments
+      .filter(payment => payment.status === 'succeeded')
+      .reduce((acc, payment) => acc + payment.amount, 0),
+    [onlinePayments]
+  );
 
   const receitasPendentes = transactions
     .filter(t => t.transaction_type === "income" && t.status === "pending")
@@ -1239,8 +1306,46 @@ export default function Financeiro() {
                   <AlertCircle className="size-8 text-red-600 opacity-80" />
                 </div>
           </CardContent>
-        </Card>
-      </div>
+            </Card>
+          </div>
+
+          <Card className="card-elevated">
+            <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <CardTitle>Pagamentos Online</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Gere links de cobrança e acompanhe o status sem sair do painel financeiro.
+                </p>
+              </div>
+              <PaymentLinkGenerator
+                receivables={transactions}
+                installments={onlineInstallments}
+                onCreated={() => loadData()}
+              />
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs uppercase text-muted-foreground">Links Ativos</p>
+                  <p className="text-2xl font-semibold">{activeOnlineLinks}</p>
+                </div>
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs uppercase text-muted-foreground">Pagamentos Confirmados</p>
+                  <p className="text-2xl font-semibold text-green-600">{completedOnlineLinks}</p>
+                </div>
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs uppercase text-muted-foreground">Recebido Online</p>
+                  <p className="text-2xl font-semibold text-green-600">{formatCurrency(totalOnlineReceived)}</p>
+                </div>
+              </div>
+
+              <PaymentLinksTable
+                data={paymentLinks}
+                limit={5}
+                onStatusUpdated={() => loadData()}
+              />
+            </CardContent>
+          </Card>
 
           <Card className="card-elevated">
             <CardHeader className="space-y-4">

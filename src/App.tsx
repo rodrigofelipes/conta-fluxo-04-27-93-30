@@ -21,6 +21,7 @@ import Reports from "./pages/Reports";
 import CoordinatorPhases from "./pages/CoordinatorPhases";
 import RulesAndFeatures from "./pages/RulesAndFeatures";
 import Marketing from "./pages/Marketing";
+import PaymentPortal from "./pages/PaymentPortal";
 
 import Login from "./pages/auth/Login";
 import AdminLogin from "./pages/auth/AdminLogin";
@@ -56,6 +57,7 @@ const App = () => (
               <Route path="/forgot" element={<Forgot />} />
               <Route path="/2fa" element={<TwoFA />} />
               <Route path="/google-drive-callback" element={<GoogleDriveCallback />} />
+              <Route path="/pay/:token" element={<PaymentPortal />} />
 
               <Route
                 path="/"
