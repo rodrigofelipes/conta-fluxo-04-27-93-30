@@ -21,6 +21,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useClients } from "@/hooks/useClients";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { PaymentLinkGenerator } from "@/components/payments/PaymentLinkGenerator";
+import { PaymentLinksTable } from "@/components/payments/PaymentLinksTable";
 interface ClientFinancialData {
   client_id: string;
   client_name: string;
@@ -40,6 +42,7 @@ interface ClientFinancialData {
     transaction_type: string;
     recurrence_type?: string | null;
     created_at: string;
+    client_id?: string;
   }>;
   installments: Array<{
     id: string;
@@ -49,8 +52,45 @@ interface ClientFinancialData {
     due_date: string;
     status: string;
     payment_date?: string;
+    client_id?: string;
   }>;
 }
+
+interface PaymentLinkRecord {
+  id: string;
+  link_token: string;
+  description: string;
+  amount: number;
+  status: 'active' | 'expired' | 'completed' | 'cancelled';
+  expires_at: string;
+  created_at: string;
+  accessed_at: string | null;
+  paid_at: string | null;
+  checkout_url: string | null;
+  stripe_checkout_session_id: string | null;
+}
+
+interface PaymentTransactionRecord {
+  id: string;
+  client_id: string;
+  payment_link_id: string | null;
+  client_financial_id: string | null;
+  installment_id: string | null;
+  stripe_payment_id: string | null;
+  stripe_session_id: string | null;
+  amount: number;
+  status: 'pending' | 'processing' | 'succeeded' | 'failed' | 'cancelled';
+  payment_method: string | null;
+  payment_date: string | null;
+  created_at: string;
+  error_message: string | null;
+}
+
+const isMissingTableError = (error: unknown): boolean =>
+  typeof error === 'object' &&
+  error !== null &&
+  'code' in error &&
+  (error as { code?: string }).code === '42P01';
 
 export default function ClientFinancialDetail() {
   const { clientId } = useParams<{ clientId: string }>();
@@ -59,6 +99,8 @@ export default function ClientFinancialDetail() {
   const [clientFinancialData, setClientFinancialData] = useState<ClientFinancialData | null>(null);
   const [loading, setLoading] = useState(true);
   const [openTransactionGroups, setOpenTransactionGroups] = useState<Record<string, boolean>>({});
+  const [paymentLinks, setPaymentLinks] = useState<PaymentLinkRecord[]>([]);
+  const [paymentTransactions, setPaymentTransactions] = useState<PaymentTransactionRecord[]>([]);
 
   const loadClientFinancialData = async (clientId: string) => {
     setLoading(true);
@@ -80,6 +122,40 @@ export default function ClientFinancialDetail() {
         .order('due_date', { ascending: true });
 
       if (installmentsError) throw installmentsError;
+
+      const { data: linksData, error: linksError } = await supabase
+        .from('payment_links')
+        .select('*')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false });
+
+      let resolvedPaymentLinks: PaymentLinkRecord[] = [];
+      if (linksError) {
+        if (isMissingTableError(linksError)) {
+          console.warn('Tabela payment_links não encontrada. Recursos de pagamento online serão ignorados.');
+        } else {
+          throw linksError;
+        }
+      } else {
+        resolvedPaymentLinks = (linksData ?? []) as PaymentLinkRecord[];
+      }
+
+      const { data: paymentTransactionsData, error: paymentTransactionsError } = await supabase
+        .from('payment_transactions')
+        .select('*')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false });
+
+      let resolvedPaymentTransactions: PaymentTransactionRecord[] = [];
+      if (paymentTransactionsError) {
+        if (isMissingTableError(paymentTransactionsError)) {
+          console.warn('Tabela payment_transactions não encontrada. Recursos de pagamento online serão ignorados.');
+        } else {
+          throw paymentTransactionsError;
+        }
+      } else {
+        resolvedPaymentTransactions = (paymentTransactionsData ?? []) as PaymentTransactionRecord[];
+      }
 
       // Buscar nome do cliente
       const client = clients.find(c => c.id === clientId);
@@ -108,6 +184,9 @@ export default function ClientFinancialDetail() {
         transactions: transactions || [],
         installments: installments || []
       });
+
+      setPaymentLinks(resolvedPaymentLinks);
+      setPaymentTransactions(resolvedPaymentTransactions);
 
     } catch (error) {
       console.error('Erro ao carregar dados financeiros do cliente:', error);
@@ -148,6 +227,55 @@ export default function ClientFinancialDetail() {
       default: return status;
     }
   };
+
+  const activePaymentLinks = useMemo(() => paymentLinks.filter(link => link.status === 'active').length, [paymentLinks]);
+  const completedPaymentLinks = useMemo(() => paymentLinks.filter(link => link.status === 'completed').length, [paymentLinks]);
+  const totalOnlineReceived = useMemo(
+    () => paymentTransactions
+      .filter(transaction => transaction.status === 'succeeded')
+      .reduce((acc, transaction) => acc + transaction.amount, 0),
+    [paymentTransactions]
+  );
+
+  const formatPaymentStatus = (status: PaymentTransactionRecord['status']) => {
+    switch (status) {
+      case 'succeeded':
+        return { label: 'Pago', className: 'bg-green-100 text-green-800' };
+      case 'processing':
+        return { label: 'Processando', className: 'bg-blue-100 text-blue-800' };
+      case 'failed':
+        return { label: 'Falhou', className: 'bg-red-100 text-red-800' };
+      case 'cancelled':
+        return { label: 'Cancelado', className: 'bg-gray-200 text-gray-800' };
+      default:
+        return { label: 'Pendente', className: 'bg-yellow-100 text-yellow-800' };
+    }
+  };
+
+  const receivableTransactions = useMemo(() => {
+    if (!clientFinancialData) return [];
+    return clientFinancialData.transactions.map(transaction => ({
+      id: transaction.id,
+      description: transaction.description,
+      amount: transaction.amount,
+      status: transaction.status,
+      transaction_category: transaction.transaction_category,
+      client_id: transaction.client_id ?? clientFinancialData.client_id,
+    }));
+  }, [clientFinancialData]);
+
+  const pendingInstallments = useMemo(() => {
+    if (!clientFinancialData) return [];
+    return clientFinancialData.installments.map(installment => ({
+      id: installment.id,
+      installment_number: installment.installment_number,
+      total_installments: installment.total_installments,
+      amount: installment.amount,
+      status: installment.status,
+      due_date: installment.due_date,
+      client_id: installment.client_id ?? clientFinancialData.client_id,
+    }));
+  }, [clientFinancialData]);
 
   const getCategoryLabel = (category: string) => {
     switch (category) {
@@ -359,6 +487,88 @@ export default function ClientFinancialDetail() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="card-elevated">
+        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <CardTitle>Pagamentos Online</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Gere novos links de pagamento e acompanhe a confirmação automática dos recebimentos.
+            </p>
+          </div>
+          <PaymentLinkGenerator
+            clientId={clientFinancialData.client_id}
+            clientName={clientFinancialData.client_name}
+            receivables={receivableTransactions}
+            installments={pendingInstallments}
+            onCreated={() => clientId && loadClientFinancialData(clientId)}
+          />
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-lg border p-4">
+              <p className="text-xs uppercase text-muted-foreground">Links Ativos</p>
+              <p className="text-2xl font-semibold">{activePaymentLinks}</p>
+            </div>
+            <div className="rounded-lg border p-4">
+              <p className="text-xs uppercase text-muted-foreground">Pagamentos Confirmados</p>
+              <p className="text-2xl font-semibold text-green-600">{completedPaymentLinks}</p>
+            </div>
+            <div className="rounded-lg border p-4">
+              <p className="text-xs uppercase text-muted-foreground">Recebido Online</p>
+              <p className="text-2xl font-semibold text-green-600">{formatCurrency(totalOnlineReceived)}</p>
+            </div>
+          </div>
+
+          <PaymentLinksTable
+            data={paymentLinks}
+            onStatusUpdated={() => clientId && loadClientFinancialData(clientId)}
+          />
+        </CardContent>
+      </Card>
+
+      {paymentTransactions.length > 0 && (
+        <Card className="card-elevated">
+          <CardHeader>
+            <CardTitle>Histórico de Pagamentos Online</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Data</TableHead>
+                  <TableHead>Valor</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Método</TableHead>
+                  <TableHead>Referência</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paymentTransactions.map(transaction => {
+                  const statusInfo = formatPaymentStatus(transaction.status);
+                  return (
+                    <TableRow key={transaction.id}>
+                      <TableCell>{format(new Date(transaction.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}</TableCell>
+                      <TableCell className="font-semibold text-green-600">{formatCurrency(transaction.amount)}</TableCell>
+                      <TableCell>
+                        <Badge className={statusInfo.className}>{statusInfo.label}</Badge>
+                      </TableCell>
+                      <TableCell>{transaction.payment_method ?? '—'}</TableCell>
+                      <TableCell>
+                        {transaction.stripe_payment_id ? (
+                          <span className="text-xs text-muted-foreground">{transaction.stripe_payment_id}</span>
+                        ) : (
+                          '—'
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Área de Transações e Parcelas */}
       <Card>
