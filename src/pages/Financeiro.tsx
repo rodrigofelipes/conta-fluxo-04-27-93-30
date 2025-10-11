@@ -38,6 +38,7 @@ import { PaymentLinkGenerator } from "@/components/payments/PaymentLinkGenerator
 import { PaymentLinksTable } from "@/components/payments/PaymentLinksTable";
 import type { PaymentLinkRow } from "@/components/payments/PaymentLinksTable";
 
+
 /** *********************************************
  *  FinancialCategoryManagement
  ********************************************* */
@@ -638,7 +639,9 @@ export default function Financeiro() {
         .order('created_at', { ascending: false })
         .limit(100);
 
+
       if (paymentLinksError) throw paymentLinksError;
+
 
 
       const { data: onlinePaymentsData, error: onlinePaymentsError } = await supabase
@@ -647,7 +650,9 @@ export default function Financeiro() {
         .order('created_at', { ascending: false })
         .limit(100);
 
+
       if (onlinePaymentsError) throw onlinePaymentsError;
+
 
 
       const { data: installmentsData, error: installmentsError } = await supabase
@@ -700,6 +705,9 @@ export default function Financeiro() {
       }));
 
       setCategories(mappedCategories);
+      setPaymentLinks(resolvedPaymentLinks);
+      setOnlinePayments(resolvedOnlinePayments);
+      setOnlineInstallments((installmentsData ?? []) as PaymentInstallmentRecord[]);
 
       setPaymentLinks((paymentLinksData ?? []) as PaymentLinkRecord[]);
       setOnlinePayments((onlinePaymentsData ?? []) as OnlinePaymentTransaction[]);

@@ -23,6 +23,8 @@ import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { PaymentLinkGenerator } from "@/components/payments/PaymentLinkGenerator";
 import { PaymentLinksTable } from "@/components/payments/PaymentLinksTable";
+
+
 interface ClientFinancialData {
   client_id: string;
   client_name: string;
@@ -88,6 +90,7 @@ interface PaymentTransactionRecord {
 
 
 
+
 export default function ClientFinancialDetail() {
   const { clientId } = useParams<{ clientId: string }>();
   const { clients } = useClients();
@@ -126,7 +129,9 @@ export default function ClientFinancialDetail() {
         .order('created_at', { ascending: false });
 
 
+
       if (linksError) throw linksError;
+
 
 
       const { data: paymentTransactionsData, error: paymentTransactionsError } = await supabase
@@ -136,7 +141,9 @@ export default function ClientFinancialDetail() {
         .order('created_at', { ascending: false });
 
 
+
       if (paymentTransactionsError) throw paymentTransactionsError;
+
 
       // Buscar nome do cliente
       const client = clients.find(c => c.id === clientId);
@@ -166,8 +173,10 @@ export default function ClientFinancialDetail() {
         installments: installments || []
       });
 
+
 ymentLinks((linksData ?? []) as PaymentLinkRecord[]);
       setPaymentTransactions((paymentTransactionsData ?? []) as PaymentTransactionRecord[]);
+
 
 
     } catch (error) {
