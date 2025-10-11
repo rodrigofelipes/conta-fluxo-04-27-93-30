@@ -37,11 +37,17 @@ import { IncomeManagement } from "@/components/financial/IncomeManagement";
 import { PaymentLinkGenerator } from "@/components/payments/PaymentLinkGenerator";
 import { PaymentLinksTable } from "@/components/payments/PaymentLinksTable";
 import type { PaymentLinkRow } from "@/components/payments/PaymentLinksTable";
-import { isMissingTableError } from "@/lib/supabaseErrors";
+
 
 /** *********************************************
  *  FinancialCategoryManagement
  ********************************************* */
+const isMissingTableError = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  (error as { code?: string }).code === "42P01";
+
 const categorySchema = z.object({
   name: z.string().min(2, "Informe um nome com pelo menos 2 caracteres"),
   type: z.enum(["previsao_custo", "variavel", "fixo"], { required_error: "Selecione o tipo" })
@@ -633,16 +639,10 @@ export default function Financeiro() {
         .order('created_at', { ascending: false })
         .limit(100);
 
-      let resolvedPaymentLinks: PaymentLinkRecord[] = [];
-      if (paymentLinksError) {
-        if (isMissingTableError(paymentLinksError)) {
-          console.warn('Tabela payment_links não encontrada. Recursos de pagamento online serão ignorados.');
-        } else {
-          throw paymentLinksError;
-        }
-      } else {
-        resolvedPaymentLinks = (paymentLinksData ?? []) as PaymentLinkRecord[];
-      }
+
+      if (paymentLinksError) throw paymentLinksError;
+
+
 
       const { data: onlinePaymentsData, error: onlinePaymentsError } = await supabase
         .from('payment_transactions')
@@ -650,16 +650,10 @@ export default function Financeiro() {
         .order('created_at', { ascending: false })
         .limit(100);
 
-      let resolvedOnlinePayments: OnlinePaymentTransaction[] = [];
-      if (onlinePaymentsError) {
-        if (isMissingTableError(onlinePaymentsError)) {
-          console.warn('Tabela payment_transactions não encontrada. Recursos de pagamento online serão ignorados.');
-        } else {
-          throw onlinePaymentsError;
-        }
-      } else {
-        resolvedOnlinePayments = (onlinePaymentsData ?? []) as OnlinePaymentTransaction[];
-      }
+
+      if (onlinePaymentsError) throw onlinePaymentsError;
+
+
 
       const { data: installmentsData, error: installmentsError } = await supabase
         .from('payment_installments')
@@ -713,6 +707,11 @@ export default function Financeiro() {
       setCategories(mappedCategories);
       setPaymentLinks(resolvedPaymentLinks);
       setOnlinePayments(resolvedOnlinePayments);
+      setOnlineInstallments((installmentsData ?? []) as PaymentInstallmentRecord[]);
+
+      setPaymentLinks((paymentLinksData ?? []) as PaymentLinkRecord[]);
+      setOnlinePayments((onlinePaymentsData ?? []) as OnlinePaymentTransaction[]);
+
       setOnlineInstallments((installmentsData ?? []) as PaymentInstallmentRecord[]);
 
     } catch (error) {

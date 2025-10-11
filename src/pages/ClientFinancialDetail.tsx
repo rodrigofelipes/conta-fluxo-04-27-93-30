@@ -23,7 +23,8 @@ import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { PaymentLinkGenerator } from "@/components/payments/PaymentLinkGenerator";
 import { PaymentLinksTable } from "@/components/payments/PaymentLinksTable";
-import { isMissingTableError } from "@/lib/supabaseErrors";
+
+
 interface ClientFinancialData {
   client_id: string;
   client_name: string;
@@ -87,6 +88,9 @@ interface PaymentTransactionRecord {
   error_message: string | null;
 }
 
+
+
+
 export default function ClientFinancialDetail() {
   const { clientId } = useParams<{ clientId: string }>();
   const { clients } = useClients();
@@ -124,16 +128,11 @@ export default function ClientFinancialDetail() {
         .eq('client_id', clientId)
         .order('created_at', { ascending: false });
 
-      let resolvedPaymentLinks: PaymentLinkRecord[] = [];
-      if (linksError) {
-        if (isMissingTableError(linksError)) {
-          console.warn('Tabela payment_links não encontrada. Recursos de pagamento online serão ignorados.');
-        } else {
-          throw linksError;
-        }
-      } else {
-        resolvedPaymentLinks = (linksData ?? []) as PaymentLinkRecord[];
-      }
+
+
+      if (linksError) throw linksError;
+
+
 
       const { data: paymentTransactionsData, error: paymentTransactionsError } = await supabase
         .from('payment_transactions')
@@ -141,16 +140,10 @@ export default function ClientFinancialDetail() {
         .eq('client_id', clientId)
         .order('created_at', { ascending: false });
 
-      let resolvedPaymentTransactions: PaymentTransactionRecord[] = [];
-      if (paymentTransactionsError) {
-        if (isMissingTableError(paymentTransactionsError)) {
-          console.warn('Tabela payment_transactions não encontrada. Recursos de pagamento online serão ignorados.');
-        } else {
-          throw paymentTransactionsError;
-        }
-      } else {
-        resolvedPaymentTransactions = (paymentTransactionsData ?? []) as PaymentTransactionRecord[];
-      }
+
+
+      if (paymentTransactionsError) throw paymentTransactionsError;
+
 
       // Buscar nome do cliente
       const client = clients.find(c => c.id === clientId);
@@ -180,8 +173,11 @@ export default function ClientFinancialDetail() {
         installments: installments || []
       });
 
-      setPaymentLinks(resolvedPaymentLinks);
-      setPaymentTransactions(resolvedPaymentTransactions);
+
+ymentLinks((linksData ?? []) as PaymentLinkRecord[]);
+      setPaymentTransactions((paymentTransactionsData ?? []) as PaymentTransactionRecord[]);
+
+
 
     } catch (error) {
       console.error('Erro ao carregar dados financeiros do cliente:', error);
