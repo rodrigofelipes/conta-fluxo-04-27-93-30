@@ -174,7 +174,7 @@ export default function ClientFinancialDetail() {
       });
 
 
-ymentLinks((linksData ?? []) as PaymentLinkRecord[]);
+setPaymentLinks((linksData ?? []) as PaymentLinkRecord[]);
       setPaymentTransactions((paymentTransactionsData ?? []) as PaymentTransactionRecord[]);
 
 
