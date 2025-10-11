@@ -638,16 +638,8 @@ export default function Financeiro() {
         .order('created_at', { ascending: false })
         .limit(100);
 
-      let resolvedPaymentLinks: PaymentLinkRecord[] = [];
-      if (paymentLinksError) {
-        if (isMissingTableError(paymentLinksError)) {
-          console.warn('Tabela payment_links não encontrada. Recursos de pagamento online serão ignorados.');
-        } else {
-          throw paymentLinksError;
-        }
-      } else {
-        resolvedPaymentLinks = (paymentLinksData ?? []) as PaymentLinkRecord[];
-      }
+      if (paymentLinksError) throw paymentLinksError;
+
 
       const { data: onlinePaymentsData, error: onlinePaymentsError } = await supabase
         .from('payment_transactions')
@@ -655,16 +647,8 @@ export default function Financeiro() {
         .order('created_at', { ascending: false })
         .limit(100);
 
-      let resolvedOnlinePayments: OnlinePaymentTransaction[] = [];
-      if (onlinePaymentsError) {
-        if (isMissingTableError(onlinePaymentsError)) {
-          console.warn('Tabela payment_transactions não encontrada. Recursos de pagamento online serão ignorados.');
-        } else {
-          throw onlinePaymentsError;
-        }
-      } else {
-        resolvedOnlinePayments = (onlinePaymentsData ?? []) as OnlinePaymentTransaction[];
-      }
+      if (onlinePaymentsError) throw onlinePaymentsError;
+
 
       const { data: installmentsData, error: installmentsError } = await supabase
         .from('payment_installments')
@@ -716,8 +700,10 @@ export default function Financeiro() {
       }));
 
       setCategories(mappedCategories);
-      setPaymentLinks(resolvedPaymentLinks);
-      setOnlinePayments(resolvedOnlinePayments);
+
+      setPaymentLinks((paymentLinksData ?? []) as PaymentLinkRecord[]);
+      setOnlinePayments((onlinePaymentsData ?? []) as OnlinePaymentTransaction[]);
+
       setOnlineInstallments((installmentsData ?? []) as PaymentInstallmentRecord[]);
 
     } catch (error) {
