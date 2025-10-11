@@ -86,6 +86,8 @@ interface PaymentTransactionRecord {
   error_message: string | null;
 }
 
+
+
 export default function ClientFinancialDetail() {
   const { clientId } = useParams<{ clientId: string }>();
   const { clients } = useClients();
@@ -123,13 +125,16 @@ export default function ClientFinancialDetail() {
         .eq('client_id', clientId)
         .order('created_at', { ascending: false });
 
+
       if (linksError) throw linksError;
+
 
       const { data: paymentTransactionsData, error: paymentTransactionsError } = await supabase
         .from('payment_transactions')
         .select('*')
         .eq('client_id', clientId)
         .order('created_at', { ascending: false });
+
 
       if (paymentTransactionsError) throw paymentTransactionsError;
 
@@ -161,8 +166,9 @@ export default function ClientFinancialDetail() {
         installments: installments || []
       });
 
-      setPaymentLinks((linksData ?? []) as PaymentLinkRecord[]);
+ymentLinks((linksData ?? []) as PaymentLinkRecord[]);
       setPaymentTransactions((paymentTransactionsData ?? []) as PaymentTransactionRecord[]);
+
 
     } catch (error) {
       console.error('Erro ao carregar dados financeiros do cliente:', error);

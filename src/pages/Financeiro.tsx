@@ -41,6 +41,12 @@ import type { PaymentLinkRow } from "@/components/payments/PaymentLinksTable";
 /** *********************************************
  *  FinancialCategoryManagement
  ********************************************* */
+const isMissingTableError = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  (error as { code?: string }).code === "42P01";
+
 const categorySchema = z.object({
   name: z.string().min(2, "Informe um nome com pelo menos 2 caracteres"),
   type: z.enum(["previsao_custo", "variavel", "fixo"], { required_error: "Selecione o tipo" })
@@ -631,14 +637,18 @@ export default function Financeiro() {
         .select('*')
         .order('created_at', { ascending: false })
         .limit(100);
+
       if (paymentLinksError) throw paymentLinksError;
+
 
       const { data: onlinePaymentsData, error: onlinePaymentsError } = await supabase
         .from('payment_transactions')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(100);
+
       if (onlinePaymentsError) throw onlinePaymentsError;
+
 
       const { data: installmentsData, error: installmentsError } = await supabase
         .from('payment_installments')
@@ -690,8 +700,10 @@ export default function Financeiro() {
       }));
 
       setCategories(mappedCategories);
+
       setPaymentLinks((paymentLinksData ?? []) as PaymentLinkRecord[]);
       setOnlinePayments((onlinePaymentsData ?? []) as OnlinePaymentTransaction[]);
+
       setOnlineInstallments((installmentsData ?? []) as PaymentInstallmentRecord[]);
 
     } catch (error) {
