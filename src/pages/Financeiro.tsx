@@ -633,25 +633,45 @@ export default function Financeiro() {
         .order('name', { ascending: true });
       if (categoriesError) throw categoriesError;
 
-      const { data: paymentLinksData, error: paymentLinksError } = await supabase
-        .from('payment_links')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
+      let paymentLinksData: any[] = [];
+      {
+        const { data, error } = await supabase
+          .from('payment_links')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(100);
+        if (error) {
+          const code = (error as any).code;
+          if (code === 'PGRST205' || code === '42P01') {
+            console.warn('Tabela payment_links ausente, ignorando...');
+          } else {
+            throw error;
+          }
+        } else {
+          paymentLinksData = data ?? [];
+        }
+      }
 
 
-      if (paymentLinksError) throw paymentLinksError;
 
-
-
-      const { data: onlinePaymentsData, error: onlinePaymentsError } = await supabase
-        .from('payment_transactions')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-
-      if (onlinePaymentsError) throw onlinePaymentsError;
+      let onlinePaymentsData: any[] = [];
+      {
+        const { data, error } = await supabase
+          .from('payment_transactions')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(100);
+        if (error) {
+          const code = (error as any).code;
+          if (code === 'PGRST205' || code === '42P01') {
+            console.warn('Tabela payment_transactions ausente, ignorando...');
+          } else {
+            throw error;
+          }
+        } else {
+          onlinePaymentsData = data ?? [];
+        }
+      }
 
 
 

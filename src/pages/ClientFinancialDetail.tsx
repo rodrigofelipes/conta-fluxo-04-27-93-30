@@ -122,27 +122,45 @@ export default function ClientFinancialDetail() {
 
       if (installmentsError) throw installmentsError;
 
-      const { data: linksData, error: linksError } = await supabase
-        .from('payment_links')
-        .select('*')
-        .eq('client_id', clientId)
-        .order('created_at', { ascending: false });
+      let linksData: any[] = [];
+      {
+        const { data, error } = await supabase
+          .from('payment_links')
+          .select('*')
+          .eq('client_id', clientId)
+          .order('created_at', { ascending: false });
+        if (error) {
+          const code = (error as any).code;
+          if (code === 'PGRST205' || code === '42P01') {
+            console.warn('Tabela payment_links ausente, ignorando...');
+          } else {
+            throw error;
+          }
+        } else {
+          linksData = data ?? [];
+        }
+      }
 
 
 
-      if (linksError) throw linksError;
-
-
-
-      const { data: paymentTransactionsData, error: paymentTransactionsError } = await supabase
-        .from('payment_transactions')
-        .select('*')
-        .eq('client_id', clientId)
-        .order('created_at', { ascending: false });
-
-
-
-      if (paymentTransactionsError) throw paymentTransactionsError;
+      let paymentTransactionsData: any[] = [];
+      {
+        const { data, error } = await supabase
+          .from('payment_transactions')
+          .select('*')
+          .eq('client_id', clientId)
+          .order('created_at', { ascending: false });
+        if (error) {
+          const code = (error as any).code;
+          if (code === 'PGRST205' || code === '42P01') {
+            console.warn('Tabela payment_transactions ausente, ignorando...');
+          } else {
+            throw error;
+          }
+        } else {
+          paymentTransactionsData = data ?? [];
+        }
+      }
 
 
       // Buscar nome do cliente
