@@ -113,6 +113,8 @@ function getAgendaDateTimeRange(
   };
 }
 
+
+
 async function fetchCollaboratorsMap(collaboratorIds: string[]): Promise<Map<string, CollaboratorProfile>> {
   if (!collaboratorIds.length) {
     return new Map();
@@ -469,23 +471,8 @@ async function syncEventsFromGoogle() {
       const endDateTime = event.end?.dateTime || event.end?.date || startDateTime;
       
       // Parser ISO com timezone: retorna [date, time] considerando o offset
-      const parseISOWithTimezone = (isoString: string): { date: string; time: string | null } => {
-        if (!isoString.includes('T')) {
-          // Evento de dia inteiro (sem horário)
-          return { date: isoString, time: null };
-        }
-        
-        // Extrair a parte da data e hora
-        const [datePart, timePart] = isoString.split('T');
-        
-        // Extrair HH:mm:ss (ignora timezone/offset, pois já está no fuso correto)
-        const timeOnly = timePart.split(/[+-Z]/)[0]; // Remove timezone info
-        
-        return { date: datePart, time: timeOnly };
-      };
-      
-      const startParsed = parseISOWithTimezone(startDateTime);
-      const endParsed = parseISOWithTimezone(endDateTime);
+      const startParsed = parseGoogleEventDateTime(startDateTime, event.start.timeZone);
+      const endParsed = parseGoogleEventDateTime(endDateTime, event.end?.timeZone);
       
       const agendaData = {
         titulo: event.summary || "Sem título",
