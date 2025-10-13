@@ -138,8 +138,47 @@ async function syncEventsFromGoogle() {
     created: 0,
     updated: 0,
     skipped: 0,
+    deleted: 0,
     errors: 0,
   };
+
+  // Mapear IDs dos eventos do Google Calendar
+  const googleEventIds = events.map((e: any) => e.id);
+
+  // Buscar eventos na agenda que têm google_event_id mas não existem mais no Google Calendar
+  const { data: agendaEvents } = await supabaseAdmin
+    .from("agenda")
+    .select("id, google_event_id")
+    .not("google_event_id", "is", null);
+
+  if (agendaEvents) {
+    for (const agendaEvent of agendaEvents) {
+      if (agendaEvent.google_event_id && !googleEventIds.includes(agendaEvent.google_event_id)) {
+        // Evento foi deletado no Google Calendar, deletar da agenda
+        const { error } = await supabaseAdmin
+          .from("agenda")
+          .delete()
+          .eq("id", agendaEvent.id);
+
+        if (error) {
+          console.error(`Erro ao deletar evento ${agendaEvent.id}:`, error);
+          syncResults.errors++;
+        } else {
+          syncResults.deleted++;
+          
+          // Log da sincronização
+          await supabaseAdmin.from("google_calendar_sync_log").insert({
+            google_event_id: agendaEvent.google_event_id,
+            agenda_id: agendaEvent.id,
+            operation: "delete",
+            sync_status: "success",
+            sync_direction: "from_google",
+            metadata: { reason: "Event deleted from Google Calendar" },
+          });
+        }
+      }
+    }
+  }
 
   for (const event of events) {
     try {

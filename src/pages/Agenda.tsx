@@ -465,6 +465,22 @@ export default function Agenda() {
     loadData();
   }, []);
 
+  // Sincronização automática com Google Calendar a cada 10 segundos
+  useEffect(() => {
+    const syncInterval = setInterval(async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('sync-google-calendar');
+        if (!error && data?.success) {
+          loadData(); // Recarrega os dados após sincronização
+        }
+      } catch (err) {
+        console.error('Erro na sincronização automática:', err);
+      }
+    }, 10000); // 10 segundos
+
+    return () => clearInterval(syncInterval);
+  }, []);
+
   const onSubmit = async (values: z.infer<typeof agendaFormSchema>) => {
     try {
       const { data: user } = await supabase.auth.getUser();
