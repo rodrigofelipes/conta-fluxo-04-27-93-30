@@ -201,7 +201,17 @@ export function GoogleCalendarTestTab() {
     try {
       const { data, error } = await supabase.functions.invoke('sync-google-calendar');
 
-      if (error) throw error;
+      if (error) {
+        if (error.message?.includes('credentials are not configured')) {
+          toast({
+            title: "⚠️ Configuração Necessária",
+            description: "Configure GOOGLE_SERVICE_ACCOUNT_EMAIL e GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY no Supabase",
+            variant: "destructive"
+          });
+          return;
+        }
+        throw error;
+      }
 
       toast({
         title: "✅ Sincronização Concluída!",
