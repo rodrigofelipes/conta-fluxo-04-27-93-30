@@ -217,7 +217,7 @@ export function GoogleCalendarTestTab({ onAfterSync }: { onAfterSync?: () => voi
 
       toast({
         title: "✅ Sincronização Concluída!",
-        description: `Criados: ${data.results.created}, Atualizados: ${data.results.updated}, Erros: ${data.results.errors}`,
+        description: `Criados (Google → Sistema): ${data.results.created}, Atualizados: ${data.results.updated}, Enviados (Sistema → Google): ${data.results.system_created ?? 0}, Erros: ${(data.results.errors || 0) + (data.results.system_errors || 0)}`,
       });
 
       loadSyncLogs();
