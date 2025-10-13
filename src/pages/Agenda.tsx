@@ -57,6 +57,7 @@ import { ptBR } from "date-fns/locale";
 import { HolidayDialog } from "@/components/agenda/HolidayDialog";
 import { HolidaySyncDialog } from "@/components/agenda/HolidaySyncDialog";
 import { supabase } from "@/integrations/supabase/client";
+import { createGoogleCalendarEvent, type CalendarAttendee } from "@/integrations/googleCalendar/events";
 import { useGradientDatabase } from "@/hooks/useGradientDatabase";
 
 // Função para formatar data evitando problemas de timezone
@@ -123,6 +124,23 @@ const sanitizeOptionalString = (value?: string | null) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const mapCollaboratorsToAttendees = (
+  ids: string[] | undefined,
+  collaborators: Colaborador[]
+): CalendarAttendee[] => {
+  if (!ids?.length) {
+    return [];
+  }
+
+  return ids
+    .map(id => collaborators.find(colaborador => colaborador.id === id))
+    .filter((colaborador): colaborador is Colaborador => Boolean(colaborador && colaborador.email))
+    .map(colaborador => ({
+      email: colaborador.email,
+      displayName: colaborador.name,
+    }));
+};
+
 const agendaFormSchema = z
   .object({
     titulo: z.string().min(2, "Título deve ter pelo menos 2 caracteres"),
@@ -184,6 +202,7 @@ interface AgendaItem {
   external_location?: boolean;
   distance_km?: number;
   travel_cost?: number;
+  google_event_id?: string | null;
 }
 
 interface Holiday {
@@ -540,6 +559,32 @@ export default function Agenda() {
           creator_name: currentUser?.name || 'Você'
         };
 
+        let calendarSyncError: unknown = null;
+
+        try {
+          const calendarAttendees = mapCollaboratorsToAttendees(values.collaborators_ids, colaboradores);
+          const calendarResponse = await createGoogleCalendarEvent({
+            agendaId: (data as AgendaItem).id,
+            title: values.titulo.trim(),
+            description: basePayload.descricao,
+            startDate: formattedDate,
+            endDate: formattedEndDate,
+            startTime: values.horario,
+            endTime: basePayload.horario_fim,
+            location: basePayload.local,
+            cliente: values.isInternalMeeting ? null : values.cliente?.trim() || null,
+            agendaType: values.agenda_type,
+            attendees: calendarAttendees,
+          });
+
+          if (calendarResponse?.eventId) {
+            newAgendaItem.google_event_id = calendarResponse.eventId;
+          }
+        } catch (syncError) {
+          calendarSyncError = syncError;
+          console.error('Erro ao sincronizar com Google Calendar:', syncError);
+        }
+
         setAgenda(prev => [
           ...prev,
           newAgendaItem
@@ -549,6 +594,14 @@ export default function Agenda() {
           title: "Sucesso!",
           description: "Agendamento criado com sucesso."
         });
+
+        if (calendarSyncError) {
+          toast({
+            title: "Atenção",
+            description: "Agendamento criado, mas houve um erro ao sincronizar com o Google Calendar.",
+            variant: "destructive"
+          });
+        }
       }
 
       closeDialog();
