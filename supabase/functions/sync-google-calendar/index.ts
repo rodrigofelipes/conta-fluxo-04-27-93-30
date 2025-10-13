@@ -211,26 +211,28 @@ async function syncEventsFromGoogle() {
         }
       } else {
         // Criar novo evento
-        // Precisamos de um created_by válido - vamos usar o primeiro admin
-        const { data: adminProfile } = await supabaseAdmin
+        // Buscar todos os perfis admin para adicionar como colaboradores
+        const { data: adminProfiles } = await supabaseAdmin
           .from("profiles")
-          .select("user_id")
-          .eq("role", "admin")
-          .limit(1)
-          .maybeSingle();
+          .select("id, user_id")
+          .eq("role", "admin");
 
-        if (!adminProfile) {
-          console.error("No admin user found to create agenda item");
+        if (!adminProfiles || adminProfiles.length === 0) {
+          console.error("No admin users found to create agenda item");
           syncResults.errors++;
           continue;
         }
+
+        // Usar o primeiro admin como created_by e adicionar todos como colaboradores
+        const creatorUserId = adminProfiles[0].user_id;
+        const allAdminProfileIds = adminProfiles.map(p => p.id);
 
         const { data: created, error } = await supabaseAdmin
           .from("agenda")
           .insert({
             ...agendaData,
-            created_by: adminProfile.user_id,
-            collaborators_ids: [],
+            created_by: creatorUserId,
+            collaborators_ids: allAdminProfileIds,
           })
           .select("id")
           .single();
