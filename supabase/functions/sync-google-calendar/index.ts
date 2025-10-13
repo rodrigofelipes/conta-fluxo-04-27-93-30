@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { GoogleAuth } from "npm:google-auth-library@9.14.1";
+import { DateTime } from "npm:luxon@3.5.0";
 import { corsHeaders } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -9,12 +10,163 @@ const GOOGLE_CALENDAR_ID = Deno.env.get("GOOGLE_CALENDAR_ID");
 const GOOGLE_SERVICE_ACCOUNT_EMAIL = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_EMAIL");
 const GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY");
 const GOOGLE_SERVICE_ACCOUNT = Deno.env.get("GOOGLE_SERVICE_ACCOUNT");
+const DEFAULT_TIME_ZONE = Deno.env.get("GOOGLE_CALENDAR_TIMEZONE") || "America/Sao_Paulo";
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error("Missing Supabase configuration");
 }
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+type AgendaRecord = {
+  id: string;
+  titulo: string | null;
+  descricao: string | null;
+  data: string;
+  data_fim: string | null;
+  horario: string | null;
+  horario_fim: string | null;
+  local: string | null;
+  cliente: string | null;
+  agenda_type: "pessoal" | "compartilhada" | null;
+  collaborators_ids: string[] | null;
+};
+
+type CollaboratorProfile = {
+  id: string;
+  email: string | null;
+  name: string | null;
+};
+
+function normalizeTime(time: string | null | undefined): string {
+  if (!time) {
+    return "00:00:00";
+  }
+
+  if (time.length === 5) {
+    return `${time}:00`;
+  }
+
+  if (time.length === 8) {
+    return time;
+  }
+
+  return time;
+}
+
+function buildAgendaDescription(agenda: AgendaRecord): string | undefined {
+  const segments: string[] = [];
+
+  if (agenda.cliente && agenda.cliente.trim().length > 0) {
+    segments.push(`Cliente: ${agenda.cliente.trim()}`);
+  }
+
+  const sanitizedDescription = agenda.descricao?.trim();
+  if (sanitizedDescription) {
+    segments.push(sanitizedDescription);
+  }
+
+  if (agenda.agenda_type) {
+    segments.push(`Tipo de agenda: ${agenda.agenda_type === "pessoal" ? "Pessoal" : "Compartilhada"}`);
+  }
+
+  if (segments.length === 0) {
+    return undefined;
+  }
+
+  return segments.join("\n\n");
+}
+
+function getAgendaDateTimeRange(
+  agenda: AgendaRecord,
+  timeZone: string
+): { start: string; end: string } {
+  const start = DateTime.fromISO(`${agenda.data}T${normalizeTime(agenda.horario)}`, {
+    zone: timeZone,
+  });
+
+  if (!start.isValid) {
+    throw new Error(`Data ou horário inicial inválido para o agendamento ${agenda.id}`);
+  }
+
+  const endDate = agenda.data_fim || agenda.data;
+  let end: DateTime;
+
+  if (agenda.horario_fim) {
+    end = DateTime.fromISO(`${endDate}T${normalizeTime(agenda.horario_fim)}`, {
+      zone: timeZone,
+    });
+  } else {
+    const base = DateTime.fromISO(`${endDate}T${normalizeTime(agenda.horario)}`, {
+      zone: timeZone,
+    });
+    end = base.isValid ? base.plus({ hours: 1 }) : start.plus({ hours: 1 });
+  }
+
+  if (!end.isValid || end <= start) {
+    end = start.plus({ hours: 1 });
+  }
+
+  return {
+    start: start.toISO(),
+    end: end.toISO(),
+  };
+}
+
+function parseGoogleEventDateTime(
+  isoString: string,
+  eventTimeZone?: string | null
+): { date: string; time: string | null } {
+  if (!isoString.includes("T")) {
+    return { date: isoString, time: null };
+  }
+
+  const sourceZone = eventTimeZone || undefined;
+
+  let dateTime = DateTime.fromISO(isoString, { setZone: true });
+
+  if (!dateTime.isValid) {
+    throw new Error(`Invalid ISO date received from Google Calendar: ${isoString}`);
+  }
+
+  if (sourceZone) {
+    dateTime = dateTime.setZone(sourceZone, { keepLocalTime: true });
+  }
+
+  const converted = dateTime.setZone(DEFAULT_TIME_ZONE);
+
+  if (!converted.isValid) {
+    throw new Error(`Unable to convert Google Calendar date ${isoString} to timezone ${DEFAULT_TIME_ZONE}`);
+  }
+
+  return {
+    date: converted.toISODate(),
+    time: converted.toFormat("HH:mm:ss"),
+  };
+}
+
+async function fetchCollaboratorsMap(collaboratorIds: string[]): Promise<Map<string, CollaboratorProfile>> {
+  if (!collaboratorIds.length) {
+    return new Map();
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .select("id, email, name")
+    .in("id", collaboratorIds);
+
+  if (error) {
+    console.error("Erro ao buscar colaboradores para sincronização com Google Calendar:", error);
+    return new Map();
+  }
+
+  const map = new Map<string, CollaboratorProfile>();
+  for (const profile of data as CollaboratorProfile[]) {
+    map.set(profile.id, profile);
+  }
+
+  return map;
+}
 
 async function getAccessToken(): Promise<string> {
   // Prefer full JSON secret if available, fallback to EMAIL/PRIVATE_KEY
@@ -100,6 +252,153 @@ async function getAccessToken(): Promise<string> {
   return accessToken;
 }
 
+async function syncSystemEventsToGoogle(accessToken: string) {
+  if (!GOOGLE_CALENDAR_ID) {
+    throw new Error("Google Calendar ID is not configured");
+  }
+
+  const results = {
+    created: 0,
+    skipped: 0,
+    errors: 0,
+  };
+
+  const timeMin = new Date();
+  timeMin.setDate(timeMin.getDate() - 30);
+  const timeMax = new Date();
+  timeMax.setFullYear(timeMax.getFullYear() + 1);
+
+  const { data: agendaEvents, error: agendaError } = await supabaseAdmin
+    .from("agenda")
+    .select(
+      "id, titulo, descricao, data, data_fim, horario, horario_fim, local, cliente, agenda_type, collaborators_ids"
+    )
+    .is("google_event_id", null)
+    .gte("data", timeMin.toISOString().split("T")[0])
+    .lte("data", timeMax.toISOString().split("T")[0]);
+
+  if (agendaError) {
+    console.error("Erro ao buscar agendamentos não sincronizados:", agendaError);
+    results.errors++;
+    return results;
+  }
+
+  if (!agendaEvents?.length) {
+    return results;
+  }
+
+  const collaboratorIds = new Set<string>();
+  for (const agenda of agendaEvents as AgendaRecord[]) {
+    agenda.collaborators_ids?.forEach((id) => {
+      if (id) {
+        collaboratorIds.add(id);
+      }
+    });
+  }
+
+  const collaboratorMap = await fetchCollaboratorsMap(Array.from(collaboratorIds));
+
+  for (const agenda of agendaEvents as AgendaRecord[]) {
+    try {
+      const { start, end } = getAgendaDateTimeRange(agenda, DEFAULT_TIME_ZONE);
+      const description = buildAgendaDescription(agenda);
+
+      const attendees = (agenda.collaborators_ids || [])
+        .map((collaboratorId) => collaboratorMap.get(collaboratorId))
+        .filter((profile): profile is CollaboratorProfile => Boolean(profile?.email))
+        .map((profile) => ({
+          email: profile.email as string,
+          displayName: profile.name ?? undefined,
+        }));
+
+      const eventBody = {
+        summary: agenda.titulo || "Sem título",
+        description,
+        location: agenda.local || undefined,
+        start: {
+          dateTime: start,
+          timeZone: DEFAULT_TIME_ZONE,
+        },
+        end: {
+          dateTime: end,
+          timeZone: DEFAULT_TIME_ZONE,
+        },
+        attendees: attendees.length ? attendees : undefined,
+        extendedProperties: {
+          private: {
+            agendaId: agenda.id,
+            agendaType: agenda.agenda_type || "compartilhada",
+          },
+        },
+      };
+
+      const response = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(GOOGLE_CALENDAR_ID)}/events`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(eventBody),
+        }
+      );
+
+      if (!response.ok) {
+        const errorPayload = await response.text();
+        console.error(
+          `Google Calendar API error ao criar evento para agenda ${agenda.id}:`,
+          errorPayload
+        );
+        results.errors++;
+        continue;
+      }
+
+      const createdEvent = (await response.json()) as { id: string };
+
+      const { error: updateError } = await supabaseAdmin
+        .from("agenda")
+        .update({
+          google_event_id: createdEvent.id,
+          google_calendar_synced_at: new Date().toISOString(),
+        })
+        .eq("id", agenda.id);
+
+      if (updateError) {
+        console.error(
+          `Erro ao atualizar agenda ${agenda.id} com google_event_id ${createdEvent.id}:`,
+          updateError
+        );
+        results.errors++;
+        continue;
+      }
+
+      const { error: logError } = await supabaseAdmin.from("google_calendar_sync_log").insert({
+        google_event_id: createdEvent.id,
+        agenda_id: agenda.id,
+        operation: "create",
+        sync_status: "success",
+        sync_direction: "system_to_google",
+        metadata: { event_summary: agenda.titulo },
+      });
+
+      if (logError) {
+        console.error(
+          `Erro ao registrar log de sincronização para agenda ${agenda.id} e evento ${createdEvent.id}:`,
+          logError
+        );
+      }
+
+      results.created++;
+    } catch (error) {
+      console.error(`Erro ao sincronizar agenda ${agenda.id} com Google Calendar:`, error);
+      results.errors++;
+    }
+  }
+
+  return results;
+}
+
 async function syncEventsFromGoogle() {
   if (!GOOGLE_CALENDAR_ID) {
     throw new Error("Google Calendar ID is not configured");
@@ -140,6 +439,9 @@ async function syncEventsFromGoogle() {
     skipped: 0,
     deleted: 0,
     errors: 0,
+    system_created: 0,
+    system_skipped: 0,
+    system_errors: 0,
   };
 
   // Mapear IDs dos eventos do Google Calendar
@@ -199,23 +501,8 @@ async function syncEventsFromGoogle() {
       const endDateTime = event.end?.dateTime || event.end?.date || startDateTime;
       
       // Parser ISO com timezone: retorna [date, time] considerando o offset
-      const parseISOWithTimezone = (isoString: string): { date: string; time: string | null } => {
-        if (!isoString.includes('T')) {
-          // Evento de dia inteiro (sem horário)
-          return { date: isoString, time: null };
-        }
-        
-        // Extrair a parte da data e hora
-        const [datePart, timePart] = isoString.split('T');
-        
-        // Extrair HH:mm:ss (ignora timezone/offset, pois já está no fuso correto)
-        const timeOnly = timePart.split(/[+-Z]/)[0]; // Remove timezone info
-        
-        return { date: datePart, time: timeOnly };
-      };
-      
-      const startParsed = parseISOWithTimezone(startDateTime);
-      const endParsed = parseISOWithTimezone(endDateTime);
+      const startParsed = parseGoogleEventDateTime(startDateTime, event.start.timeZone);
+      const endParsed = parseGoogleEventDateTime(endDateTime, event.end?.timeZone);
       
       const agendaData = {
         titulo: event.summary || "Sem título",
@@ -314,6 +601,11 @@ async function syncEventsFromGoogle() {
       syncResults.errors++;
     }
   }
+
+  const systemResults = await syncSystemEventsToGoogle(accessToken);
+  syncResults.system_created = systemResults.created;
+  syncResults.system_skipped = systemResults.skipped;
+  syncResults.system_errors = systemResults.errors;
 
   return syncResults;
 }
