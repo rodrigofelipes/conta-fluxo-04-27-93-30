@@ -22,7 +22,7 @@ interface SyncLog {
   synced_at: string;
 }
 
-export function GoogleCalendarTestTab() {
+export function GoogleCalendarTestTab({ onAfterSync }: { onAfterSync?: () => void }) {
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
   const [testEventId, setTestEventId] = useState<string>("");
   const [googleEventId, setGoogleEventId] = useState<string>("");
@@ -142,6 +142,7 @@ export function GoogleCalendarTestTab() {
       }
 
       loadSyncLogs();
+      onAfterSync?.();
     } catch (error: any) {
       console.error('Erro no teste de criação:', error);
       toast({
@@ -184,6 +185,7 @@ export function GoogleCalendarTestTab() {
       });
 
       loadSyncLogs();
+      onAfterSync?.();
     } catch (error: any) {
       console.error('Erro no teste de atualização:', error);
       toast({
@@ -219,6 +221,7 @@ export function GoogleCalendarTestTab() {
       });
 
       loadSyncLogs();
+      onAfterSync?.();
     } catch (error: any) {
       console.error('Erro na sincronização:', error);
       toast({
@@ -261,6 +264,7 @@ export function GoogleCalendarTestTab() {
       setTestEventId("");
       setGoogleEventId("");
       loadSyncLogs();
+      onAfterSync?.();
     } catch (error: any) {
       console.error('Erro no teste de exclusão:', error);
       toast({

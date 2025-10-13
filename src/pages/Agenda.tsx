@@ -2667,7 +2667,7 @@ export default function Agenda() {
         </TabsContent>
 
         <TabsContent value="google-test" className="space-y-4 md:space-y-6">
-          <GoogleCalendarTestTab />
+          <GoogleCalendarTestTab onAfterSync={loadData} />
         </TabsContent>
       </Tabs>
     </div>
