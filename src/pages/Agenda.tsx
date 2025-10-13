@@ -58,6 +58,7 @@ import { HolidayDialog } from "@/components/agenda/HolidayDialog";
 import { HolidaySyncDialog } from "@/components/agenda/HolidaySyncDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { createGoogleCalendarEvent, type CalendarAttendee } from "@/integrations/googleCalendar/events";
+import { updateGoogleCalendarEvent, deleteGoogleCalendarEvent } from "@/integrations/googleCalendar/sync";
 import { useGradientDatabase } from "@/hooks/useGradientDatabase";
 
 // Função para formatar data evitando problemas de timezone
@@ -527,6 +528,32 @@ export default function Agenda() {
           creator_name: creatorName
         };
 
+        // Sincronizar com Google Calendar se tiver google_event_id
+        if (editingItem.google_event_id) {
+          try {
+            const calendarAttendees = mapCollaboratorsToAttendees(values.collaborators_ids, colaboradores);
+            await updateGoogleCalendarEvent({
+              agendaId: editingItem.id,
+              googleEventId: editingItem.google_event_id,
+              title: values.titulo.trim(),
+              description: basePayload.descricao,
+              startDate: formattedDate,
+              endDate: formattedEndDate,
+              startTime: values.horario,
+              endTime: basePayload.horario_fim,
+              location: basePayload.local,
+              attendees: calendarAttendees,
+            });
+          } catch (syncError) {
+            console.error('Erro ao sincronizar atualização com Google Calendar:', syncError);
+            toast({
+              title: "Atenção",
+              description: "Agendamento atualizado, mas houve erro ao sincronizar com Google Calendar.",
+              variant: "default"
+            });
+          }
+        }
+
         setAgenda(prev => prev.map(item => (item.id === editingItem.id ? updatedAgendaItem : item)));
         setSelectedItem(prev => (prev && prev.id === editingItem.id ? updatedAgendaItem : prev));
 
@@ -665,6 +692,23 @@ export default function Agenda() {
 
     try {
       setIsDeleting(true);
+
+      // Deletar do Google Calendar primeiro se existir google_event_id
+      if (itemToDelete.google_event_id) {
+        try {
+          await deleteGoogleCalendarEvent({
+            agendaId: itemToDelete.id,
+            googleEventId: itemToDelete.google_event_id,
+          });
+        } catch (syncError) {
+          console.error('Erro ao deletar do Google Calendar:', syncError);
+          toast({
+            title: "Atenção",
+            description: "Erro ao deletar do Google Calendar, mas continuando com a exclusão local.",
+            variant: "default"
+          });
+        }
+      }
 
       const { error } = await supabase
         .from('agenda')

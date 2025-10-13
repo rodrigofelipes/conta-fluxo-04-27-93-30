@@ -124,7 +124,7 @@ export default function ClientFinancialDetail() {
 
       let linksData: any[] = [];
       {
-        const { data, error } = await supabase
+        const { data, error } = await (supabase as any)
           .from('payment_links')
           .select('*')
           .eq('client_id', clientId)
@@ -145,7 +145,7 @@ export default function ClientFinancialDetail() {
 
       let paymentTransactionsData: any[] = [];
       {
-        const { data, error } = await supabase
+        const { data, error } = await (supabase as any)
           .from('payment_transactions')
           .select('*')
           .eq('client_id', clientId)

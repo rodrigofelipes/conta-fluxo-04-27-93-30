@@ -635,7 +635,7 @@ export default function Financeiro() {
 
       let paymentLinksData: any[] = [];
       {
-        const { data, error } = await supabase
+        const { data, error } = await (supabase as any)
           .from('payment_links')
           .select('*')
           .order('created_at', { ascending: false })
@@ -656,7 +656,7 @@ export default function Financeiro() {
 
       let onlinePaymentsData: any[] = [];
       {
-        const { data, error } = await supabase
+        const { data, error } = await (supabase as any)
           .from('payment_transactions')
           .select('*')
           .order('created_at', { ascending: false })
