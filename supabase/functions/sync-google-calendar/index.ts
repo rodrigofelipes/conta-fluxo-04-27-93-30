@@ -157,7 +157,7 @@ async function syncEventsFromGoogle() {
           .select("user_id")
           .eq("role", "admin")
           .limit(1)
-          .single();
+          .maybeSingle();
 
         if (!adminProfile) {
           console.error("No admin user found to create agenda item");
