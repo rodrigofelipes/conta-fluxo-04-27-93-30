@@ -26,6 +26,7 @@ export type Database = {
           descricao: string | null
           distance_km: number | null
           external_location: boolean | null
+          google_event_id: string | null
           horario: string
           horario_fim: string | null
           id: string
@@ -47,6 +48,7 @@ export type Database = {
           descricao?: string | null
           distance_km?: number | null
           external_location?: boolean | null
+          google_event_id?: string | null
           horario: string
           horario_fim?: string | null
           id?: string
@@ -68,6 +70,7 @@ export type Database = {
           descricao?: string | null
           distance_km?: number | null
           external_location?: boolean | null
+          google_event_id?: string | null
           horario?: string
           horario_fim?: string | null
           id?: string
