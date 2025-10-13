@@ -8,6 +8,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const GOOGLE_CALENDAR_ID = Deno.env.get("GOOGLE_CALENDAR_ID");
 const GOOGLE_SERVICE_ACCOUNT_EMAIL = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_EMAIL");
 const GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY");
+const GOOGLE_SERVICE_ACCOUNT = Deno.env.get("GOOGLE_SERVICE_ACCOUNT");
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error("Missing Supabase configuration");
@@ -16,15 +17,40 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 async function getAccessToken(): Promise<string> {
-  if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+  // Prefer full JSON secret if available, fallback to EMAIL/PRIVATE_KEY
+  let clientEmail = GOOGLE_SERVICE_ACCOUNT_EMAIL || "";
+  let privateKey = GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || "";
+
+  if (GOOGLE_SERVICE_ACCOUNT) {
+    try {
+      const svc = JSON.parse(GOOGLE_SERVICE_ACCOUNT);
+      clientEmail = svc.client_email || clientEmail;
+      privateKey = svc.private_key || privateKey;
+    } catch (e) {
+      console.warn("GOOGLE_SERVICE_ACCOUNT is not valid JSON:", e);
+    }
+  }
+
+  if (!clientEmail || !privateKey) {
     throw new Error("Google service account credentials are not configured");
   }
 
-  const formattedPrivateKey = GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.replace(/\\n/g, "\n");
+  const normalizeKey = (k: string) => {
+    let key = (k || "").trim();
+    // Remove wrapping quotes if present
+    if (key.startsWith('"') && key.endsWith('"')) {
+      key = key.slice(1, -1);
+    }
+    // Convert escaped newlines and normalize line endings
+    key = key.replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\r\n/g, "\n");
+    return key;
+  };
+
+  const formattedPrivateKey = normalizeKey(privateKey);
 
   const auth = new GoogleAuth({
     credentials: {
-      client_email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      client_email: clientEmail,
       private_key: formattedPrivateKey,
     },
     scopes: ["https://www.googleapis.com/auth/calendar"],
