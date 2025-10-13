@@ -113,37 +113,7 @@ function getAgendaDateTimeRange(
   };
 }
 
-function parseGoogleEventDateTime(
-  isoString: string,
-  eventTimeZone?: string | null
-): { date: string; time: string | null } {
-  if (!isoString.includes("T")) {
-    return { date: isoString, time: null };
-  }
 
-  const sourceZone = eventTimeZone || undefined;
-
-  let dateTime = DateTime.fromISO(isoString, { setZone: true });
-
-  if (!dateTime.isValid) {
-    throw new Error(`Invalid ISO date received from Google Calendar: ${isoString}`);
-  }
-
-  if (sourceZone) {
-    dateTime = dateTime.setZone(sourceZone, { keepLocalTime: true });
-  }
-
-  const converted = dateTime.setZone(DEFAULT_TIME_ZONE);
-
-  if (!converted.isValid) {
-    throw new Error(`Unable to convert Google Calendar date ${isoString} to timezone ${DEFAULT_TIME_ZONE}`);
-  }
-
-  return {
-    date: converted.toISODate(),
-    time: converted.toFormat("HH:mm:ss"),
-  };
-}
 
 async function fetchCollaboratorsMap(collaboratorIds: string[]): Promise<Map<string, CollaboratorProfile>> {
   if (!collaboratorIds.length) {
