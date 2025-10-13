@@ -196,6 +196,31 @@ export function GoogleCalendarTestTab() {
     }
   };
 
+  const syncFromGoogle = async () => {
+    setIsTesting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('sync-google-calendar');
+
+      if (error) throw error;
+
+      toast({
+        title: "✅ Sincronização Concluída!",
+        description: `Criados: ${data.results.created}, Atualizados: ${data.results.updated}, Erros: ${data.results.errors}`,
+      });
+
+      loadSyncLogs();
+    } catch (error: any) {
+      console.error('Erro na sincronização:', error);
+      toast({
+        title: "❌ Erro na Sincronização",
+        description: error.message || "Erro desconhecido",
+        variant: "destructive"
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
   const testDeleteEvent = async () => {
     if (!testEventId || !googleEventId) {
       toast({
@@ -288,6 +313,34 @@ export function GoogleCalendarTestTab() {
               </ul>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Sincronização do Google */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Sincronização do Google Calendar</CardTitle>
+          <CardDescription>
+            Importar eventos criados no Google Calendar para o sistema
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            onClick={syncFromGoogle}
+            disabled={isTesting || !isConfigured}
+            className="w-full"
+            size="lg"
+          >
+            {isTesting ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            Sincronizar Eventos do Google Calendar
+          </Button>
+          <p className="text-xs text-muted-foreground mt-2">
+            Busca eventos dos últimos 7 dias e próximos 30 dias
+          </p>
         </CardContent>
       </Card>
 
