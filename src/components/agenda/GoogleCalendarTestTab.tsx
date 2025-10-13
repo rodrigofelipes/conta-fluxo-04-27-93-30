@@ -91,7 +91,7 @@ export function GoogleCalendarTestTab() {
           titulo: 'Teste Google Calendar',
           descricao: 'Evento de teste criado automaticamente',
           cliente: 'Teste',
-          tipo: 'reunião',
+          tipo: 'reuniao_cliente',
           data: dateStr,
           data_fim: dateStr,
           horario: '10:00:00',
