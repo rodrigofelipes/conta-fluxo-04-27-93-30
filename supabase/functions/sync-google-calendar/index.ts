@@ -159,16 +159,32 @@ async function syncEventsFromGoogle() {
       const startDateTime = event.start.dateTime || event.start.date;
       const endDateTime = event.end?.dateTime || event.end?.date || startDateTime;
       
-      const startDate = new Date(startDateTime);
-      const endDate = new Date(endDateTime);
+      // Parser ISO com timezone: retorna [date, time] considerando o offset
+      const parseISOWithTimezone = (isoString: string): { date: string; time: string | null } => {
+        if (!isoString.includes('T')) {
+          // Evento de dia inteiro (sem horário)
+          return { date: isoString, time: null };
+        }
+        
+        // Extrair a parte da data e hora
+        const [datePart, timePart] = isoString.split('T');
+        
+        // Extrair HH:mm:ss (ignora timezone/offset, pois já está no fuso correto)
+        const timeOnly = timePart.split(/[+-Z]/)[0]; // Remove timezone info
+        
+        return { date: datePart, time: timeOnly };
+      };
+      
+      const startParsed = parseISOWithTimezone(startDateTime);
+      const endParsed = parseISOWithTimezone(endDateTime);
       
       const agendaData = {
         titulo: event.summary || "Sem título",
         descricao: event.description || null,
-        data: startDate.toISOString().split("T")[0],
-        data_fim: endDate.toISOString().split("T")[0],
-        horario: event.start.dateTime ? startDate.toTimeString().split(" ")[0] : "00:00:00",
-        horario_fim: event.end?.dateTime ? endDate.toTimeString().split(" ")[0] : null,
+        data: startParsed.date,
+        data_fim: endParsed.date,
+        horario: startParsed.time || "00:00:00",
+        horario_fim: endParsed.time || null,
         local: event.location || null,
         cliente: "", // Pode ser extraído da descrição se necessário
         tipo: "reuniao_cliente",
