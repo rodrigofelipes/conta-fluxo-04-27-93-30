@@ -26,6 +26,7 @@ export type Database = {
           descricao: string | null
           distance_km: number | null
           external_location: boolean | null
+          google_calendar_synced_at: string | null
           google_event_id: string | null
           horario: string
           horario_fim: string | null
@@ -48,6 +49,7 @@ export type Database = {
           descricao?: string | null
           distance_km?: number | null
           external_location?: boolean | null
+          google_calendar_synced_at?: string | null
           google_event_id?: string | null
           horario: string
           horario_fim?: string | null
@@ -70,6 +72,7 @@ export type Database = {
           descricao?: string | null
           distance_km?: number | null
           external_location?: boolean | null
+          google_calendar_synced_at?: string | null
           google_event_id?: string | null
           horario?: string
           horario_fim?: string | null
@@ -657,6 +660,50 @@ export type Database = {
           },
         ]
       }
+      google_calendar_sync_log: {
+        Row: {
+          agenda_id: string | null
+          error_message: string | null
+          google_event_id: string
+          id: string
+          metadata: Json | null
+          operation: string
+          sync_direction: string
+          sync_status: string
+          synced_at: string | null
+        }
+        Insert: {
+          agenda_id?: string | null
+          error_message?: string | null
+          google_event_id: string
+          id?: string
+          metadata?: Json | null
+          operation: string
+          sync_direction: string
+          sync_status: string
+          synced_at?: string | null
+        }
+        Update: {
+          agenda_id?: string | null
+          error_message?: string | null
+          google_event_id?: string
+          id?: string
+          metadata?: Json | null
+          operation?: string
+          sync_direction?: string
+          sync_status?: string
+          synced_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_calendar_sync_log_agenda_id_fkey"
+            columns: ["agenda_id"]
+            isOneToOne: false
+            referencedRelation: "agenda"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       google_drive_tokens: {
         Row: {
           access_token: string
@@ -992,174 +1039,6 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
-      }
-      payment_links: {
-        Row: {
-          accessed_at: string | null
-          amount: number
-          checkout_url: string | null
-          client_id: string
-          created_at: string
-          created_by: string
-          description: string
-          expires_at: string
-          financial_transaction_id: string | null
-          id: string
-          installment_id: string | null
-          link_token: string
-          metadata: Json
-          paid_at: string | null
-          payment_method: string | null
-          status: 'active' | 'expired' | 'completed' | 'cancelled'
-          stripe_checkout_session_id: string | null
-          updated_at: string
-        }
-        Insert: {
-          accessed_at?: string | null
-          amount: number
-          checkout_url?: string | null
-          client_id: string
-          created_at?: string
-          created_by: string
-          description: string
-          expires_at: string
-          financial_transaction_id?: string | null
-          id?: string
-          installment_id?: string | null
-          link_token: string
-          metadata?: Json
-          paid_at?: string | null
-          payment_method?: string | null
-          status?: 'active' | 'expired' | 'completed' | 'cancelled'
-          stripe_checkout_session_id?: string | null
-          updated_at?: string
-        }
-        Update: {
-          accessed_at?: string | null
-          amount?: number
-          checkout_url?: string | null
-          client_id?: string
-          created_at?: string
-          created_by?: string
-          description?: string
-          expires_at?: string
-          financial_transaction_id?: string | null
-          id?: string
-          installment_id?: string | null
-          link_token?: string
-          metadata?: Json
-          paid_at?: string | null
-          payment_method?: string | null
-          status?: 'active' | 'expired' | 'completed' | 'cancelled'
-          stripe_checkout_session_id?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: 'payment_links_client_id_fkey'
-            columns: ['client_id']
-            isOneToOne: false
-            referencedRelation: 'clients'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'payment_links_financial_transaction_id_fkey'
-            columns: ['financial_transaction_id']
-            isOneToOne: false
-            referencedRelation: 'client_financials'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'payment_links_installment_id_fkey'
-            columns: ['installment_id']
-            isOneToOne: false
-            referencedRelation: 'payment_installments'
-            referencedColumns: ['id']
-          },
-        ]
-      }
-      payment_transactions: {
-        Row: {
-          amount: number
-          client_id: string
-          client_financial_id: string | null
-          created_at: string
-          error_message: string | null
-          id: string
-          installment_id: string | null
-          metadata: Json
-          payment_date: string | null
-          payment_link_id: string | null
-          payment_method: string | null
-          status: 'pending' | 'processing' | 'succeeded' | 'failed' | 'cancelled'
-          stripe_payment_id: string | null
-          stripe_session_id: string | null
-          updated_at: string
-        }
-        Insert: {
-          amount: number
-          client_id: string
-          client_financial_id?: string | null
-          created_at?: string
-          error_message?: string | null
-          id?: string
-          installment_id?: string | null
-          metadata?: Json
-          payment_date?: string | null
-          payment_link_id?: string | null
-          payment_method?: string | null
-          status: 'pending' | 'processing' | 'succeeded' | 'failed' | 'cancelled'
-          stripe_payment_id?: string | null
-          stripe_session_id?: string | null
-          updated_at?: string
-        }
-        Update: {
-          amount?: number
-          client_id?: string
-          client_financial_id?: string | null
-          created_at?: string
-          error_message?: string | null
-          id?: string
-          installment_id?: string | null
-          metadata?: Json
-          payment_date?: string | null
-          payment_link_id?: string | null
-          payment_method?: string | null
-          status?: 'pending' | 'processing' | 'succeeded' | 'failed' | 'cancelled'
-          stripe_payment_id?: string | null
-          stripe_session_id?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: 'payment_transactions_client_financial_id_fkey'
-            columns: ['client_financial_id']
-            isOneToOne: false
-            referencedRelation: 'client_financials'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'payment_transactions_client_id_fkey'
-            columns: ['client_id']
-            isOneToOne: false
-            referencedRelation: 'clients'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'payment_transactions_installment_id_fkey'
-            columns: ['installment_id']
-            isOneToOne: false
-            referencedRelation: 'payment_installments'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'payment_transactions_payment_link_id_fkey'
-            columns: ['payment_link_id']
-            isOneToOne: false
-            referencedRelation: 'payment_links'
-            referencedColumns: ['id']
-          },
-        ]
       }
       phase_status_changes: {
         Row: {
