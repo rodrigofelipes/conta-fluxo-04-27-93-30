@@ -37,32 +37,66 @@ async function getAccessToken(): Promise<string> {
 
   const normalizeKey = (k: string) => {
     let key = (k || "").trim();
-    // Remove wrapping quotes if present
     if (key.startsWith('"') && key.endsWith('"')) {
       key = key.slice(1, -1);
     }
-    // Convert escaped newlines and normalize line endings
     key = key.replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\r\n/g, "\n");
     return key;
   };
 
-  const formattedPrivateKey = normalizeKey(privateKey);
+  const toBase64Url = (str: string) => btoa(str)
+    .replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+  const bytesToBase64Url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes))
+    .replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 
-  const auth = new GoogleAuth({
-    credentials: {
-      client_email: clientEmail,
-      private_key: formattedPrivateKey,
-    },
-    scopes: ["https://www.googleapis.com/auth/calendar"],
+  const key = normalizeKey(privateKey);
+  // Extract PKCS8 payload between header/footer if present
+  const match = key.match(/-----BEGIN PRIVATE KEY-----([\s\S]*?)-----END PRIVATE KEY-----/);
+  const pkcs8Base64 = match ? match[1].replace(/\s+/g, '') : key.replace(/-----.*-----/g, '').replace(/\s+/g, '');
+
+  const encoder = new TextEncoder();
+  const now = Math.floor(Date.now() / 1000);
+
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const payload = {
+    iss: clientEmail,
+    scope: 'https://www.googleapis.com/auth/calendar',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now,
+  };
+
+  const input = `${toBase64Url(JSON.stringify(header))}.${toBase64Url(JSON.stringify(payload))}`;
+  const toSign = encoder.encode(input);
+
+  const pkcs8Der = Uint8Array.from(atob(pkcs8Base64), c => c.charCodeAt(0));
+  const privateKeyObj = await crypto.subtle.importKey(
+    'pkcs8',
+    pkcs8Der,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+
+  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKeyObj, toSign);
+  const jwt = `${input}.${bytesToBase64Url(new Uint8Array(signature))}`;
+
+  const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
   });
 
-  const client = await auth.getClient();
-  const accessToken = await client.getAccessToken();
-
-  if (!accessToken) {
-    throw new Error("Failed to obtain Google access token");
+  if (!tokenResp.ok) {
+    const errText = await tokenResp.text();
+    throw new Error(`Failed to obtain Google access token: ${errText}`);
   }
 
+  const tokenData = await tokenResp.json();
+  const accessToken = tokenData.access_token as string | undefined;
+  if (!accessToken) {
+    throw new Error('Failed to obtain Google access token (no token in response)');
+  }
   return accessToken;
 }
 
