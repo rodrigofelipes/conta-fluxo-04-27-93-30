@@ -583,55 +583,8 @@ async function syncEventsFromGoogle() {
           }
         }
       } else {
-        // Evento não existe no sistema, mas também não deve ser criado automaticamente
-        // pois pode ter sido excluído localmente
+        // Evento não existe no sistema, não criar automaticamente
         syncResults.skipped++;
-      }
-        }
-      } else {
-        // Criar novo evento
-        // Buscar todos os perfis admin para adicionar como colaboradores
-        const { data: adminProfiles } = await supabaseAdmin
-          .from("profiles")
-          .select("id, user_id")
-          .eq("role", "admin");
-
-        if (!adminProfiles || adminProfiles.length === 0) {
-          console.error("No admin users found to create agenda item");
-          syncResults.errors++;
-          continue;
-        }
-
-        // Usar o primeiro admin como created_by e adicionar todos como colaboradores
-        const creatorUserId = adminProfiles[0].user_id;
-        const allAdminProfileIds = adminProfiles.map(p => p.id);
-
-        const { data: created, error } = await supabaseAdmin
-          .from("agenda")
-          .insert({
-            ...agendaData,
-            created_by: creatorUserId,
-            collaborators_ids: allAdminProfileIds,
-          })
-          .select("id")
-          .single();
-
-        if (error) {
-          console.error(`Error creating agenda item:`, error);
-          syncResults.errors++;
-        } else {
-          syncResults.created++;
-          
-          // Log da sincronização
-          await supabaseAdmin.from("google_calendar_sync_log").insert({
-            google_event_id: event.id,
-            agenda_id: created.id,
-            operation: "create",
-            sync_status: "success",
-            sync_direction: "from_google",
-            metadata: { event_summary: event.summary },
-          });
-        }
       }
     } catch (error) {
       console.error(`Error processing event ${event.id}:`, error);
