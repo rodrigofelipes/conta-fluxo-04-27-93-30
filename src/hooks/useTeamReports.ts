@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { calculateEfficiency, type EfficiencyStatus } from '@/utils/efficiency';
 
 export interface TeamMember {
   id: string;
@@ -11,6 +12,11 @@ export interface TeamMember {
   active_timers: number;
   completed_tasks: number;
   efficiency_score: number;
+  coverage: number;
+  planned_hours: number;
+  executed_hours: number;
+  hours_balance: number;
+  efficiency_status: EfficiencyStatus;
   last_activity: string;
   documents_count: number;
   meetings_count: number;
@@ -23,6 +29,14 @@ export interface TeamStats {
   totalHoursWeek: number;
   totalHoursMonth: number;
   averageEfficiency: number;
+  efficiencySummary: {
+    plannedHours: number;
+    executedHours: number;
+    hoursBalance: number;
+    efficiency: number;
+    coverage: number;
+    status: EfficiencyStatus;
+  };
   topPerformers: TeamMember[];
   roleDistribution: Array<{ role: string; count: number }>;
   hoursByDay: Array<{ day: string; hours: number }>;
@@ -57,6 +71,14 @@ export function useTeamReports() {
     totalHoursWeek: 0,
     totalHoursMonth: 0,
     averageEfficiency: 0,
+    efficiencySummary: {
+      plannedHours: 0,
+      executedHours: 0,
+      hoursBalance: 0,
+      efficiency: 0,
+      coverage: 0,
+      status: 'no_data'
+    },
     topPerformers: [],
     roleDistribution: [],
     hoursByDay: [],
@@ -207,18 +229,17 @@ export function useTeamReports() {
       });
 
       // Calcular eficiência por usuário (baseado em horas planejadas vs executadas)
-      const efficiencyByUser = new Map<string, { total: number; count: number }>();
+      const efficiencyByUser = new Map<string, { planned: number; executed: number }>();
       allPhases.forEach(phase => {
         const allocatedHours = phase.allocated_hours || 0;
         if (phase.assigned_to && allocatedHours > 0) {
           const profile = profiles.find(p => p.id === phase.assigned_to);
           if (profile) {
             const executedHours = phase.executed_hours || 0;
-            const phaseEfficiency = Math.min(100, (allocatedHours / Math.max(executedHours, allocatedHours)) * 100);
-            const currentEfficiency = efficiencyByUser.get(profile.user_id) || { total: 0, count: 0 };
+            const currentEfficiency = efficiencyByUser.get(profile.user_id) || { planned: 0, executed: 0 };
             efficiencyByUser.set(profile.user_id, {
-              total: currentEfficiency.total + phaseEfficiency,
-              count: currentEfficiency.count + 1
+              planned: currentEfficiency.planned + allocatedHours,
+              executed: currentEfficiency.executed + executedHours
             });
           }
         }
@@ -239,15 +260,23 @@ export function useTeamReports() {
         completedTasks: number;
         documentsCount: number;
         meetingsCount: number;
-        efficiency: number;
+        plannedHours: number;
+        executedHours: number;
       }>();
 
       // Inicializar estatísticas para todos os profiles
       profiles.forEach(profile => {
         const userEfficiency = efficiencyByUser.get(profile.user_id);
-        const avgEfficiency = userEfficiency 
-          ? userEfficiency.total / userEfficiency.count 
-          : 75; // Valor padrão
+        const efficiencyBreakdown = userEfficiency
+          ? calculateEfficiency(userEfficiency.planned, userEfficiency.executed)
+          : {
+              plannedHours: 0,
+              executedHours: 0,
+              hoursBalance: 0,
+              efficiency: 0,
+              coverage: 0,
+              status: 'no_data'
+            };
 
         userStats.set(profile.user_id, {
           name: profile.name || 'Sem nome',
@@ -263,7 +292,8 @@ export function useTeamReports() {
           completedTasks: completedTasksByUser.get(profile.user_id) || 0,
           documentsCount: documentsByUser.get(profile.id) || 0,
           meetingsCount: meetingsByUser.get(profile.id) || 0,
-          efficiency: avgEfficiency
+          plannedHours: efficiencyBreakdown.plannedHours,
+          executedHours: efficiencyBreakdown.executedHours
         });
       });
 
@@ -303,20 +333,29 @@ export function useTeamReports() {
       });
 
       // Converter para array de team members
-      const teamMembersArray: TeamMember[] = Array.from(userStats.entries()).map(([user_id, stats]) => ({
-        id: user_id,
-        name: stats.name,
-        email: stats.email,
-        role: stats.role,
-        total_hours: parseFloat(stats.totalHours.toFixed(1)),
-        projects_count: stats.projectsCount.size,
-        active_timers: stats.hasActiveTimer ? 1 : 0,
-        completed_tasks: stats.completedTasks,
-        efficiency_score: parseFloat(stats.efficiency.toFixed(1)),
-        last_activity: stats.lastActivity ? stats.lastActivity.toISOString() : '',
-        documents_count: stats.documentsCount,
-        meetings_count: stats.meetingsCount
-      }));
+      const teamMembersArray: TeamMember[] = Array.from(userStats.entries()).map(([user_id, stats]) => {
+        const efficiencyBreakdown = calculateEfficiency(stats.plannedHours, stats.executedHours);
+
+        return {
+          id: user_id,
+          name: stats.name,
+          email: stats.email,
+          role: stats.role,
+          total_hours: parseFloat(stats.totalHours.toFixed(1)),
+          projects_count: stats.projectsCount.size,
+          active_timers: stats.hasActiveTimer ? 1 : 0,
+          completed_tasks: stats.completedTasks,
+          efficiency_score: parseFloat(efficiencyBreakdown.efficiency.toFixed(1)),
+          coverage: efficiencyBreakdown.coverage,
+          planned_hours: efficiencyBreakdown.plannedHours,
+          executed_hours: efficiencyBreakdown.executedHours,
+          hours_balance: efficiencyBreakdown.hoursBalance,
+          efficiency_status: efficiencyBreakdown.status,
+          last_activity: stats.lastActivity ? stats.lastActivity.toISOString() : '',
+          documents_count: stats.documentsCount,
+          meetings_count: stats.meetingsCount
+        };
+      });
 
       setTeamMembers(teamMembersArray);
 
@@ -325,9 +364,15 @@ export function useTeamReports() {
       const totalHoursWeek = Array.from(userStats.values()).reduce((sum, stats) => sum + stats.weekHours, 0);
       const totalHoursMonth = Array.from(userStats.values()).reduce((sum, stats) => sum + stats.monthHours, 0);
       const activeMembers = teamMembersArray.filter(member => member.active_timers > 0).length;
-      const averageEfficiency = teamMembersArray.length > 0 
-        ? teamMembersArray.reduce((sum, member) => sum + member.efficiency_score, 0) / teamMembersArray.length 
+      const membersWithEfficiency = teamMembersArray.filter(member => member.efficiency_status !== 'no_data');
+      const averageEfficiency = membersWithEfficiency.length > 0
+        ? membersWithEfficiency.reduce((sum, member) => sum + member.efficiency_score, 0) / membersWithEfficiency.length
         : 0;
+
+      const teamEfficiencySummary = calculateEfficiency(
+        membersWithEfficiency.reduce((sum, member) => sum + member.planned_hours, 0),
+        membersWithEfficiency.reduce((sum, member) => sum + member.executed_hours, 0)
+      );
 
       // Top performers (top 3 por horas trabalhadas neste mês)
       const topPerformers = [...teamMembersArray]
@@ -395,6 +440,7 @@ export function useTeamReports() {
         totalHoursWeek: parseFloat(totalHoursWeek.toFixed(1)),
         totalHoursMonth: parseFloat(totalHoursMonth.toFixed(1)),
         averageEfficiency: parseFloat(averageEfficiency.toFixed(1)),
+        efficiencySummary: teamEfficiencySummary,
         topPerformers,
         roleDistribution,
         hoursByDay,

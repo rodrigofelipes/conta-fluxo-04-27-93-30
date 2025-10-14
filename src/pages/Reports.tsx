@@ -37,21 +37,46 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useTeamReports } from "@/hooks/useTeamReports";
+import { calculateEfficiency, type EfficiencyStatus } from "@/utils/efficiency";
+
+interface ClientPortfolioMetric {
+  setor: string;
+  count: number;
+  percentage: number;
+  plannedHours: number;
+  executedHours: number;
+  hoursBalance: number;
+  efficiency: number;
+  status: EfficiencyStatus;
+}
+
+interface ClientEfficiencyMetric {
+  clientId: string;
+  name: string;
+  classification: string;
+  projects: number;
+  plannedHours: number;
+  executedHours: number;
+  hoursBalance: number;
+  efficiency: number;
+  status: EfficiencyStatus;
+}
 
 interface DashboardMetrics {
   totalClientes: number;
-  clientesPorSetor: Array<{ 
-    setor: string; 
-    count: number; 
-    percentage: number;
-    performance: number;
-    satisfacao: number;
-    eficiencia: number;
-  }>;
+  clientesPorSetor: ClientPortfolioMetric[];
   clientesPorSituacao: Array<{ situacao: string; count: number }>;
   novosClientesMensal: Array<{ mes: string; clientes: number }>;
   documentosPorStatus: Array<{ status: string; count: number }>;
   tarefasPorStatus: Array<{ status: string; count: number }>;
+  clientesEficiencia: ClientEfficiencyMetric[];
+  clientesEfficiencyResumo: {
+    plannedHours: number;
+    executedHours: number;
+    hoursBalance: number;
+    efficiency: number;
+    status: EfficiencyStatus;
+  };
 }
 
 const COLORS = ['#0ea5e9', '#8b5cf6', '#f97316', '#10b981', '#f59e0b', '#ec4899', '#6366f1'];
@@ -63,10 +88,54 @@ export default function Reports() {
     clientesPorSituacao: [],
     novosClientesMensal: [],
     documentosPorStatus: [],
-    tarefasPorStatus: []
+    tarefasPorStatus: [],
+    clientesEficiencia: [],
+    clientesEfficiencyResumo: {
+      plannedHours: 0,
+      executedHours: 0,
+      hoursBalance: 0,
+      efficiency: 0,
+      status: 'no_data'
+    }
   });
   const [loading, setLoading] = useState(true);
   const { teamStats, teamMembers, loading: teamLoading, refetch } = useTeamReports();
+
+  const efficiencyStatusConfig: Record<EfficiencyStatus, { label: string; className: string }> = {
+    on_track: { label: 'No prazo', className: 'bg-green-100 text-green-700 border-green-200' },
+    attention: { label: 'Atenção', className: 'bg-amber-100 text-amber-700 border-amber-200' },
+    critical: { label: 'Crítico', className: 'bg-red-100 text-red-700 border-red-200' },
+    no_data: { label: 'Sem dados', className: 'bg-slate-100 text-slate-600 border-slate-200' }
+  };
+
+  const getEfficiencyStatusConfig = (status: EfficiencyStatus) =>
+    efficiencyStatusConfig[status] || efficiencyStatusConfig['no_data'];
+
+  const formatHours = (value: number) =>
+    Number.isFinite(value)
+      ? value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+      : '0,0';
+
+  const formatSignedHours = (value: number) => {
+    if (!Number.isFinite(value)) {
+      return '0,0';
+    }
+    const formatted = Math.abs(value).toLocaleString('pt-BR', {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1
+    });
+    if (value > 0) return `+${formatted}`;
+    if (value < 0) return `-${formatted}`;
+    return formatted;
+  };
+
+  const formatPercentage = (value: number) =>
+    Number.isFinite(value)
+      ? value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+      : '0,0';
+
+  const teamEfficiencyStatus = getEfficiencyStatusConfig(teamStats.efficiencySummary.status);
+  const clientsEfficiencyStatus = getEfficiencyStatusConfig(metrics.clientesEfficiencyResumo.status);
 
   // Real-time updates
   useEffect(() => {
@@ -86,55 +155,115 @@ export default function Reports() {
     try {
       const [
         clientesResponse,
-        setoresResponse,
-        situacaoResponse,
         documentosResponse,
-        tarefasResponse
+        tarefasResponse,
+        projectsResponse,
+        phasesResponse
       ] = await Promise.all([
-        supabase.from('clients').select('id, created_at'),
-        supabase.from('profiles').select('role'),
-        supabase.from('clients').select('classification'),
+        supabase.from('clients').select('id, created_at, classification, name'),
         Promise.resolve({ data: [], error: null }), // Simular documents
-        Promise.resolve({ data: [], error: null }) // Tasks removed, using empty data
+        Promise.resolve({ data: [], error: null }), // Tasks removidas
+        supabase.from('projects').select('id, client_id, contracted_hours, executed_hours'),
+        supabase.from('project_phases').select('project_id, allocated_hours, executed_hours')
       ]);
 
-      const totalClientes = clientesResponse.data?.length || 0;
+      if (clientesResponse.error) throw clientesResponse.error;
+      if (projectsResponse.error) throw projectsResponse.error;
+      if (phasesResponse.error) throw phasesResponse.error;
 
-      // Clientes por role - adaptado para usar a estrutura atual
-      const roleCounts = setoresResponse.data?.reduce((acc: any, profile) => {
-        const role = profile.role || 'user';
-        acc[role] = (acc[role] || 0) + 1;
-        return acc;
-      }, {}) || {};
+      const clientsData = clientesResponse.data || [];
+      const projectsData = projectsResponse.data || [];
+      const phasesData = phasesResponse.data || [];
 
-      // Adicionar setores que podem não ter clientes
-      const todosSetores = ['CONTABIL', 'FISCAL', 'PLANEJAMENTO', 'PESSOAL'];
-      todosSetores.forEach(setor => {
-        if (!roleCounts[setor]) {
-          roleCounts[setor] = 0;
-        }
-      });
+      const totalClientes = clientsData.length;
 
-      const clientesPorSetor = Object.entries(roleCounts).map(([setor, count]: [string, any]) => ({
-        setor,
-        count,
-        percentage: totalClientes > 0 ? Math.round((count / totalClientes) * 100) : 0,
-        performance: Math.floor(Math.random() * 30) + 70, // Performance entre 70-100%
-        satisfacao: Math.floor(Math.random() * 20) + 80, // Satisfação entre 80-100%
-        eficiencia: Math.floor(Math.random() * 25) + 75  // Eficiência entre 75-100%
-      }));
-
-      // Clientes por situação
-      const situacaoCounts = situacaoResponse.data?.reduce((acc: any, cliente) => {
+      const situacaoCounts = clientsData.reduce((acc, cliente) => {
         const classification = cliente.classification || 'cliente';
         acc[classification] = (acc[classification] || 0) + 1;
         return acc;
-      }, {}) || {};
+      }, {} as Record<string, number>);
 
-      const clientesPorSituacao = Object.entries(situacaoCounts).map(([situacao, count]: [string, any]) => ({
+      const clientesPorSituacao = Object.entries(situacaoCounts).map(([situacao, count]) => ({
         situacao,
         count
       }));
+
+      const phasesByProject = new Map<string, { planned: number; executed: number }>();
+      phasesData.forEach(phase => {
+        if (!phase.project_id) return;
+        const current = phasesByProject.get(phase.project_id) || { planned: 0, executed: 0 };
+        current.planned += phase.allocated_hours || 0;
+        current.executed += phase.executed_hours || 0;
+        phasesByProject.set(phase.project_id, current);
+      });
+
+      const clientMetricsMap = new Map<string, { projects: number; planned: number; executed: number }>();
+      projectsData.forEach(project => {
+        const phaseMetrics = phasesByProject.get(project.id) || { planned: 0, executed: 0 };
+        const plannedHours = phaseMetrics.planned > 0
+          ? phaseMetrics.planned
+          : (project.contracted_hours || 0);
+        const executedHours = phaseMetrics.executed > 0
+          ? phaseMetrics.executed
+          : (project.executed_hours || 0);
+
+        const existing = clientMetricsMap.get(project.client_id) || { projects: 0, planned: 0, executed: 0 };
+        clientMetricsMap.set(project.client_id, {
+          projects: existing.projects + 1,
+          planned: existing.planned + plannedHours,
+          executed: existing.executed + executedHours
+        });
+      });
+
+      const clientesEficiencia = clientsData.map(client => {
+        const metrics = clientMetricsMap.get(client.id) || { projects: 0, planned: 0, executed: 0 };
+        const efficiency = calculateEfficiency(metrics.planned, metrics.executed);
+        return {
+          clientId: client.id,
+          name: client.name,
+          classification: client.classification || 'Sem classificação',
+          projects: metrics.projects,
+          plannedHours: efficiency.plannedHours,
+          executedHours: efficiency.executedHours,
+          hoursBalance: efficiency.hoursBalance,
+          efficiency: efficiency.efficiency,
+          status: efficiency.status
+        };
+      }).sort((a, b) => {
+        if (a.status === 'no_data' && b.status !== 'no_data') return 1;
+        if (b.status === 'no_data' && a.status !== 'no_data') return -1;
+        return b.efficiency - a.efficiency;
+      });
+
+      const totalPlannedClients = clientesEficiencia.reduce((sum, client) => sum + client.plannedHours, 0);
+      const totalExecutedClients = clientesEficiencia.reduce((sum, client) => sum + client.executedHours, 0);
+      const clientesEfficiencyResumo = calculateEfficiency(totalPlannedClients, totalExecutedClients);
+
+      const classificationMap = clientsData.reduce((acc, client) => {
+        const classification = client.classification || 'Sem classificação';
+        const metrics = clientMetricsMap.get(client.id) || { projects: 0, planned: 0, executed: 0 };
+        const current = acc.get(classification) || { count: 0, planned: 0, executed: 0 };
+        acc.set(classification, {
+          count: current.count + 1,
+          planned: current.planned + metrics.planned,
+          executed: current.executed + metrics.executed
+        });
+        return acc;
+      }, new Map<string, { count: number; planned: number; executed: number }>());
+
+      const clientesPorSetor = Array.from(classificationMap.entries()).map(([setor, data]) => {
+        const efficiency = calculateEfficiency(data.planned, data.executed);
+        return {
+          setor,
+          count: data.count,
+          percentage: totalClientes > 0 ? Math.round((data.count / totalClientes) * 100) : 0,
+          plannedHours: efficiency.plannedHours,
+          executedHours: efficiency.executedHours,
+          hoursBalance: efficiency.hoursBalance,
+          efficiency: efficiency.efficiency,
+          status: efficiency.status
+        };
+      }).sort((a, b) => b.count - a.count);
 
       // Documentos por status
       const docCounts = documentosResponse.data?.reduce((acc: any, doc) => {
@@ -180,7 +309,9 @@ export default function Reports() {
         clientesPorSituacao,
         novosClientesMensal,
         documentosPorStatus,
-        tarefasPorStatus
+        tarefasPorStatus,
+        clientesEficiencia,
+        clientesEfficiencyResumo
       });
     } catch (error) {
       console.error('Erro ao buscar métricas:', error);
@@ -302,17 +433,32 @@ export default function Reports() {
         </Card>
 
         <Card className="card-elevated">
-          <CardContent className="p-6">
+          <CardContent className="p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Eficiência Operacional</p>
-                <p className="text-3xl font-bold text-purple-600">87%</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-3xl font-bold text-purple-600">
+                    {formatPercentage(teamStats.efficiencySummary.efficiency)}%
+                  </p>
+                  <Badge variant="outline" className={`${teamEfficiencyStatus.className} border`}>
+                    {teamEfficiencyStatus.label}
+                  </Badge>
+                </div>
               </div>
               <div className="p-3 bg-purple-100 rounded-full">
                 <BarChart3 className="h-6 w-6 text-purple-600" />
               </div>
             </div>
-            <Progress value={87} className="mt-4" />
+            <Progress
+              value={Math.min(teamStats.efficiencySummary.efficiency, 100)}
+              className="mt-2"
+            />
+            <p className="text-sm text-muted-foreground">
+              Planejado: {formatHours(teamStats.efficiencySummary.plannedHours)}h · Executado:{" "}
+              {formatHours(teamStats.efficiencySummary.executedHours)}h · Variação:{" "}
+              {formatSignedHours(teamStats.efficiencySummary.hoursBalance)}h
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -376,13 +522,40 @@ export default function Reports() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-medium text-muted-foreground">Eficiência Média</p>
-                        <p className="text-3xl font-bold text-purple-600">{teamStats.averageEfficiency.toFixed(0)}%</p>
+                        <p className="text-3xl font-bold text-purple-600">{formatPercentage(teamStats.averageEfficiency)}%</p>
                       </div>
                       <TrendingUp className="h-8 w-8 text-purple-600 opacity-80" />
                     </div>
                   </CardContent>
                 </Card>
               </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Como calculamos a eficiência dos colaboradores</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm text-muted-foreground">
+                  <p>
+                    Consideramos as horas planejadas em cada fase de projeto frente às horas
+                    realmente executadas pelos colaboradores. Assim conseguimos medir se a entrega
+                    está dentro do combinado ou se houve estouro de horas.
+                  </p>
+                  <ul className="list-disc pl-5 space-y-2">
+                    <li>
+                      <span className="font-medium text-foreground">Dentro do planejado:</span>{' '}
+                      (horas executadas ÷ horas planejadas) × 100
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Com estouro de horas:</span>{' '}
+                      100 − ((horas executadas − horas planejadas) ÷ horas planejadas) × 100
+                    </li>
+                    <li>
+                      O status muda conforme o percentual: ≥ 90% “No prazo”, 75%–89% “Atenção” e
+                      &lt; 75% “Crítico”.
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Horas por Colaborador */}
@@ -464,28 +637,54 @@ export default function Reports() {
                             )}
                           </div>
                         </div>
-                        <div className="mt-4 grid grid-cols-4 gap-4 text-sm">
+                        <div className="mt-4 grid grid-cols-2 md:grid-cols-6 gap-4 text-sm">
                           <div>
                             <span className="text-muted-foreground">Horas Totais</span>
-                            <p className="font-semibold">{member.total_hours}h</p>
+                            <p className="font-semibold">{formatHours(member.total_hours)}h</p>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Projetos</span>
-                            <p className="font-semibold">{member.projects_count}</p>
+                            <span className="text-muted-foreground">Horas Planejadas</span>
+                            <p className="font-semibold">{formatHours(member.planned_hours)}h</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Horas Executadas</span>
+                            <p className="font-semibold">{formatHours(member.executed_hours)}h</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Variação</span>
+                            <p className={`font-semibold ${member.hours_balance > 0 ? 'text-red-600' : member.hours_balance < 0 ? 'text-green-600' : ''}`}>
+                              {formatSignedHours(member.hours_balance)}h
+                            </p>
                           </div>
                           <div>
                             <span className="text-muted-foreground">Eficiência</span>
-                            <p className="font-semibold">{member.efficiency_score}%</p>
+                            <p className="font-semibold">{formatPercentage(member.efficiency_score)}%</p>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Última Atividade</span>
-                            <p className="font-semibold">
-                              {member.last_activity 
-                                ? new Date(member.last_activity).toLocaleDateString('pt-BR')
-                                : 'Nenhuma'
-                              }
-                            </p>
+                            <span className="text-muted-foreground">Status</span>
+                            <Badge
+                              variant="outline"
+                              className={`${getEfficiencyStatusConfig(member.efficiency_status).className} border`}
+                            >
+                              {getEfficiencyStatusConfig(member.efficiency_status).label}
+                            </Badge>
                           </div>
+                        </div>
+                        <p className="mt-3 text-xs text-muted-foreground">
+                          {member.efficiency_status === 'no_data'
+                            ? 'Sem registros suficientes para calcular a eficiência deste colaborador.'
+                            : member.hours_balance <= 0
+                              ? `Eficiência = (${formatHours(member.executed_hours)}h ÷ ${formatHours(member.planned_hours)}h) × 100`
+                              : `Eficiência = 100 − ((${formatHours(member.executed_hours)}h − ${formatHours(member.planned_hours)}h) ÷ ${formatHours(member.planned_hours)}h) × 100`}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted-foreground">
+                          <span>Projetos ativos: {member.projects_count}</span>
+                          <span>
+                            Última atividade:{' '}
+                            {member.last_activity
+                              ? new Date(member.last_activity).toLocaleDateString('pt-BR')
+                              : 'Nenhuma'}
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -495,15 +694,80 @@ export default function Reports() {
             </>
           )}
         </TabsContent>
-
-        <TabsContent value="overview" className="space-y-6">
+        <TabsContent value="clients" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Clientes por Setor */}
+            <Card className="card-elevated">
+              <CardHeader>
+                <CardTitle>Resumo da carteira de clientes</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Eficiência média consolidada</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-3xl font-bold text-primary">
+                        {formatPercentage(metrics.clientesEfficiencyResumo.efficiency)}%
+                      </span>
+                      <Badge variant="outline" className={`${clientsEfficiencyStatus.className} border`}>
+                        {clientsEfficiencyStatus.label}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="p-3 bg-primary/10 rounded-full">
+                    <Users className="h-6 w-6 text-primary" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Clientes ativos</span>
+                    <p className="font-semibold text-foreground">{metrics.totalClientes}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Horas planejadas</span>
+                    <p className="font-semibold text-foreground">{formatHours(metrics.clientesEfficiencyResumo.plannedHours)}h</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Horas executadas</span>
+                    <p className="font-semibold text-foreground">{formatHours(metrics.clientesEfficiencyResumo.executedHours)}h</p>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Variação total: {formatSignedHours(metrics.clientesEfficiencyResumo.hoursBalance)}h. Valores
+                  consolidados considerando todos os projetos vinculados aos clientes.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="card-elevated">
+              <CardHeader>
+                <CardTitle>Como calculamos a eficiência dos clientes</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  A eficiência considera a soma das horas contratadas ou planejadas em projetos e a soma das
+                  horas executadas nas fases correspondentes de cada cliente.
+                </p>
+                <ul className="list-disc pl-5 space-y-2">
+                  <li>
+                    Quando o cliente consome até o limite contratado: (horas executadas ÷ horas planejadas) × 100
+                  </li>
+                  <li>
+                    Quando há estouro de horas: 100 − ((horas executadas − horas planejadas) ÷ horas planejadas) × 100
+                  </li>
+                  <li>
+                    O status segue o mesmo critério dos colaboradores para facilitar a leitura.
+                  </li>
+                </ul>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="card-elevated">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Building2 className="h-5 w-5" />
-                  Distribuição por Setor
+                  Distribuição por Classificação
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -523,9 +787,9 @@ export default function Reports() {
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: 'hsl(var(--background))', 
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: 'hsl(var(--background))',
                             border: '1px solid hsl(var(--border))',
                             borderRadius: '8px',
                             color: 'hsl(var(--foreground))'
@@ -534,28 +798,22 @@ export default function Reports() {
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
-                  
-                  {/* Legenda personalizada */}
                   <div className="space-y-3 min-w-[180px]">
                     <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                      Setores
+                      Classificações
                     </h4>
                     {metrics.clientesPorSetor.map((item, index) => (
                       <div key={item.setor} className="flex items-center gap-3">
-                        <div 
-                          className="w-4 h-4 rounded-full shadow-sm" 
+                        <div
+                          className="w-4 h-4 rounded-full shadow-sm"
                           style={{ backgroundColor: COLORS[index % COLORS.length] }}
                         />
                         <div className="flex-1">
                           <div className="flex items-center justify-between">
                             <span className="font-medium text-sm">{item.setor}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {item.percentage}%
-                            </span>
+                            <span className="text-xs text-muted-foreground">{item.percentage}%</span>
                           </div>
-                          <div className="text-xs text-muted-foreground">
-                            {item.count} clientes
-                          </div>
+                          <div className="text-xs text-muted-foreground">{item.count} clientes</div>
                         </div>
                       </div>
                     ))}
@@ -564,38 +822,6 @@ export default function Reports() {
               </CardContent>
             </Card>
 
-            {/* Crescimento Mensal */}
-            <Card className="card-elevated">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Calendar className="h-5 w-5" />
-                  Crescimento de Clientes
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={metrics.novosClientesMensal}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="mes" />
-                    <YAxis />
-                    <Tooltip />
-                    <Area 
-                      type="monotone" 
-                      dataKey="clientes" 
-                      stroke="hsl(var(--primary))" 
-                      fill="hsl(var(--primary))" 
-                      fillOpacity={0.2}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="clients" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Status dos Clientes */}
             <Card className="card-elevated">
               <CardHeader>
                 <CardTitle>Status dos Clientes</CardTitle>
@@ -613,58 +839,137 @@ export default function Reports() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
+          </div>
 
-            {/* Detalhamento por Setor */}
-            <Card className="card-elevated">
-              <CardHeader>
-                <CardTitle>Performance por Setor</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {metrics.clientesPorSetor.map((setor, index) => (
-                  <div key={setor.setor} className="p-4 rounded-lg bg-muted/20 border space-y-3">
+          <Card className="card-elevated">
+            <CardHeader>
+              <CardTitle>Eficiência por Classificação</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {metrics.clientesPorSetor.map((setor, index) => {
+                const status = getEfficiencyStatusConfig(setor.status);
+                return (
+                  <div key={setor.setor} className="p-4 rounded-lg bg-muted/20 border space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div 
-                          className="w-4 h-4 rounded-full" 
+                        <div
+                          className="w-4 h-4 rounded-full"
                           style={{ backgroundColor: COLORS[index % COLORS.length] }}
                         />
                         <span className="font-semibold text-lg">{setor.setor}</span>
                       </div>
-                      <Badge variant="secondary" className="font-medium">
-                        {setor.count} clientes ({setor.percentage}%)
+                      <Badge variant="outline" className={`${status.className} border`}>
+                        {status.label}
                       </Badge>
                     </div>
-                    
-                    <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-sm">
                       <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-muted-foreground">Performance</span>
-                          <span className="font-medium">{setor.performance}%</span>
-                        </div>
-                        <Progress value={setor.performance} className="h-2" />
+                        <span className="text-muted-foreground">Clientes</span>
+                        <p className="font-semibold">{setor.count} ({setor.percentage}%)</p>
                       </div>
-                      
                       <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-muted-foreground">Satisfação</span>
-                          <span className="font-medium">{setor.satisfacao}%</span>
-                        </div>
-                        <Progress value={setor.satisfacao} className="h-2" />
+                        <span className="text-muted-foreground">Horas planejadas</span>
+                        <p className="font-semibold">{formatHours(setor.plannedHours)}h</p>
                       </div>
-                      
                       <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-muted-foreground">Eficiência</span>
-                          <span className="font-medium">{setor.eficiencia}%</span>
+                        <span className="text-muted-foreground">Horas executadas</span>
+                        <p className="font-semibold">{formatHours(setor.executedHours)}h</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Eficiência</span>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold">{formatPercentage(setor.efficiency)}%</p>
+                          <Progress value={Math.min(setor.efficiency, 100)} className="flex-1 h-2" />
                         </div>
-                        <Progress value={setor.eficiencia} className="h-2" />
                       </div>
                     </div>
+                    <p className="text-xs text-muted-foreground">
+                      Variação de horas: {formatSignedHours(setor.hoursBalance)}h.
+                    </p>
                   </div>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+
+          <Card className="card-elevated">
+            <CardHeader>
+              <CardTitle>Eficiência por Cliente</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Lista consolidada com todos os clientes e os indicadores calculados a partir dos projetos e fases.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-muted-foreground">
+                      <th className="py-2 font-medium">Cliente</th>
+                      <th className="py-2 font-medium">Classificação</th>
+                      <th className="py-2 font-medium">Projetos</th>
+                      <th className="py-2 font-medium">Planejado</th>
+                      <th className="py-2 font-medium">Executado</th>
+                      <th className="py-2 font-medium">Variação</th>
+                      <th className="py-2 font-medium">Eficiência</th>
+                      <th className="py-2 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {metrics.clientesEficiencia.map(cliente => {
+                      const status = getEfficiencyStatusConfig(cliente.status);
+                      return (
+                        <tr key={cliente.clientId}>
+                          <td className="py-2 font-medium text-foreground">{cliente.name}</td>
+                          <td className="py-2 text-muted-foreground">{cliente.classification}</td>
+                          <td className="py-2">{cliente.projects}</td>
+                          <td className="py-2">{formatHours(cliente.plannedHours)}h</td>
+                          <td className="py-2">{formatHours(cliente.executedHours)}h</td>
+                          <td className={`py-2 ${cliente.hoursBalance > 0 ? 'text-red-600' : cliente.hoursBalance < 0 ? 'text-green-600' : ''}`}>
+                            {formatSignedHours(cliente.hoursBalance)}h
+                          </td>
+                          <td className="py-2">{formatPercentage(cliente.efficiency)}%</td>
+                          <td className="py-2">
+                            <Badge variant="outline" className={`${status.className} border`}>{status.label}</Badge>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {metrics.clientesEficiencia.length === 0 && (
+                  <p className="py-4 text-center text-sm text-muted-foreground">
+                    Ainda não há dados suficientes para calcular a eficiência dos clientes.
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="card-elevated">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Crescimento de Clientes
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={metrics.novosClientesMensal}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="mes" />
+                  <YAxis />
+                  <Tooltip />
+                  <Area
+                    type="monotone"
+                    dataKey="clientes"
+                    stroke="hsl(var(--primary))"
+                    fill="hsl(var(--primary))"
+                    fillOpacity={0.2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
         </TabsContent>
 
       </Tabs>
