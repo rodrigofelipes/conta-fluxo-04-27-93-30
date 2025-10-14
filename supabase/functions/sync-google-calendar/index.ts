@@ -38,6 +38,8 @@ type CollaboratorProfile = {
   id: string;
   email: string | null;
   name: string | null;
+  user_id: string | null;
+  role?: string | null;
 };
 
 function normalizeTime(time: string | null | undefined): string {
@@ -148,7 +150,7 @@ async function fetchCollaboratorsMap(collaboratorIds: string[]): Promise<Map<str
 
   const { data, error } = await supabaseAdmin
     .from("profiles")
-    .select("id, email, name")
+    .select("id, email, name, user_id, role")
     .in("id", collaboratorIds);
 
   if (error) {
@@ -162,6 +164,32 @@ async function fetchCollaboratorsMap(collaboratorIds: string[]): Promise<Map<str
   }
 
   return map;
+}
+
+async function fetchAllCollaborators(): Promise<CollaboratorProfile[]> {
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .select("id, email, name, user_id, role");
+
+  if (error) {
+    console.error("Erro ao buscar colaboradores para importação do Google Calendar:", error);
+    return [];
+  }
+
+  return (data as CollaboratorProfile[]) || [];
+}
+
+function extractClientFromDescription(description?: string | null): string {
+  if (!description) {
+    return "";
+  }
+
+  const match = description.match(/Cliente:\s*(.+)/i);
+  if (!match) {
+    return "";
+  }
+
+  return match[1].split("\n")[0]?.trim() || "";
 }
 
 async function getAccessToken(): Promise<string> {
@@ -456,6 +484,25 @@ async function syncEventsFromGoogle() {
 
   console.log(`Found ${events.length} events in Google Calendar`);
 
+  const collaboratorProfiles = await fetchAllCollaborators();
+  const emailToProfileMap = new Map<string, CollaboratorProfile>();
+  let defaultCreatedBy: string | null = null;
+
+  for (const profile of collaboratorProfiles) {
+    const normalizedEmail = profile.email?.toLowerCase();
+    if (normalizedEmail) {
+      emailToProfileMap.set(normalizedEmail, profile);
+    }
+
+    if (profile.role === "admin" && profile.user_id) {
+      defaultCreatedBy = profile.user_id;
+    }
+
+    if (!defaultCreatedBy && profile.user_id) {
+      defaultCreatedBy = profile.user_id;
+    }
+  }
+
   const syncResults = {
     created: 0,
     updated: 0,
@@ -584,7 +631,103 @@ async function syncEventsFromGoogle() {
         }
       } else {
         // Evento não existe no sistema, não criar automaticamente
-        syncResults.skipped++;
+        const startDateTime = event.start.dateTime || event.start.date;
+        const endDateTime = event.end?.dateTime || event.end?.date || startDateTime;
+
+        const startParsed = parseISOWithTimezone(startDateTime);
+        const endParsed = parseISOWithTimezone(endDateTime);
+
+        const attendeeEmails = new Set<string>();
+        for (const attendee of event.attendees || []) {
+          if (attendee.email) {
+            attendeeEmails.add(attendee.email.toLowerCase());
+          }
+        }
+
+        const collaboratorIds = new Set<string>();
+        const attendeeProfiles: CollaboratorProfile[] = [];
+        attendeeEmails.forEach((email) => {
+          const profile = emailToProfileMap.get(email);
+          if (profile) {
+            collaboratorIds.add(profile.id);
+            attendeeProfiles.push(profile);
+          }
+        });
+
+        const organizerEmail = event.organizer?.email?.toLowerCase();
+        const creatorEmail = event.creator?.email?.toLowerCase();
+
+        const organizerProfile = organizerEmail ? emailToProfileMap.get(organizerEmail) : undefined;
+        const creatorProfile = creatorEmail ? emailToProfileMap.get(creatorEmail) : undefined;
+
+        let createdBy = organizerProfile?.user_id || creatorProfile?.user_id || null;
+
+        if (!createdBy) {
+          const firstAttendeeWithUser = attendeeProfiles.find((profile) => Boolean(profile.user_id));
+          createdBy = firstAttendeeWithUser?.user_id || null;
+        }
+
+        if (!createdBy) {
+          createdBy = defaultCreatedBy;
+        }
+
+        if (!createdBy) {
+          console.warn(`Não foi possível determinar o usuário criador para o evento ${event.id}. Pulando importação.`);
+          syncResults.skipped++;
+          continue;
+        }
+
+        const cliente = extractClientFromDescription(event.description);
+
+        const insertPayload = {
+          titulo: event.summary || "Sem título",
+          descricao: event.description || null,
+          data: startParsed.date,
+          data_fim: endParsed.date,
+          horario: startParsed.time || "00:00:00",
+          horario_fim: endParsed.time || null,
+          local: event.location || null,
+          cliente,
+          tipo: "reuniao_cliente",
+          agenda_type: "compartilhada" as const,
+          visibility: "team",
+          google_event_id: event.id,
+          google_calendar_synced_at: new Date().toISOString(),
+          collaborators_ids: Array.from(collaboratorIds),
+          created_by: createdBy,
+          external_location: false,
+          distance_km: 0,
+          travel_cost: 0,
+        };
+
+        const { error: insertError, data: insertedData } = await supabaseAdmin
+          .from("agenda")
+          .insert(insertPayload)
+          .select("id")
+          .maybeSingle();
+
+        if (insertError) {
+          console.error(`Erro ao criar evento ${event.id} a partir do Google Calendar:`, insertError);
+          syncResults.errors++;
+          continue;
+        }
+
+        const agendaId = insertedData?.id;
+
+        const { error: logError } = await supabaseAdmin.from("google_calendar_sync_log").insert({
+          google_event_id: event.id,
+          agenda_id: agendaId,
+          operation: "create",
+          sync_status: "success",
+          sync_direction: "from_google",
+          metadata: { event_summary: event.summary },
+        });
+
+        if (logError) {
+          console.error(`Erro ao registrar log de criação para o evento ${event.id}:`, logError);
+        }
+
+        syncResults.created++;
       }
     } catch (error) {
       console.error(`Error processing event ${event.id}:`, error);
