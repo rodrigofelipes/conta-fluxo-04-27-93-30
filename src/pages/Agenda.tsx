@@ -712,6 +712,8 @@ export default function Agenda() {
     try {
       setIsDeleting(true);
 
+      // Tentar deletar do Google Calendar se tiver google_event_id
+      // Mas não falhar se não conseguir (evento pode não existir mais lá)
       if (itemToDelete.google_event_id) {
         try {
           await deleteGoogleCalendarEvent({
@@ -719,13 +721,8 @@ export default function Agenda() {
             googleEventId: itemToDelete.google_event_id,
           });
         } catch (syncError) {
-          console.error('Erro ao deletar do Google Calendar:', syncError);
-          toast({
-            title: "Erro",
-            description: "Não foi possível remover o agendamento do Google Calendar.",
-            variant: "destructive"
-          });
-          return;
+          console.warn('Evento já não existe no Google Calendar ou erro ao deletar:', syncError);
+          // Continuar com a exclusão do sistema mesmo se falhar no Google Calendar
         }
       }
 
