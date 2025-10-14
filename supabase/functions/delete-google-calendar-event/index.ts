@@ -6,8 +6,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const GOOGLE_CALENDAR_ID = Deno.env.get("GOOGLE_CALENDAR_ID");
-const GOOGLE_SERVICE_ACCOUNT_EMAIL = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_EMAIL");
-const GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY");
+const GOOGLE_SERVICE_ACCOUNT = Deno.env.get("GOOGLE_SERVICE_ACCOUNT");
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error("Missing Supabase configuration");
@@ -21,16 +20,21 @@ interface DeleteEventRequest {
 }
 
 async function getAccessToken(): Promise<string> {
-  if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+  if (!GOOGLE_SERVICE_ACCOUNT) {
     throw new Error("Google service account credentials are not configured");
   }
 
-  const formattedPrivateKey = GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.replace(/\\n/g, "\n");
+  let credentials;
+  try {
+    credentials = JSON.parse(GOOGLE_SERVICE_ACCOUNT);
+  } catch (error) {
+    throw new Error(`Failed to parse GOOGLE_SERVICE_ACCOUNT: ${error.message}`);
+  }
 
   const auth = new GoogleAuth({
     credentials: {
-      client_email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: formattedPrivateKey,
+      client_email: credentials.client_email,
+      private_key: credentials.private_key,
     },
     scopes: ["https://www.googleapis.com/auth/calendar"],
   });
