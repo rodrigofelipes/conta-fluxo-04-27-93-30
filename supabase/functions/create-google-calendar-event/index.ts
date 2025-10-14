@@ -17,8 +17,10 @@ type CalendarEventRequest = {
   location?: string | null;
   cliente?: string | null;
   agendaType: AgendaType;
-  attendees?: Array<{ email: string; displayName?: string }>; // optional attendee list
+  attendees?: Array<{ email: string; displayName?: string }>;
   timeZone?: string;
+  externalLocation?: boolean;
+  distanceKm?: number;
 };
 
 type CalendarEventResponse = {
@@ -72,6 +74,14 @@ function buildDescription(payload: CalendarEventRequest): string | undefined {
       .join(", ");
     
     segments.push(`Participantes: ${participantes}`);
+  }
+
+  // Adicionar informações de local externo
+  if (payload.externalLocation) {
+    segments.push(`Local: Externo`);
+    if (payload.distanceKm && payload.distanceKm > 0) {
+      segments.push(`Distância: ${payload.distanceKm} km`);
+    }
   }
 
   segments.push(`Tipo de agenda: ${payload.agendaType === "pessoal" ? "Pessoal" : "Compartilhada"}`);

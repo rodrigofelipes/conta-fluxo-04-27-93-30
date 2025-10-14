@@ -30,6 +30,8 @@ type AgendaRecord = {
   cliente: string | null;
   agenda_type: "pessoal" | "compartilhada" | null;
   collaborators_ids: string[] | null;
+  external_location: boolean | null;
+  distance_km: number | null;
 };
 
 type CollaboratorProfile = {
@@ -79,6 +81,14 @@ function buildAgendaDescription(
     
     if (participantes) {
       segments.push(`Participantes: ${participantes}`);
+    }
+  }
+
+  // Adicionar informações de local externo
+  if (agenda.external_location) {
+    segments.push(`Local: Externo`);
+    if (agenda.distance_km && agenda.distance_km > 0) {
+      segments.push(`Distância: ${agenda.distance_km} km`);
     }
   }
 
@@ -283,7 +293,7 @@ async function syncSystemEventsToGoogle(accessToken: string) {
   const { data: agendaEvents, error: agendaError } = await supabaseAdmin
     .from("agenda")
     .select(
-      "id, titulo, descricao, data, data_fim, horario, horario_fim, local, cliente, agenda_type, collaborators_ids"
+      "id, titulo, descricao, data, data_fim, horario, horario_fim, local, cliente, agenda_type, collaborators_ids, external_location, distance_km"
     )
     .is("google_event_id", null)
     .gte("data", timeMin.toISOString().split("T")[0])

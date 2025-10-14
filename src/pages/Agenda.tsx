@@ -619,6 +619,8 @@ export default function Agenda() {
             cliente: values.isInternalMeeting ? null : values.cliente?.trim() || null,
             agendaType: values.agenda_type,
             attendees: calendarAttendees,
+            externalLocation: values.external_location || false,
+            distanceKm: values.distance_km || 0,
           });
 
           if (calendarResponse?.eventId) {

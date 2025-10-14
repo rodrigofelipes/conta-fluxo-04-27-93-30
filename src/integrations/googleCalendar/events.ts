@@ -18,6 +18,8 @@ export interface CreateCalendarEventPayload {
   cliente?: string | null;
   agendaType: 'pessoal' | 'compartilhada';
   attendees?: CalendarAttendee[];
+  externalLocation?: boolean;
+  distanceKm?: number;
 }
 
 export interface CreateCalendarEventResponse {
