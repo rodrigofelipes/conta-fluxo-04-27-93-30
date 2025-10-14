@@ -476,6 +476,11 @@ async function syncEventsFromGoogle() {
     .select("id, google_event_id")
     .not("google_event_id", "is", null);
 
+  // Criar um Set com os IDs das agendas atuais para verificação rápida
+  const existingAgendaEventIds = new Set(
+    agendaEvents?.map(e => e.google_event_id).filter(Boolean) || []
+  );
+
   if (agendaEvents) {
     for (const agendaEvent of agendaEvents) {
       if (agendaEvent.google_event_id && !googleEventIds.includes(agendaEvent.google_event_id)) {
@@ -513,66 +518,75 @@ async function syncEventsFromGoogle() {
         continue;
       }
 
-      // Verificar se já existe na agenda
-      const { data: existing } = await supabaseAdmin
-        .from("agenda")
-        .select("id, updated_at")
-        .eq("google_event_id", event.id)
-        .maybeSingle();
+      // Pular eventos que já existem no sistema (não recriar eventos que foram excluídos localmente)
+      if (existingAgendaEventIds.has(event.id)) {
+        // Verificar se já existe na agenda
+        const { data: existing } = await supabaseAdmin
+          .from("agenda")
+          .select("id, updated_at")
+          .eq("google_event_id", event.id)
+          .maybeSingle();
 
-      const startDateTime = event.start.dateTime || event.start.date;
-      const endDateTime = event.end?.dateTime || event.end?.date || startDateTime;
-      
-      // Parser ISO com timezone: retorna [date, time] considerando o offset
-      const startParsed = parseISOWithTimezone(startDateTime);
-      const endParsed = parseISOWithTimezone(endDateTime);
-      
-      const agendaData = {
-        titulo: event.summary || "Sem título",
-        descricao: event.description || null,
-        data: startParsed.date,
-        data_fim: endParsed.date,
-        horario: startParsed.time || "00:00:00",
-        horario_fim: endParsed.time || null,
-        local: event.location || null,
-        cliente: "", // Pode ser extraído da descrição se necessário
-        tipo: "reuniao_cliente",
-        agenda_type: "compartilhada",
-        visibility: "team",
-        google_event_id: event.id,
-        google_calendar_synced_at: new Date().toISOString(),
-      };
-
-      if (existing) {
-        // Atualizar evento existente
-        const eventUpdated = new Date(event.updated);
-        const agendaUpdated = new Date(existing.updated_at);
+        const startDateTime = event.start.dateTime || event.start.date;
+        const endDateTime = event.end?.dateTime || event.end?.date || startDateTime;
         
-        // Só atualizar se o evento do Google for mais recente
-        if (eventUpdated > agendaUpdated) {
-          const { error } = await supabaseAdmin
-            .from("agenda")
-            .update(agendaData)
-            .eq("id", existing.id);
+        // Parser ISO com timezone: retorna [date, time] considerando o offset
+        const startParsed = parseISOWithTimezone(startDateTime);
+        const endParsed = parseISOWithTimezone(endDateTime);
+        
+        const agendaData = {
+          titulo: event.summary || "Sem título",
+          descricao: event.description || null,
+          data: startParsed.date,
+          data_fim: endParsed.date,
+          horario: startParsed.time || "00:00:00",
+          horario_fim: endParsed.time || null,
+          local: event.location || null,
+          cliente: "", // Pode ser extraído da descrição se necessário
+          tipo: "reuniao_cliente",
+          agenda_type: "compartilhada",
+          visibility: "team",
+          google_event_id: event.id,
+          google_calendar_synced_at: new Date().toISOString(),
+        };
 
-          if (error) {
-            console.error(`Error updating agenda item ${existing.id}:`, error);
-            syncResults.errors++;
+        if (existing) {
+          // Atualizar evento existente
+          const eventUpdated = new Date(event.updated);
+          const agendaUpdated = new Date(existing.updated_at);
+          
+          // Só atualizar se o evento do Google for mais recente
+          if (eventUpdated > agendaUpdated) {
+            const { error } = await supabaseAdmin
+              .from("agenda")
+              .update(agendaData)
+              .eq("id", existing.id);
+
+            if (error) {
+              console.error(`Error updating agenda item ${existing.id}:`, error);
+              syncResults.errors++;
+            } else {
+              syncResults.updated++;
+              
+              // Log da sincronização
+              await supabaseAdmin.from("google_calendar_sync_log").insert({
+                google_event_id: event.id,
+                agenda_id: existing.id,
+                operation: "update",
+                sync_status: "success",
+                sync_direction: "from_google",
+                metadata: { event_summary: event.summary },
+              });
+            }
           } else {
-            syncResults.updated++;
-            
-            // Log da sincronização
-            await supabaseAdmin.from("google_calendar_sync_log").insert({
-              google_event_id: event.id,
-              agenda_id: existing.id,
-              operation: "update",
-              sync_status: "success",
-              sync_direction: "from_google",
-              metadata: { event_summary: event.summary },
-            });
+            syncResults.skipped++;
           }
-        } else {
-          syncResults.skipped++;
+        }
+      } else {
+        // Evento não existe no sistema, mas também não deve ser criado automaticamente
+        // pois pode ter sido excluído localmente
+        syncResults.skipped++;
+      }
         }
       } else {
         // Criar novo evento

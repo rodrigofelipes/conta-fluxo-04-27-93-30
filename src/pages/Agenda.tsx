@@ -712,34 +712,29 @@ export default function Agenda() {
     try {
       setIsDeleting(true);
 
-      // Deletar do Google Calendar primeiro se existir google_event_id
-      if (itemToDelete.google_event_id) {
-        try {
-          await deleteGoogleCalendarEvent({
-            agendaId: itemToDelete.id,
-            googleEventId: itemToDelete.google_event_id,
-          });
-        } catch (syncError) {
-          console.error('Erro ao deletar do Google Calendar:', syncError);
-          toast({
-            title: "Atenção",
-            description: "Erro ao deletar do Google Calendar, mas continuando com a exclusão local.",
-            variant: "default"
-          });
-        }
-      }
-
-      const { error } = await supabase
+      // Deletar do banco de dados local primeiro
+      const { error: dbError } = await supabase
         .from('agenda')
         .delete()
         .eq('id', itemToDelete.id);
 
-      if (error) throw error;
+      if (dbError) throw dbError;
 
+      // Atualizar estado local imediatamente
       setAgenda(prev => prev.filter(agendaItem => agendaItem.id !== itemToDelete.id));
       if (selectedItem?.id === itemToDelete.id) {
         setSelectedItem(null);
         setIsDetailDialogOpen(false);
+      }
+
+      // Deletar do Google Calendar em background (não bloqueia a UI)
+      if (itemToDelete.google_event_id) {
+        deleteGoogleCalendarEvent({
+          agendaId: itemToDelete.id,
+          googleEventId: itemToDelete.google_event_id,
+        }).catch(syncError => {
+          console.error('Erro ao deletar do Google Calendar (background):', syncError);
+        });
       }
 
       toast({
