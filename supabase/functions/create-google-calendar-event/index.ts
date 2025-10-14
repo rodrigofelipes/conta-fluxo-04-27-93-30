@@ -111,11 +111,11 @@ async function getAccessToken(): Promise<string> {
   const client = await auth.getClient();
   const accessToken = await client.getAccessToken();
 
-  if (!accessToken) {
+  if (!accessToken.token) {
     throw new Error("Failed to obtain Google access token");
   }
 
-  return accessToken;
+  return accessToken.token;
 }
 
 function getDateTimeRange(
