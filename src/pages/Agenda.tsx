@@ -56,6 +56,7 @@ import {
 import { ptBR } from "date-fns/locale";
 import { HolidayDialog } from "@/components/agenda/HolidayDialog";
 import { HolidaySyncDialog } from "@/components/agenda/HolidaySyncDialog";
+import { GoogleCalendarTestTab } from "@/components/agenda/GoogleCalendarTestTab";
 import { supabase } from "@/integrations/supabase/client";
 import { createGoogleCalendarEvent, type CalendarAttendee } from "@/integrations/googleCalendar/events";
 import { updateGoogleCalendarEvent, deleteGoogleCalendarEvent } from "@/integrations/googleCalendar/sync";
@@ -1106,12 +1107,15 @@ export default function Agenda() {
         onValueChange={value => setActiveTab(value as 'agenda' | 'atas')}
         className="space-y-4 md:space-y-6"
       >
-        <TabsList className="grid w-full grid-cols-2 sm:inline-flex sm:w-auto">
+        <TabsList className="grid w-full grid-cols-3 sm:inline-flex sm:w-auto">
           <TabsTrigger value="agenda" className="w-full">
             Agenda
           </TabsTrigger>
           <TabsTrigger value="atas" className="w-full">
             Atas
+          </TabsTrigger>
+          <TabsTrigger value="teste-google" className="w-full">
+            Teste Google
           </TabsTrigger>
         </TabsList>
 
@@ -2696,6 +2700,10 @@ export default function Agenda() {
             </DialogContent>
           </Dialog>
 
+        </TabsContent>
+
+        <TabsContent value="teste-google" className="space-y-4 md:space-y-6">
+          <GoogleCalendarTestTab onAfterSync={loadData} />
         </TabsContent>
       </Tabs>
     </div>
