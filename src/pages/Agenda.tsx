@@ -59,7 +59,6 @@ import { HolidaySyncDialog } from "@/components/agenda/HolidaySyncDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { createGoogleCalendarEvent, type CalendarAttendee } from "@/integrations/googleCalendar/events";
 import { updateGoogleCalendarEvent, deleteGoogleCalendarEvent } from "@/integrations/googleCalendar/sync";
-import { GoogleCalendarTestTab } from "@/components/agenda/GoogleCalendarTestTab";
 import { useGradientDatabase } from "@/hooks/useGradientDatabase";
 
 // Função para formatar data evitando problemas de timezone
@@ -298,7 +297,7 @@ export default function Agenda() {
     isMasterAdmin: boolean;
   } | null>(null);
   const [sectorFilter, setSectorFilter] = useState<'todos' | 'pessoal' | 'compartilhada'>('todos');
-  const [activeTab, setActiveTab] = useState<'agenda' | 'atas' | 'google-test'>('agenda');
+  const [activeTab, setActiveTab] = useState<'agenda' | 'atas'>('agenda');
   const [minutesTypeFilter, setMinutesTypeFilter] = useState<'all' | AgendaItem['tipo']>('all');
   const [minutesLocationFilter, setMinutesLocationFilter] = useState<'all' | string>('all');
   const [isMinutesDialogOpen, setIsMinutesDialogOpen] = useState(false);
@@ -1086,15 +1085,12 @@ export default function Agenda() {
         onValueChange={value => setActiveTab(value as 'agenda' | 'atas')}
         className="space-y-4 md:space-y-6"
       >
-        <TabsList className="grid w-full grid-cols-3 sm:inline-flex sm:w-auto">
+        <TabsList className="grid w-full grid-cols-2 sm:inline-flex sm:w-auto">
           <TabsTrigger value="agenda" className="w-full">
             Agenda
           </TabsTrigger>
           <TabsTrigger value="atas" className="w-full">
             Atas
-          </TabsTrigger>
-          <TabsTrigger value="google-test" className="w-full">
-            Teste Google
           </TabsTrigger>
         </TabsList>
 
@@ -2679,10 +2675,6 @@ export default function Agenda() {
             </DialogContent>
           </Dialog>
 
-        </TabsContent>
-
-        <TabsContent value="google-test" className="space-y-4 md:space-y-6">
-          <GoogleCalendarTestTab onAfterSync={loadData} />
         </TabsContent>
       </Tabs>
     </div>
