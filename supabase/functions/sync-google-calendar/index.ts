@@ -630,7 +630,7 @@ async function syncEventsFromGoogle() {
           }
         }
       } else {
-        // Evento não existe no sistema, não criar automaticamente
+        // Evento não existe no sistema, criar automaticamente
         const startDateTime = event.start.dateTime || event.start.date;
         const endDateTime = event.end?.dateTime || event.end?.date || startDateTime;
 
