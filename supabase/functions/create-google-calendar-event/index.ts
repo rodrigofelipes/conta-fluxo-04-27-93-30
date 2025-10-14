@@ -65,6 +65,15 @@ function buildDescription(payload: CalendarEventRequest): string | undefined {
     segments.push(sanitizedDescription);
   }
 
+  // Adicionar participantes na descrição
+  if (payload.attendees && payload.attendees.length > 0) {
+    const participantes = payload.attendees
+      .map((attendee) => attendee.displayName || attendee.email)
+      .join(", ");
+    
+    segments.push(`Participantes: ${participantes}`);
+  }
+
   segments.push(`Tipo de agenda: ${payload.agendaType === "pessoal" ? "Pessoal" : "Compartilhada"}`);
 
   if (segments.length === 0) {

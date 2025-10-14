@@ -54,7 +54,10 @@ function normalizeTime(time: string | null | undefined): string {
   return time;
 }
 
-function buildAgendaDescription(agenda: AgendaRecord): string | undefined {
+function buildAgendaDescription(
+  agenda: AgendaRecord, 
+  collaboratorMap: Map<string, CollaboratorProfile>
+): string | undefined {
   const segments: string[] = [];
 
   if (agenda.cliente && agenda.cliente.trim().length > 0) {
@@ -64,6 +67,19 @@ function buildAgendaDescription(agenda: AgendaRecord): string | undefined {
   const sanitizedDescription = agenda.descricao?.trim();
   if (sanitizedDescription) {
     segments.push(sanitizedDescription);
+  }
+
+  // Adicionar participantes na descrição
+  if (agenda.collaborators_ids && agenda.collaborators_ids.length > 0) {
+    const participantes = agenda.collaborators_ids
+      .map((collaboratorId) => collaboratorMap.get(collaboratorId))
+      .filter((profile): profile is CollaboratorProfile => Boolean(profile?.name))
+      .map((profile) => profile.name)
+      .join(", ");
+    
+    if (participantes) {
+      segments.push(`Participantes: ${participantes}`);
+    }
   }
 
   if (agenda.agenda_type) {
@@ -297,7 +313,7 @@ async function syncSystemEventsToGoogle(accessToken: string) {
   for (const agenda of agendaEvents as AgendaRecord[]) {
     try {
       const { start, end } = getAgendaDateTimeRange(agenda, DEFAULT_TIME_ZONE);
-      const description = buildAgendaDescription(agenda);
+      const description = buildAgendaDescription(agenda, collaboratorMap);
 
       const attendees = (agenda.collaborators_ids || [])
         .map((collaboratorId) => collaboratorMap.get(collaboratorId))
