@@ -185,10 +185,12 @@ async function createCalendarEvent(payload: CalendarEventRequest, accessToken: s
       dateTime: end,
       timeZone,
     },
-    attendees: payload.attendees?.map(attendee => ({
-      email: attendee.email,
-      displayName: attendee.displayName,
-    })),
+    // NÃO incluir attendees devido à limitação da Service Account
+    // Service accounts não podem convidar participantes sem Domain-Wide Delegation
+    // attendees: payload.attendees?.map(attendee => ({
+    //   email: attendee.email,
+    //   displayName: attendee.displayName,
+    // })),
     extendedProperties: {
       private: {
         agendaId: payload.agendaId,

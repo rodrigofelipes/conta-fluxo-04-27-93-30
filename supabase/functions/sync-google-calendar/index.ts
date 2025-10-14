@@ -319,7 +319,8 @@ async function syncSystemEventsToGoogle(accessToken: string) {
           dateTime: end,
           timeZone: DEFAULT_TIME_ZONE,
         },
-        attendees: attendees.length ? attendees : undefined,
+        // NÃO incluir attendees devido à limitação da Service Account
+        // attendees: attendees.length ? attendees : undefined,
         extendedProperties: {
           private: {
             agendaId: agenda.id,
