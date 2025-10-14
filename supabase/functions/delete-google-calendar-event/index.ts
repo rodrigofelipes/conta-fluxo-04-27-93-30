@@ -1,9 +1,19 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
+import { GoogleAuth } from "npm:google-auth-library@9.14.1";
+import { corsHeaders } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const GOOGLE_CALENDAR_ID = Deno.env.get("GOOGLE_CALENDAR_ID");
+const GOOGLE_SERVICE_ACCOUNT_EMAIL = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_EMAIL");
+const GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY");
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error("Missing Supabase configuration");
+}
+
+const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 interface DeleteEventRequest {
   agendaId: string;
@@ -11,111 +21,101 @@ interface DeleteEventRequest {
 }
 
 async function getAccessToken(): Promise<string> {
-  const serviceAccountJson = Deno.env.get('GOOGLE_SERVICE_ACCOUNT');
-  if (!serviceAccountJson) {
-    throw new Error('GOOGLE_SERVICE_ACCOUNT não configurado');
+  if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+    throw new Error("Google service account credentials are not configured");
   }
 
-  const serviceAccount = JSON.parse(serviceAccountJson);
-  const now = Math.floor(Date.now() / 1000);
-  
-  const header = {
-    alg: 'RS256',
-    typ: 'JWT',
-  };
+  const formattedPrivateKey = GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.replace(/\\n/g, "\n");
 
-  const payload = {
-    iss: serviceAccount.client_email,
-    scope: 'https://www.googleapis.com/auth/calendar',
-    aud: 'https://oauth2.googleapis.com/token',
-    exp: now + 3600,
-    iat: now,
-  };
-
-  const encodedHeader = btoa(JSON.stringify(header));
-  const encodedPayload = btoa(JSON.stringify(payload));
-  const signatureInput = `${encodedHeader}.${encodedPayload}`;
-
-  const encoder = new TextEncoder();
-  const data = encoder.encode(signatureInput);
-  const privateKey = await crypto.subtle.importKey(
-    'pkcs8',
-    Uint8Array.from(atob(serviceAccount.private_key.replace(/-----.*-----/g, '').replace(/\n/g, '')), c => c.charCodeAt(0)),
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  
-  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, data);
-  const encodedSignature = btoa(String.fromCharCode(...new Uint8Array(signature)));
-
-  const jwt = `${signatureInput}.${encodedSignature}`;
-
-  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  const auth = new GoogleAuth({
+    credentials: {
+      client_email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      private_key: formattedPrivateKey,
+    },
+    scopes: ["https://www.googleapis.com/auth/calendar"],
   });
 
-  const tokenData = await tokenResponse.json();
-  return tokenData.access_token;
+  const client = await auth.getClient();
+  const accessToken = await client.getAccessToken();
+
+  if (!accessToken.token) {
+    throw new Error("Failed to obtain Google access token");
+  }
+
+  return accessToken.token;
 }
 
 async function deleteCalendarEvent(eventId: string, accessToken: string): Promise<void> {
-  const calendarId = Deno.env.get('GOOGLE_CALENDAR_ID') || 'primary';
+  if (!GOOGLE_CALENDAR_ID) {
+    throw new Error("Google Calendar ID is not configured");
+  }
 
   const response = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}`,
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(GOOGLE_CALENDAR_ID)}/events/${eventId}`,
     {
-      method: 'DELETE',
+      method: "DELETE",
       headers: {
-        'Authorization': `Bearer ${accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
       },
     }
   );
 
+  // 404 significa que o evento já foi deletado, o que é ok
   if (!response.ok && response.status !== 404) {
     const error = await response.text();
+    console.error("Google Calendar API error:", error);
     throw new Error(`Falha ao deletar evento: ${error}`);
   }
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    const payload: DeleteEventRequest = await req.json();
+    const payload = (await req.json()) as DeleteEventRequest;
 
     if (!payload.agendaId || !payload.googleEventId) {
-      throw new Error('agendaId e googleEventId são obrigatórios');
+      return new Response(
+        JSON.stringify({ error: "agendaId e googleEventId são obrigatórios" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const accessToken = await getAccessToken();
     await deleteCalendarEvent(payload.googleEventId, accessToken);
 
-    await supabase.from('google_calendar_sync_log').insert({
+    // Log da sincronização
+    await supabaseAdmin.from("google_calendar_sync_log").insert({
       agenda_id: payload.agendaId,
       google_event_id: payload.googleEventId,
-      sync_direction: 'system_to_google',
-      sync_status: 'success',
-      operation: 'delete',
+      sync_direction: "system_to_google",
+      sync_status: "success",
+      operation: "delete",
+      metadata: { deleted_at: new Date().toISOString() },
     });
 
-    return new Response(
-      JSON.stringify({ success: true }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (error) {
-    console.error('Erro ao deletar evento no Google Calendar:', error);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    const message = error instanceof Error ? error.message : "Erro desconhecido";
+    console.error("Erro ao deletar evento no Google Calendar:", error);
+    
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
