@@ -594,6 +594,8 @@ export default function Agenda() {
           values.collaborators_ids || [],
           colaboradores.map(colaborador => ({ id: colaborador.id, name: colaborador.name }))
         );
+        const agendaId = (data as AgendaItem).id;
+
         const newAgendaItem: AgendaItem = {
           ...(data as AgendaItem),
           data_fim: (data as AgendaItem).data_fim || formattedEndDate,
@@ -603,11 +605,12 @@ export default function Agenda() {
         };
 
         let calendarSyncError: unknown = null;
+        let calendarResponse: Awaited<ReturnType<typeof createGoogleCalendarEvent>> | null = null;
 
         try {
           const calendarAttendees = mapCollaboratorsToAttendees(values.collaborators_ids, colaboradores);
-          const calendarResponse = await createGoogleCalendarEvent({
-            agendaId: (data as AgendaItem).id,
+          calendarResponse = await createGoogleCalendarEvent({
+            agendaId,
             title: values.titulo.trim(),
             description: basePayload.descricao,
             startDate: formattedDate,
@@ -628,6 +631,24 @@ export default function Agenda() {
         } catch (syncError) {
           calendarSyncError = syncError;
           console.error('Erro ao sincronizar com Google Calendar:', syncError);
+        }
+
+        if (calendarSyncError && !newAgendaItem.google_event_id) {
+          try {
+            const { data: refreshedAgenda } = await supabase
+              .from('agenda')
+              .select('google_event_id')
+              .eq('id', agendaId)
+              .maybeSingle();
+
+            if (refreshedAgenda?.google_event_id) {
+              newAgendaItem.google_event_id = refreshedAgenda.google_event_id;
+              calendarSyncError = null;
+              console.info('Google Calendar sincronizado após verificação adicional.');
+            }
+          } catch (verificationError) {
+            console.error('Erro ao verificar sincronização com Google Calendar:', verificationError);
+          }
         }
 
         setAgenda(prev => [
