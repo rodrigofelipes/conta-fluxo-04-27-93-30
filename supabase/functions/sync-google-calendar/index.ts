@@ -222,6 +222,32 @@ async function getAccessToken(): Promise<string> {
   return accessToken;
 }
 
+/**
+ * Parse ISO 8601 datetime string (with timezone) to { date, time }
+ * Example: "2025-10-14T02:00:00-03:00" -> { date: "2025-10-14", time: "02:00:00" }
+ */
+function parseISOWithTimezone(isoString: string): { date: string; time: string | null } {
+  if (!isoString) {
+    return { date: new Date().toISOString().split('T')[0], time: null };
+  }
+
+  // Check if it's a date-only string (e.g., "2025-10-14")
+  if (!isoString.includes('T')) {
+    return { date: isoString, time: null };
+  }
+
+  // Split ISO string into date and time parts
+  const [datePart, timePart] = isoString.split('T');
+  
+  // Extract time without timezone offset (HH:MM:SS)
+  const timeWithoutOffset = timePart.split(/[+-Z]/)[0];
+  
+  return {
+    date: datePart,
+    time: timeWithoutOffset || null
+  };
+}
+
 async function syncSystemEventsToGoogle(accessToken: string) {
   if (!GOOGLE_CALENDAR_ID) {
     throw new Error("Google Calendar ID is not configured");
@@ -471,8 +497,8 @@ async function syncEventsFromGoogle() {
       const endDateTime = event.end?.dateTime || event.end?.date || startDateTime;
       
       // Parser ISO com timezone: retorna [date, time] considerando o offset
-      const startParsed = parseGoogleEventDateTime(startDateTime, event.start.timeZone);
-      const endParsed = parseGoogleEventDateTime(endDateTime, event.end?.timeZone);
+      const startParsed = parseISOWithTimezone(startDateTime);
+      const endParsed = parseISOWithTimezone(endDateTime);
       
       const agendaData = {
         titulo: event.summary || "Sem título",
