@@ -10,9 +10,21 @@ interface CreateUserRequest {
   email: string;
   password: string;
   username: string;
-  fullName?: string;  
+  fullName?: string;
   telefone?: string;
   role?: string;
+}
+
+const supabaseUrl = Deno.env.get('SUPABASE_URL');
+const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+const adminRoles = (Deno.env.get('USER_MANAGEMENT_ADMIN_ROLES') ?? 'admin')
+  .split(',')
+  .map((role) => role.trim())
+  .filter(Boolean);
+
+if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+  throw new Error('Missing Supabase environment configuration');
 }
 
 // Helper function to ensure user profile and role data are synchronized
@@ -102,28 +114,68 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Verificar variáveis de ambiente
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    
     console.log('🔧 Environment check:', {
       hasSupabaseUrl: !!supabaseUrl,
       hasServiceRoleKey: !!serviceRoleKey,
-      supabaseUrlLength: supabaseUrl?.length || 0,
-      serviceRoleKeyLength: serviceRoleKey?.length || 0
+      hasAnonKey: !!supabaseAnonKey,
     });
 
-    if (!supabaseUrl || !serviceRoleKey) {
-      console.error('❌ Missing environment variables');
+    const authHeader = req.headers.get('Authorization');
+
+    if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
+      console.warn('❌ Missing authorization header');
       return new Response(
-        JSON.stringify({ 
-          error: 'Server configuration error', 
-          missing: !supabaseUrl ? 'SUPABASE_URL' : 'SERVICE_ROLE_KEY' 
-        }),
-        { 
+        JSON.stringify({ error: 'Unauthorized' }),
+        {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500 
-        }
+          status: 401,
+        },
+      );
+    }
+
+    const supabaseUserClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+    });
+
+    const { data: authData, error: authError } = await supabaseUserClient.auth.getUser();
+
+    if (authError || !authData?.user) {
+      console.error('❌ Failed to validate requester session:', authError);
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 401,
+        },
+      );
+    }
+
+    const { data: requesterProfile, error: requesterProfileError } = await supabaseUserClient
+      .from('profiles')
+      .select('role')
+      .eq('user_id', authData.user.id)
+      .maybeSingle();
+
+    if (requesterProfileError) {
+      console.error('❌ Failed to retrieve requester profile:', requesterProfileError);
+      throw new Error('Failed to validate requester permissions');
+    }
+
+    if (!requesterProfile || !adminRoles.includes(requesterProfile.role ?? '')) {
+      console.warn('🚫 Unauthorized user attempted to create admin user', {
+        userId: authData.user.id,
+        role: requesterProfile?.role,
+      });
+      return new Response(
+        JSON.stringify({ error: 'Forbidden' }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 403,
+        },
       );
     }
 
