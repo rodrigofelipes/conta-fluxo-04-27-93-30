@@ -14,6 +14,18 @@ interface EmailRequest {
   message?: string;
 }
 
+const supabaseUrl = Deno.env.get('SUPABASE_URL');
+const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+const adminRoles = (Deno.env.get('EMAIL_SENDER_ADMIN_ROLES') ?? 'admin')
+  .split(',')
+  .map((role) => role.trim())
+  .filter(Boolean);
+
+if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
+  throw new Error('Missing Supabase environment configuration');
+}
+
 serve(async (req) => {
   // Handle CORS
   if (req.method === 'OPTIONS') {
@@ -23,18 +35,78 @@ serve(async (req) => {
   try {
     console.log('send-document-email started');
     console.log('Request method:', req.method);
-    
+
+    const authHeader = req.headers.get('Authorization');
+
+    if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
+      console.warn('Missing authorization header');
+      return new Response(
+        JSON.stringify({ success: false, error: 'Unauthorized' }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 401,
+        },
+      );
+    }
+
+    const supabaseUserClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+    });
+
     const requestBody = await req.json();
     console.log('Request body:', JSON.stringify(requestBody));
-    
+
     const { documentId, recipientEmail, recipientName, subject, message }: EmailRequest = requestBody;
 
     console.log('Dados recebidos:', { documentId, recipientEmail, recipientName, subject, message });
 
-    // Create Supabase client
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    // Validate authenticated user
+    const { data: authData, error: authError } = await supabaseUserClient.auth.getUser();
+
+    if (authError || !authData?.user) {
+      console.error('Erro ao validar usuário autenticado:', authError);
+      return new Response(
+        JSON.stringify({ success: false, error: 'Unauthorized' }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 401,
+        },
+      );
+    }
+
+    const { data: profile, error: profileError } = await supabaseUserClient
+      .from('profiles')
+      .select('role')
+      .eq('user_id', authData.user.id)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error('Erro ao buscar perfil do usuário:', profileError);
+      throw new Error('Falha ao validar permissões do usuário');
+    }
+
+    if (!profile || !adminRoles.includes(profile.role ?? '')) {
+      console.warn('Usuário não autorizado a enviar documentos por email', {
+        userId: authData.user.id,
+        role: profile?.role,
+      });
+      return new Response(
+        JSON.stringify({ success: false, error: 'Forbidden' }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 403,
+        },
+      );
+    }
+
+    // Create Supabase service client for privileged operations
+    const supabaseServiceClient = createClient(
+      supabaseUrl,
+      supabaseServiceRoleKey,
     );
 
     console.log('Supabase client criado');
@@ -50,7 +122,7 @@ serve(async (req) => {
 
     // Get document details
     console.log('Buscando documento:', documentId);
-    const { data: document, error: docError } = await supabaseClient
+    const { data: document, error: docError } = await supabaseUserClient
       .from('documents')
       .select('*')
       .eq('id', documentId)
@@ -65,7 +137,7 @@ serve(async (req) => {
 
     // Get document file URL
     console.log('Gerando URL para storage_path:', document.storage_path);
-    const { data: urlData, error: urlError } = await supabaseClient.storage
+    const { data: urlData, error: urlError } = await supabaseServiceClient.storage
       .from('task-files')
       .createSignedUrl(document.storage_path, 3600); // 1 hour expiry
 
@@ -126,7 +198,7 @@ serve(async (req) => {
 
     // Try to log email sent (optional, won't fail if table doesn't exist)
     try {
-      await supabaseClient
+      await supabaseServiceClient
         .from('email_logs')
         .insert({
           document_id: documentId,

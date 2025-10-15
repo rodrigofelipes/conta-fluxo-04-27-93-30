@@ -2,8 +2,13 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
-const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const supabaseUrl = Deno.env.get('SUPABASE_URL');
+const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+
+if (!supabaseUrl || !supabaseServiceKey || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment configuration');
+}
 
 serve(async (req) => {
   // Handle CORS
@@ -12,17 +17,22 @@ serve(async (req) => {
   }
 
   try {
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    
     // Get user from request
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       throw new Error('Missing authorization header');
     }
 
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+    });
+
+    const { data: { user }, error: userError } = await userClient.auth.getUser();
+
     if (userError || !user) {
       throw new Error('Unauthorized');
     }
@@ -34,7 +44,7 @@ serve(async (req) => {
     }
 
     // Verify document exists and user has access
-    const { data: document, error: docError } = await supabase
+    const { data: document, error: docError } = await userClient
       .from('client_documents')
       .select('id, document_name')
       .eq('id', documentId)
@@ -43,6 +53,8 @@ serve(async (req) => {
     if (docError || !document) {
       throw new Error('Document not found or access denied');
     }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Generate high-entropy token
     const tokenPart1 = crypto.randomUUID();

@@ -7,9 +7,26 @@ const corsHeaders = {
 };
 
 // Initialize Supabase client
-const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabaseUrl = Deno.env.get('SUPABASE_URL');
+const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+const allowedBuckets = (Deno.env.get('MEDIA_PROXY_ALLOWED_BUCKETS') ?? 'chat-files')
+  .split(',')
+  .map((bucket) => bucket.trim())
+  .filter(Boolean);
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables');
+}
+
+function createSupabaseClient(authHeader: string) {
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    global: {
+      headers: {
+        Authorization: authHeader,
+      },
+    },
+  });
+}
 
 serve(async (req) => {
   console.log(`${req.method} ${req.url}`);
@@ -27,6 +44,27 @@ serve(async (req) => {
   }
 
   try {
+    const authHeader = req.headers.get('Authorization');
+
+    if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
+      return new Response('Unauthorized', {
+        status: 401,
+        headers: corsHeaders,
+      });
+    }
+
+    const supabase = createSupabaseClient(authHeader);
+
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !authData?.user) {
+      console.error('❌ Failed to validate user session:', authError);
+      return new Response('Unauthorized', {
+        status: 401,
+        headers: corsHeaders,
+      });
+    }
+
     const url = new URL(req.url);
     const filePath = url.searchParams.get('path');
     const bucket = url.searchParams.get('bucket') || 'chat-files';
@@ -38,7 +76,15 @@ serve(async (req) => {
       });
     }
 
-    console.log(`📥 Serving media file: ${bucket}/${filePath}`);
+    if (!allowedBuckets.includes(bucket)) {
+      console.warn(`🚫 Attempt to access disallowed bucket: ${bucket}`);
+      return new Response('Forbidden', {
+        status: 403,
+        headers: corsHeaders,
+      });
+    }
+
+    console.log(`📥 Serving media file for user ${authData.user.id}: ${bucket}/${filePath}`);
 
     // Get file from Supabase Storage
     const { data, error } = await supabase.storage
