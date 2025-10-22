@@ -815,6 +815,78 @@ export type Database = {
         }
         Relationships: []
       }
+      meeting_atas: {
+        Row: {
+          action_items: Json | null
+          agenda_id: string | null
+          audio_file_url: string | null
+          audio_size_bytes: number | null
+          consent_obtained: boolean
+          consented_at: string | null
+          created_at: string | null
+          created_by: string
+          decisions: Json | null
+          duration_minutes: number
+          id: string
+          meeting_date: string
+          processed_summary: string | null
+          retention_until: string | null
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          action_items?: Json | null
+          agenda_id?: string | null
+          audio_file_url?: string | null
+          audio_size_bytes?: number | null
+          consent_obtained?: boolean
+          consented_at?: string | null
+          created_at?: string | null
+          created_by: string
+          decisions?: Json | null
+          duration_minutes: number
+          id?: string
+          meeting_date: string
+          processed_summary?: string | null
+          retention_until?: string | null
+          status?: string
+          updated_at?: string | null
+        }
+        Update: {
+          action_items?: Json | null
+          agenda_id?: string | null
+          audio_file_url?: string | null
+          audio_size_bytes?: number | null
+          consent_obtained?: boolean
+          consented_at?: string | null
+          created_at?: string | null
+          created_by?: string
+          decisions?: Json | null
+          duration_minutes?: number
+          id?: string
+          meeting_date?: string
+          processed_summary?: string | null
+          retention_until?: string | null
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_atas_agenda_id_fkey"
+            columns: ["agenda_id"]
+            isOneToOne: false
+            referencedRelation: "agenda"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meeting_atas_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meeting_minutes: {
         Row: {
           content: string
@@ -1563,6 +1635,98 @@ export type Database = {
         }
         Relationships: []
       }
+      utterances: {
+        Row: {
+          ata_id: string
+          confidence_score: number | null
+          created_at: string | null
+          diar_label: string
+          end_ms: number
+          id: string
+          identified_name: string | null
+          person_id: string | null
+          start_ms: number
+          transcript: string
+        }
+        Insert: {
+          ata_id: string
+          confidence_score?: number | null
+          created_at?: string | null
+          diar_label: string
+          end_ms: number
+          id?: string
+          identified_name?: string | null
+          person_id?: string | null
+          start_ms: number
+          transcript: string
+        }
+        Update: {
+          ata_id?: string
+          confidence_score?: number | null
+          created_at?: string | null
+          diar_label?: string
+          end_ms?: number
+          id?: string
+          identified_name?: string | null
+          person_id?: string | null
+          start_ms?: number
+          transcript?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "utterances_ata_id_fkey"
+            columns: ["ata_id"]
+            isOneToOne: false
+            referencedRelation: "meeting_atas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "utterances_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      voice_profiles: {
+        Row: {
+          created_at: string | null
+          id: string
+          last_updated: string | null
+          person_id: string
+          samples_count: number | null
+          similarity_threshold: number | null
+          voice_embedding: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          last_updated?: string | null
+          person_id: string
+          samples_count?: number | null
+          similarity_threshold?: number | null
+          voice_embedding?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          last_updated?: string | null
+          person_id?: string
+          samples_count?: number | null
+          similarity_threshold?: number | null
+          voice_embedding?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_profiles_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_conversations: {
         Row: {
           assigned_to: string | null
@@ -1617,7 +1781,7 @@ export type Database = {
     }
     Functions: {
       auto_update_phase_status_by_date: {
-        Args: Record<PropertyKey, never>
+        Args: never
         Returns: {
           phase_ids: string[]
           updated_count: number
@@ -1641,7 +1805,7 @@ export type Database = {
         Returns: boolean
       }
       cleanup_orphaned_uploads: {
-        Args: Record<PropertyKey, never>
+        Args: never
         Returns: {
           expired_tokens_count: number
           incomplete_uploads_count: number
@@ -1652,30 +1816,15 @@ export type Database = {
         Args: { phase_id_param: string; user_id_param: string }
         Returns: Json
       }
-      exec_sql: {
-        Args: { sql: string }
-        Returns: undefined
-      }
-      get_restricted_profile_ids: {
-        Args: Record<PropertyKey, never>
-        Returns: string[]
-      }
+      exec_sql: { Args: { sql: string }; Returns: undefined }
+      get_restricted_profile_ids: { Args: never; Returns: string[] }
       get_user_email_by_username: {
         Args: { username_input: string }
         Returns: string
       }
-      has_valid_session: {
-        Args: Record<PropertyKey, never>
-        Returns: boolean
-      }
-      is_admin: {
-        Args: Record<PropertyKey, never>
-        Returns: boolean
-      }
-      is_master_admin: {
-        Args: Record<PropertyKey, never>
-        Returns: boolean
-      }
+      has_valid_session: { Args: never; Returns: boolean }
+      is_admin: { Args: never; Returns: boolean }
+      is_master_admin: { Args: never; Returns: boolean }
       is_only_restricted_collaborators: {
         Args: { _collabs: string[] }
         Returns: boolean
@@ -1684,18 +1833,31 @@ export type Database = {
         Args: { new_schedule: string; user_id: string }
         Returns: Json
       }
+      match_voice_profile: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          identified_name: string
+          person_id: string
+          similarity: number
+        }[]
+      }
       phase_has_time_entries: {
         Args: { phase_id_param: string }
         Returns: boolean
       }
-      send_daily_whatsapp_agenda: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
+      purge_expired_atas: {
+        Args: never
+        Returns: {
+          purged_audio_paths: string[]
+          purged_count: number
+        }[]
       }
-      trigger_daily_whatsapp: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
-      }
+      send_daily_whatsapp_agenda: { Args: never; Returns: Json }
+      trigger_daily_whatsapp: { Args: never; Returns: Json }
       user_can_work_on_phase: {
         Args: { phase_id_param: string; user_id_param: string }
         Returns: boolean
