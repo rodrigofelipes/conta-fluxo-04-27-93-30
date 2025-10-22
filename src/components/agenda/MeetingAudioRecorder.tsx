@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Mic, Square, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, SUPABASE_PUBLISHABLE_KEY } from '@/integrations/supabase/client';
 
 interface Utterance {
   start_ms: number;
@@ -34,6 +34,16 @@ export function MeetingAudioRecorder({ agendaId, onRecordingComplete }: MeetingA
     setIsConnecting(true);
     
     try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+
+      if (!SUPABASE_PUBLISHABLE_KEY) {
+        throw new Error('Chave pública do Supabase não configurada');
+      }
+
       // Obter microfone com configurações de qualidade
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -59,9 +69,16 @@ export function MeetingAudioRecorder({ agendaId, onRecordingComplete }: MeetingA
       startTimeRef.current = Date.now();
 
       // Conectar ao WebSocket
-      const ws = new WebSocket(
-        `wss://wcdyxxthaqzchjpharwh.supabase.co/functions/v1/realtime-meeting`
-      );
+      const wsParams = new URLSearchParams({
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+      });
+
+      if (session?.access_token) {
+        wsParams.set('jwt', session.access_token);
+      }
+
+      const wsUrl = `wss://wcdyxxthaqzchjpharwh.supabase.co/functions/v1/realtime-meeting?${wsParams.toString()}`;
+      const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
         console.log('✅ WebSocket conectado');
@@ -100,7 +117,8 @@ export function MeetingAudioRecorder({ agendaId, onRecordingComplete }: MeetingA
         }
       };
 
-      ws.onerror = () => {
+      ws.onerror = (event) => {
+        console.error('Erro na conexão do WebSocket:', event);
         toast({
           title: "Erro de conexão",
           description: "Não foi possível conectar ao serviço de transcrição",
