@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +29,11 @@ export function MeetingAudioRecorder({ agendaId, onRecordingComplete }: MeetingA
   const audioChunksRef = useRef<Blob[]>([]);
   const startTimeRef = useRef<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const isProcessingRef = useRef(false);
+
+  useEffect(() => {
+    isProcessingRef.current = isProcessing;
+  }, [isProcessing]);
 
   const startRecording = useCallback(async () => {
     setIsConnecting(true);
@@ -73,8 +78,10 @@ export function MeetingAudioRecorder({ agendaId, onRecordingComplete }: MeetingA
         apikey: SUPABASE_PUBLISHABLE_KEY,
       });
 
+
       if (session?.access_token) {
         wsParams.set('jwt', session.access_token);
+
       }
 
       const wsUrl = `wss://wcdyxxthaqzchjpharwh.supabase.co/functions/v1/realtime-meeting?${wsParams.toString()}`;
@@ -102,10 +109,20 @@ export function MeetingAudioRecorder({ agendaId, onRecordingComplete }: MeetingA
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          
-          if (data.type === 'conversation.item.input_audio_transcription.completed') {
+
+          if (data.type === "error") {
+            console.error("Erro retornado pelo serviço de transcrição:", data.error);
+            toast({
+              title: "Erro no serviço de transcrição",
+              description: typeof data.error === "string" ? data.error : "Não foi possível processar a transcrição",
+              variant: "destructive",
+            });
+            return;
+          }
+
+          if (data.type === "conversation.item.input_audio_transcription.completed") {
             const elapsedMs = Date.now() - startTimeRef.current;
-            
+
             setUtterances(prev => [...prev, {
               start_ms: data.start_time || elapsedMs - 3000,
               end_ms: elapsedMs,
@@ -124,6 +141,17 @@ export function MeetingAudioRecorder({ agendaId, onRecordingComplete }: MeetingA
           description: "Não foi possível conectar ao serviço de transcrição",
           variant: "destructive"
         });
+      };
+
+      ws.onclose = (event) => {
+        if (!event.wasClean && !isProcessingRef.current) {
+          console.error("Conexão do WebSocket encerrada de forma inesperada:", event);
+          toast({
+            title: "Conexão encerrada",
+            description: "A conexão com o serviço de transcrição foi interrompida.",
+            variant: "destructive",
+          });
+        }
       };
 
       wsRef.current = ws;
