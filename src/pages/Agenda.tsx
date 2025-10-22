@@ -23,7 +23,9 @@ import {
   X,
   Gift,
   NotebookPen,
-  Search
+  Search,
+  Mic,
+  FileText
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -57,6 +59,9 @@ import { ptBR } from "date-fns/locale";
 import { HolidayDialog } from "@/components/agenda/HolidayDialog";
 import { HolidaySyncDialog } from "@/components/agenda/HolidaySyncDialog";
 import { GoogleCalendarTestTab } from "@/components/agenda/GoogleCalendarTestTab";
+import { MeetingAudioRecorder } from "@/components/agenda/MeetingAudioRecorder";
+import { MeetingMinutesViewer } from "@/components/agenda/MeetingMinutesViewer";
+import { ConsentDialog } from "@/components/agenda/ConsentDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { createGoogleCalendarEvent, type CalendarAttendee } from "@/integrations/googleCalendar/events";
 import { updateGoogleCalendarEvent, deleteGoogleCalendarEvent } from "@/integrations/googleCalendar/sync";
@@ -307,6 +312,13 @@ export default function Agenda() {
   const [minutesText, setMinutesText] = useState("");
   const [isSavingMinutes, setIsSavingMinutes] = useState(false);
   const [minutesSearchTerm, setMinutesSearchTerm] = useState("");
+  
+  // Estados para Ata Inteligente
+  const [isRecordingDialogOpen, setIsRecordingDialogOpen] = useState(false);
+  const [isConsentDialogOpen, setIsConsentDialogOpen] = useState(false);
+  const [isViewerDialogOpen, setIsViewerDialogOpen] = useState(false);
+  const [selectedAtaId, setSelectedAtaId] = useState<string | null>(null);
+  const [recordingAgendaId, setRecordingAgendaId] = useState<string | null>(null);
 
 
 
@@ -1943,6 +1955,23 @@ export default function Agenda() {
                 {/* Ações */}
                 <div className="flex flex-col sm:flex-row gap-2 md:gap-3 pt-3 md:pt-4 border-t">
                   <Button
+                    variant="default"
+                    className="flex-1 h-12 md:h-11 text-base md:text-sm"
+                    onClick={() => {
+                      if (selectedItem) {
+                        setRecordingAgendaId(selectedItem.id);
+                        setIsConsentDialogOpen(true);
+                        setIsDetailDialogOpen(false);
+                      }
+                    }}
+                  >
+                    <Mic className="w-4 h-4 mr-2" />
+                    Gravar Ata Inteligente
+                  </Button>
+                </div>
+                
+                <div className="flex flex-col sm:flex-row gap-2 md:gap-3">
+                  <Button
                     variant="outline"
                     className="flex-1 h-12 md:h-11 text-base md:text-sm"
                     onClick={() => selectedItem && handleEditClick(selectedItem)}
@@ -1990,6 +2019,64 @@ export default function Agenda() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog de Consentimento LGPD */}
+      <ConsentDialog
+        open={isConsentDialogOpen}
+        onConsent={() => {
+          setIsConsentDialogOpen(false);
+          setIsRecordingDialogOpen(true);
+        }}
+        onDecline={() => {
+          setIsConsentDialogOpen(false);
+          setRecordingAgendaId(null);
+        }}
+      />
+
+      {/* Dialog de Gravação de Ata */}
+      <Dialog open={isRecordingDialogOpen} onOpenChange={(open) => {
+        setIsRecordingDialogOpen(open);
+        if (!open) {
+          setRecordingAgendaId(null);
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Gravação de Ata Inteligente</DialogTitle>
+            <DialogDescription>
+              Grave a reunião e obtenha transcrição automática com identificação de falantes, 
+              resumo executivo e ações identificadas por IA.
+            </DialogDescription>
+          </DialogHeader>
+          {recordingAgendaId && (
+            <MeetingAudioRecorder
+              agendaId={recordingAgendaId}
+              onRecordingComplete={(ataId) => {
+                setSelectedAtaId(ataId);
+                setIsRecordingDialogOpen(false);
+                setIsViewerDialogOpen(true);
+                toast({
+                  title: "Ata processada!",
+                  description: "A gravação foi processada com sucesso.",
+                });
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Visualização de Ata */}
+      <Dialog open={isViewerDialogOpen} onOpenChange={setIsViewerDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Ata da Reunião</DialogTitle>
+            <DialogDescription>
+              Resumo executivo, decisões tomadas e próximos passos identificados automaticamente.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedAtaId && <MeetingMinutesViewer ataId={selectedAtaId} />}
+        </DialogContent>
+      </Dialog>
 
 
 
