@@ -1,10 +1,10 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Mic, Square, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, SUPABASE_PUBLISHABLE_KEY } from '@/integrations/supabase/client';
 
 interface Utterance {
   start_ms: number;
@@ -29,11 +29,26 @@ export function MeetingAudioRecorder({ agendaId, onRecordingComplete }: MeetingA
   const audioChunksRef = useRef<Blob[]>([]);
   const startTimeRef = useRef<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const isProcessingRef = useRef(false);
+
+  useEffect(() => {
+    isProcessingRef.current = isProcessing;
+  }, [isProcessing]);
 
   const startRecording = useCallback(async () => {
     setIsConnecting(true);
     
     try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+
+      if (!SUPABASE_PUBLISHABLE_KEY) {
+        throw new Error('Chave pública do Supabase não configurada');
+      }
+
       // Obter microfone com configurações de qualidade
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -59,9 +74,20 @@ export function MeetingAudioRecorder({ agendaId, onRecordingComplete }: MeetingA
       startTimeRef.current = Date.now();
 
       // Conectar ao WebSocket
-      const ws = new WebSocket(
-        `wss://wcdyxxthaqzchjpharwh.supabase.co/functions/v1/realtime-meeting`
-      );
+      const wsParams = new URLSearchParams({
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+      });
+
+      const accessToken = session?.access_token;
+      if (accessToken) {
+        wsParams.set("jwt", accessToken);
+        wsParams.set("Authorization", `Bearer ${accessToken}`);
+      } else {
+        wsParams.set("Authorization", `Bearer ${SUPABASE_PUBLISHABLE_KEY}`);
+      }
+
+      const wsUrl = `wss://wcdyxxthaqzchjpharwh.supabase.co/functions/v1/realtime-meeting?${wsParams.toString()}`;
+      const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
         console.log('✅ WebSocket conectado');
@@ -85,10 +111,20 @@ export function MeetingAudioRecorder({ agendaId, onRecordingComplete }: MeetingA
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          
-          if (data.type === 'conversation.item.input_audio_transcription.completed') {
+
+          if (data.type === "error") {
+            console.error("Erro retornado pelo serviço de transcrição:", data.error);
+            toast({
+              title: "Erro no serviço de transcrição",
+              description: typeof data.error === "string" ? data.error : "Não foi possível processar a transcrição",
+              variant: "destructive",
+            });
+            return;
+          }
+
+          if (data.type === "conversation.item.input_audio_transcription.completed") {
             const elapsedMs = Date.now() - startTimeRef.current;
-            
+
             setUtterances(prev => [...prev, {
               start_ms: data.start_time || elapsedMs - 3000,
               end_ms: elapsedMs,
@@ -100,12 +136,24 @@ export function MeetingAudioRecorder({ agendaId, onRecordingComplete }: MeetingA
         }
       };
 
-      ws.onerror = () => {
+      ws.onerror = (event) => {
+        console.error('Erro na conexão do WebSocket:', event);
         toast({
           title: "Erro de conexão",
           description: "Não foi possível conectar ao serviço de transcrição",
           variant: "destructive"
         });
+      };
+
+      ws.onclose = (event) => {
+        if (!event.wasClean && !isProcessingRef.current) {
+          console.error("Conexão do WebSocket encerrada de forma inesperada:", event);
+          toast({
+            title: "Conexão encerrada",
+            description: "A conexão com o serviço de transcrição foi interrompida.",
+            variant: "destructive",
+          });
+        }
       };
 
       wsRef.current = ws;
