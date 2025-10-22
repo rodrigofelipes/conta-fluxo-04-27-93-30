@@ -78,12 +78,10 @@ export function MeetingAudioRecorder({ agendaId, onRecordingComplete }: MeetingA
         apikey: SUPABASE_PUBLISHABLE_KEY,
       });
 
-      const accessToken = session?.access_token;
-      if (accessToken) {
-        wsParams.set("jwt", accessToken);
-        wsParams.set("Authorization", `Bearer ${accessToken}`);
-      } else {
-        wsParams.set("Authorization", `Bearer ${SUPABASE_PUBLISHABLE_KEY}`);
+
+      if (session?.access_token) {
+        wsParams.set('jwt', session.access_token);
+
       }
 
       const wsUrl = `wss://wcdyxxthaqzchjpharwh.supabase.co/functions/v1/realtime-meeting?${wsParams.toString()}`;
