@@ -59,21 +59,32 @@ export default function ClientLogin() {
         throw new Error("Usuário não encontrado");
       }
 
-      // Verificar se o usuário tem um cliente vinculado
-      const { data: clientData, error: clientError } = await supabase
+      // Verificar vínculo com clients; se não existir, criar automaticamente
+      const { data: clientRow } = await supabase
         .from('clients')
         .select('id')
         .eq('user_id', authData.user.id)
-        .single();
+        .maybeSingle();
 
-      if (clientError || !clientData) {
-        await supabase.auth.signOut();
-        toast({
-          variant: "destructive",
-          title: "Acesso negado",
-          description: "Este login é exclusivo para clientes.",
-        });
-        return;
+      if (!clientRow) {
+        const nameFromMeta = (authData.user.user_metadata as any)?.username || username || (authData.user.email?.split('@')[0]) || 'Cliente';
+        const { error: createClientError } = await supabase
+          .from('clients')
+          .insert([{ 
+            user_id: authData.user.id,
+            name: nameFromMeta,
+            email: authData.user.email ?? null,
+            classification: 'cliente'
+          }]);
+        if (createClientError) {
+          await supabase.auth.signOut();
+          toast({
+            variant: 'destructive',
+            title: 'Acesso negado',
+            description: 'Não foi possível vincular sua conta de cliente.',
+          });
+          return;
+        }
       }
 
       toast({
