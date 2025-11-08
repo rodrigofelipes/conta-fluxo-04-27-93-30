@@ -105,8 +105,12 @@ export default function ClientSignup() {
       
       let errorMessage = "Erro ao criar conta. Tente novamente.";
       
-      if (error.message?.includes("already registered")) {
-        errorMessage = "Este email já está cadastrado.";
+      if (error.message?.includes("already registered") || error.code === "user_already_exists") {
+        errorMessage = "Este email já está cadastrado. Use outro email ou faça login.";
+      } else if (error.message?.includes("invalid email")) {
+        errorMessage = "Email inválido. Verifique o formato do email.";
+      } else if (error.message?.includes("weak password")) {
+        errorMessage = "Senha muito fraca. Use pelo menos 6 caracteres.";
       }
 
       toast({
