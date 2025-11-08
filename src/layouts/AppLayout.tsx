@@ -104,6 +104,11 @@ export default function AppLayout() {
     checkSessionOnNavigation();
   }, [location.pathname, user, verifySession, isAuthReady]);
   const items = useMemo(() => {
+    // Clientes não devem ter acesso ao AppLayout - eles têm portal próprio
+    if (user?.role === "cliente") {
+      return [];
+    }
+
     let filteredNav = nav;
 
     // Filter by role permissions

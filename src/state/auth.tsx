@@ -3,7 +3,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 
-export type Role = "admin" | "user" | "supervisor" | "coordenador" | "marketing";
+export type Role = "admin" | "user" | "supervisor" | "coordenador" | "marketing" | "cliente";
 export type Setor = "PESSOAL" | "FISCAL" | "CONTABIL" | "PLANEJAMENTO" | "TODOS";
 
 const INACTIVE_USER_ERROR_CODE = "USER_INACTIVE";
@@ -464,6 +464,12 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isAuthReady } = useAuth();
   if (!isAuthReady) return <div className="flex items-center justify-center h-full w-full">Carregando sessão...</div>;
   if (!user) return <Navigate to="/login" replace />;
+  
+  // Redirect clients to their specific portal
+  if (user.role === "cliente") {
+    return <Navigate to="/portal-cliente/dashboard" replace />;
+  }
+  
   return <>{children}</>;
 }
 
