@@ -13,7 +13,7 @@ export interface PaymentLinkRow {
   link_token: string;
   description: string;
   amount: number;
-  status: 'active' | 'expired' | 'completed' | 'cancelled';
+  status: 'pending' | 'active' | 'expired' | 'completed' | 'cancelled';
   expires_at: string;
   created_at: string;
   accessed_at: string | null;
@@ -29,6 +29,7 @@ interface PaymentLinksTableProps {
 }
 
 const statusConfig: Record<PaymentLinkRow['status'], { label: string; className: string }> = {
+  pending: { label: 'Aguardando', className: 'bg-yellow-100 text-yellow-800' },
   active: { label: 'Ativo', className: 'bg-blue-100 text-blue-800' },
   expired: { label: 'Expirado', className: 'bg-gray-200 text-gray-800' },
   completed: { label: 'Pago', className: 'bg-green-100 text-green-800' },
