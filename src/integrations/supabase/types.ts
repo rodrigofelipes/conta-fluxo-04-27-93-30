@@ -1201,8 +1201,10 @@ export type Database = {
           id: string
           installment_id: string | null
           link_token: string
+          metadata: Json
           paid_at: string | null
           status: string
+          stripe_checkout_session_id: string | null
           stripe_checkout_url: string | null
           stripe_session_id: string | null
           updated_at: string | null
@@ -1219,8 +1221,10 @@ export type Database = {
           id?: string
           installment_id?: string | null
           link_token: string
+          metadata?: Json
           paid_at?: string | null
           status?: string
+          stripe_checkout_session_id?: string | null
           stripe_checkout_url?: string | null
           stripe_session_id?: string | null
           updated_at?: string | null
@@ -1237,8 +1241,10 @@ export type Database = {
           id?: string
           installment_id?: string | null
           link_token?: string
+          metadata?: Json
           paid_at?: string | null
           status?: string
+          stripe_checkout_session_id?: string | null
           stripe_checkout_url?: string | null
           stripe_session_id?: string | null
           updated_at?: string | null
