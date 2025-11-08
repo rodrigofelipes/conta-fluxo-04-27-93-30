@@ -24,6 +24,7 @@ import Marketing from "./pages/Marketing";
 import PaymentPortal from "./pages/PaymentPortal";
 import ClientPortal from "./pages/ClientPortal";
 import ClientLogin from "./pages/auth/ClientLogin";
+import ClientSignup from "./pages/auth/ClientSignup";
 import ClientProtectedRoute from "./components/auth/ClientProtectedRoute";
 
 import Login from "./pages/auth/Login";
@@ -64,6 +65,7 @@ const App = () => (
               
               {/* Client Portal Routes */}
               <Route path="/portal-cliente/login" element={<ClientLogin />} />
+              <Route path="/portal-cliente/cadastro" element={<ClientSignup />} />
               <Route element={<ClientProtectedRoute />}>
                 <Route path="/portal-cliente/dashboard" element={<ClientPortal />} />
               </Route>

@@ -6,10 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff, Lock, Mail } from "lucide-react";
+import { Eye, EyeOff, Lock, User } from "lucide-react";
 
 export default function ClientLogin() {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -19,11 +19,11 @@ export default function ClientLogin() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!email || !password) {
+    if (!username || !password) {
       toast({
         variant: "destructive",
         title: "Campos obrigatórios",
-        description: "Por favor, preencha email e senha.",
+        description: "Por favor, preencha usuário e senha.",
       });
       return;
     }
@@ -31,8 +31,23 @@ export default function ClientLogin() {
     setLoading(true);
 
     try {
+      // Buscar email pelo username
+      const { data: emailData } = await supabase.rpc('get_user_email_by_username', {
+        username_input: username
+      });
+
+      if (!emailData) {
+        toast({
+          variant: "destructive",
+          title: "Usuário não encontrado",
+          description: "Verifique seu nome de usuário.",
+        });
+        setLoading(false);
+        return;
+      }
+
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
+        email: emailData,
         password,
       });
 
@@ -73,7 +88,7 @@ export default function ClientLogin() {
       let errorMessage = "Erro ao fazer login. Verifique suas credenciais.";
       
       if (error.message?.includes("Invalid login credentials")) {
-        errorMessage = "Email ou senha incorretos.";
+        errorMessage = "Usuário ou senha incorretos.";
       } else if (error.message?.includes("Email not confirmed")) {
         errorMessage = "Por favor, confirme seu email antes de fazer login.";
       }
@@ -100,18 +115,18 @@ export default function ClientLogin() {
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="username">Usuário</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="seu@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="username"
+                  type="text"
+                  placeholder="seu_usuario"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                   className="pl-10"
                   disabled={loading}
-                  autoComplete="email"
+                  autoComplete="username"
                 />
               </div>
             </div>
@@ -145,7 +160,15 @@ export default function ClientLogin() {
               {loading ? "Entrando..." : "Entrar"}
             </Button>
 
-            <div className="text-center">
+            <div className="text-center space-y-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate("/portal-cliente/cadastro")}
+                className="w-full"
+              >
+                Criar conta
+              </Button>
               <Button
                 type="button"
                 variant="link"
