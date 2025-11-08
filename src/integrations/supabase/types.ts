@@ -1190,6 +1190,7 @@ export type Database = {
       }
       payment_links: {
         Row: {
+          accessed_at: string | null
           amount: number
           checkout_url: string | null
           client_id: string
@@ -1210,6 +1211,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          accessed_at?: string | null
           amount: number
           checkout_url?: string | null
           client_id: string
@@ -1230,6 +1232,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          accessed_at?: string | null
           amount?: number
           checkout_url?: string | null
           client_id?: string
@@ -1258,13 +1261,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "payment_links_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "payment_links_financial_transaction_id_fkey"
             columns: ["financial_transaction_id"]
             isOneToOne: false
@@ -1276,6 +1272,89 @@ export type Database = {
             columns: ["installment_id"]
             isOneToOne: false
             referencedRelation: "payment_installments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_transactions: {
+        Row: {
+          amount: number
+          client_financial_id: string | null
+          client_id: string
+          created_at: string | null
+          error_message: string | null
+          id: string
+          installment_id: string | null
+          metadata: Json
+          payment_date: string | null
+          payment_link_id: string | null
+          payment_method: string | null
+          status: string
+          stripe_payment_id: string | null
+          stripe_session_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          amount: number
+          client_financial_id?: string | null
+          client_id: string
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          installment_id?: string | null
+          metadata?: Json
+          payment_date?: string | null
+          payment_link_id?: string | null
+          payment_method?: string | null
+          status?: string
+          stripe_payment_id?: string | null
+          stripe_session_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          amount?: number
+          client_financial_id?: string | null
+          client_id?: string
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          installment_id?: string | null
+          metadata?: Json
+          payment_date?: string | null
+          payment_link_id?: string | null
+          payment_method?: string | null
+          status?: string
+          stripe_payment_id?: string | null
+          stripe_session_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_transactions_client_financial_id_fkey"
+            columns: ["client_financial_id"]
+            isOneToOne: false
+            referencedRelation: "client_financials"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_installment_id_fkey"
+            columns: ["installment_id"]
+            isOneToOne: false
+            referencedRelation: "payment_installments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_payment_link_id_fkey"
+            columns: ["payment_link_id"]
+            isOneToOne: false
+            referencedRelation: "payment_links"
             referencedColumns: ["id"]
           },
         ]
