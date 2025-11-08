@@ -42,6 +42,7 @@ import { MediaMessage } from "@/components/chat/MediaMessage";
 import { InternalChat } from "@/components/chat/InternalChat";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Database } from "@/integrations/supabase/types";
+import { useSearchParams } from "react-router-dom";
 
 interface WhatsAppContact {
   id: string;
@@ -99,6 +100,8 @@ const isOutgoingSubject = (subject?: string | null) =>
 export default function Chat() {
   const { user } = useAuth();
   const { showNotification } = useCustomNotifications();
+  const [searchParams] = useSearchParams();
+  const initialClientId = searchParams.get("clientId");
 
   // Verificar se o usuário tem acesso ao WhatsApp (admin ou supervisor)
   const hasWhatsAppAccess = user?.role === 'admin' || user?.role === 'supervisor';
@@ -143,6 +146,18 @@ export default function Chat() {
   useEffect(() => {
     contactsRef.current = contacts;
   }, [contacts]);
+
+  useEffect(() => {
+    if (!hasWhatsAppAccess) return;
+    if (!initialClientId) return;
+
+    const matchedContact = contacts.find(contact => contact.id === initialClientId);
+    if (!matchedContact) return;
+
+    setSelectedContact(matchedContact);
+    setChatMode('whatsapp');
+    setMobileContactsOpen(false);
+  }, [contacts, hasWhatsAppAccess, initialClientId]);
 
   const notifyNewMessage = useCallback(
     (message: string, contactName: string) => {

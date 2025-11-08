@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useMemo, useCallback } from "react";
 
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,13 +22,15 @@ import {
   AlertCircle,
   Timer,
   BarChart3,
-  ChevronDown
+  ChevronDown,
+  Mail,
+  MessageCircle
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { toast } from "@/hooks/use-toast";
-import { format, subMonths } from "date-fns";
+import { differenceInCalendarDays, format, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { ClientFinancialTab } from "@/components/financial/ClientFinancialTab";
@@ -37,6 +39,7 @@ import { IncomeManagement } from "@/components/financial/IncomeManagement";
 import { PaymentLinkGenerator } from "@/components/payments/PaymentLinkGenerator";
 import { PaymentLinksTable } from "@/components/payments/PaymentLinksTable";
 import type { PaymentLinkRow } from "@/components/payments/PaymentLinksTable";
+import { ClientFinancialEmailDialog } from "@/components/financial/ClientFinancialEmailDialog";
 
 
 /** *********************************************
@@ -300,6 +303,8 @@ interface Transaction {
 interface Client {
   id: string;
   name: string;
+  email?: string | null;
+  phone?: string | null;
 }
 
 interface BankAccount {
@@ -534,6 +539,7 @@ interface PaymentInstallmentRecord {
 
 export default function Financeiro() {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -556,6 +562,53 @@ export default function Financeiro() {
   const [originFilter, setOriginFilter] = useState<OverviewOriginFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [openOverviewGroups, setOpenOverviewGroups] = useState<Record<string, boolean>>({});
+  const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
+  const [selectedEmailClientId, setSelectedEmailClientId] = useState<string | null>(null);
+
+  const clientsById = useMemo(() => {
+    const map = new Map<string, Client>();
+    clients.forEach(client => {
+      map.set(client.id, client);
+    });
+    return map;
+  }, [clients]);
+
+  const selectedEmailClient = useMemo(() => {
+    if (!selectedEmailClientId) {
+      return null;
+    }
+    return clientsById.get(selectedEmailClientId) ?? null;
+  }, [selectedEmailClientId, clientsById]);
+
+  const openEmailDialogForClient = useCallback((clientId: string | null | undefined) => {
+    if (!clientId) return;
+    setSelectedEmailClientId(clientId);
+    setIsEmailDialogOpen(true);
+  }, []);
+
+  const handleEmailDialogOpenChange = useCallback((open: boolean) => {
+    setIsEmailDialogOpen(open);
+    if (!open) {
+      setSelectedEmailClientId(null);
+    }
+  }, []);
+
+  const handleNotifyClientByWhatsApp = useCallback((clientId: string | null | undefined) => {
+    if (!clientId) return;
+    navigate(`/chat?clientId=${clientId}`);
+  }, [navigate]);
+
+  const shouldEnableClientNotification = useCallback((record: OverviewRecord) => {
+    if (record.origin !== "client") return false;
+    if (record.type !== "income") return false;
+    if (record.status !== "overdue") return false;
+    if (!record.clientId) return false;
+
+    const dueDate = new Date(record.date);
+    if (Number.isNaN(dueDate.getTime())) return false;
+
+    return differenceInCalendarDays(new Date(), dueDate) >= 5;
+  }, []);
 
   useEffect(() => {
     const state = location.state as { activeTab?: string } | null;
@@ -600,7 +653,7 @@ export default function Financeiro() {
 
       const { data: clientsData, error: clientsError } = await supabase
         .from('clients')
-        .select('id, name')
+        .select('id, name, email, phone')
         .order('name');
       if (clientsError) throw clientsError;
 
@@ -682,12 +735,19 @@ export default function Financeiro() {
         .limit(200);
       if (installmentsError) throw installmentsError;
 
-      const clientMap = new Map<string, string>();
-      (clientsData ?? []).forEach(client => clientMap.set(client.id, client.name));
+      const normalizedClients: Client[] = (clientsData ?? []).map((client: any) => ({
+        id: String(client.id),
+        name: String(client.name),
+        email: client.email ? String(client.email) : null,
+        phone: client.phone ? String(client.phone) : null,
+      }));
+
+      const clientNameMap = new Map<string, string>();
+      normalizedClients.forEach(client => clientNameMap.set(client.id, client.name));
 
       const processedTransactions = (transactionsData ?? []).map((t: any) => ({
         ...t,
-        client: clientMap.get(t.client_id) || undefined,
+        client: clientNameMap.get(t.client_id) || undefined,
         transaction_type: t.transaction_type as "income" | "expense",
         transaction_category: t.transaction_category as "receivable" | "payable" | "project" | "fixed_expense" | "variable_expense",
         status: t.status as "pending" | "paid" | "overdue",
@@ -713,7 +773,7 @@ export default function Financeiro() {
       }));
 
       setTransactions(processedTransactions);
-      setClients(clientsData || []);
+      setClients(normalizedClients);
       setBankAccounts(bankAccountsData || []);
       setManualExpenses(mappedExpenses);
       const mappedCategories: Category[] = (categoriesData ?? []).map((category: any) => ({
@@ -1464,12 +1524,18 @@ export default function Financeiro() {
                         <TableHead>Data</TableHead>
                         <TableHead className="text-right">Valor</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredOverviewItems.map(item => {
                         if (item.type === "single") {
                           const record = item.record;
+                          const recordClientId = record.clientId ?? null;
+                          const clientInfo = recordClientId ? clientsById.get(recordClientId) ?? null : null;
+                          const canNotify = shouldEnableClientNotification(record);
+                          const canUseWhatsApp = Boolean(clientInfo?.phone);
+                          const canUseEmail = Boolean(clientInfo?.email);
                           return (
                             <TableRow key={`single-${record.origin}-${record.id}`}>
                               <TableCell>
@@ -1495,11 +1561,54 @@ export default function Financeiro() {
                                   {getStatusLabel(record.status)}
                                 </span>
                               </TableCell>
+                              <TableCell className="min-w-[220px]">
+                                {canNotify ? (
+                                  <div className="flex flex-wrap gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleNotifyClientByWhatsApp(recordClientId)}
+                                      disabled={!canUseWhatsApp}
+                                      title={
+                                        !canUseWhatsApp
+                                          ? "Cadastre um telefone WhatsApp para o cliente"
+                                          : undefined
+                                      }
+                                    >
+                                      <MessageCircle className="mr-2 h-4 w-4" />
+                                      WhatsApp
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => openEmailDialogForClient(recordClientId)}
+                                      disabled={!canUseEmail}
+                                      title={
+                                        !canUseEmail ? "Cadastre um email para o cliente" : undefined
+                                      }
+                                    >
+                                      <Mail className="mr-2 h-4 w-4" />
+                                      Email
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <span className="text-sm text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
                             </TableRow>
                           );
                         }
 
                         const isOpen = Boolean(openOverviewGroups[item.key]);
+                        const notifiableRecords = item.records.filter(shouldEnableClientNotification);
+                        const primaryRecord = notifiableRecords[0];
+                        const primaryClientId = primaryRecord?.clientId ?? null;
+                        const primaryClientInfo = primaryClientId
+                          ? clientsById.get(primaryClientId) ?? null
+                          : null;
+                        const groupCanNotify = Boolean(primaryRecord);
+                        const groupCanUseWhatsApp = Boolean(primaryClientInfo?.phone);
+                        const groupCanUseEmail = Boolean(primaryClientInfo?.email);
                         const pendingLabel = item.statusCounts.pending > 0 ? `${item.statusCounts.pending} pendente(s)` : null;
                         const paidLabel = item.statusCounts.paid > 0 ? `${item.statusCounts.paid} pago(s)` : null;
                         const overdueLabel = item.statusCounts.overdue > 0 ? `${item.statusCounts.overdue} em atraso` : null;
@@ -1557,10 +1666,44 @@ export default function Financeiro() {
                               <TableCell>
                                 <Badge variant={item.statusInfo.variant}>{item.statusInfo.label}</Badge>
                               </TableCell>
+                              <TableCell className="min-w-[220px]">
+                                {groupCanNotify ? (
+                                  <div className="flex flex-wrap gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleNotifyClientByWhatsApp(primaryClientId)}
+                                      disabled={!groupCanUseWhatsApp}
+                                      title={
+                                        !groupCanUseWhatsApp
+                                          ? "Cadastre um telefone WhatsApp para o cliente"
+                                          : undefined
+                                      }
+                                    >
+                                      <MessageCircle className="mr-2 h-4 w-4" />
+                                      WhatsApp
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => openEmailDialogForClient(primaryClientId)}
+                                      disabled={!groupCanUseEmail}
+                                      title={
+                                        !groupCanUseEmail ? "Cadastre um email para o cliente" : undefined
+                                      }
+                                    >
+                                      <Mail className="mr-2 h-4 w-4" />
+                                      Email
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <span className="text-sm text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
                             </TableRow>
                             {isOpen && (
                               <TableRow className="bg-muted/20">
-                                <TableCell colSpan={7}>
+                                <TableCell colSpan={8}>
                                   <div className="space-y-3">
                                     {item.records.map((installment, index) => (
                                       <div
@@ -1784,6 +1927,19 @@ export default function Financeiro() {
           <FinancialCategoryManagement />
         </TabsContent>
       </Tabs>
+      <ClientFinancialEmailDialog
+        client={
+          selectedEmailClient
+            ? {
+                id: selectedEmailClient.id,
+                name: selectedEmailClient.name,
+                email: selectedEmailClient.email,
+              }
+            : null
+        }
+        open={isEmailDialogOpen}
+        onOpenChange={handleEmailDialogOpenChange}
+      />
     </div>
   );
 }
