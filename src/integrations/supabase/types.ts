@@ -1064,6 +1064,82 @@ export type Database = {
         }
         Relationships: []
       }
+      overdue_expense_notifications: {
+        Row: {
+          client_id: string
+          created_at: string | null
+          due_date: string
+          email_sent_at: string | null
+          email_sent_by: string | null
+          expense_count: number
+          expense_ids: string[]
+          id: string
+          notification_date: string
+          status: string
+          total_amount: number
+          updated_at: string | null
+          whatsapp_message_id: string | null
+          whatsapp_sent_at: string | null
+          whatsapp_sent_by: string | null
+        }
+        Insert: {
+          client_id: string
+          created_at?: string | null
+          due_date: string
+          email_sent_at?: string | null
+          email_sent_by?: string | null
+          expense_count: number
+          expense_ids: string[]
+          id?: string
+          notification_date: string
+          status?: string
+          total_amount: number
+          updated_at?: string | null
+          whatsapp_message_id?: string | null
+          whatsapp_sent_at?: string | null
+          whatsapp_sent_by?: string | null
+        }
+        Update: {
+          client_id?: string
+          created_at?: string | null
+          due_date?: string
+          email_sent_at?: string | null
+          email_sent_by?: string | null
+          expense_count?: number
+          expense_ids?: string[]
+          id?: string
+          notification_date?: string
+          status?: string
+          total_amount?: number
+          updated_at?: string | null
+          whatsapp_message_id?: string | null
+          whatsapp_sent_at?: string | null
+          whatsapp_sent_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "overdue_expense_notifications_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "overdue_expense_notifications_email_sent_by_fkey"
+            columns: ["email_sent_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "overdue_expense_notifications_whatsapp_sent_by_fkey"
+            columns: ["whatsapp_sent_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payment_installments: {
         Row: {
           amount: number
@@ -1817,6 +1893,16 @@ export type Database = {
         Returns: Json
       }
       exec_sql: { Args: { sql: string }; Returns: undefined }
+      get_overdue_expenses_for_notification: {
+        Args: never
+        Returns: {
+          client_id: string
+          due_date: string
+          expense_count: number
+          expense_ids: string[]
+          total_amount: number
+        }[]
+      }
       get_restricted_profile_ids: { Args: never; Returns: string[] }
       get_user_email_by_username: {
         Args: { username_input: string }

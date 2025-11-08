@@ -40,6 +40,7 @@ import { PaymentLinkGenerator } from "@/components/payments/PaymentLinkGenerator
 import { PaymentLinksTable } from "@/components/payments/PaymentLinksTable";
 import type { PaymentLinkRow } from "@/components/payments/PaymentLinksTable";
 import { ClientFinancialEmailDialog } from "@/components/financial/ClientFinancialEmailDialog";
+import { OverdueExpenseNotifications } from "@/components/financial/OverdueExpenseNotifications";
 
 
 /** *********************************************
@@ -1333,6 +1334,8 @@ export default function Financeiro() {
         title="Financeiro"
         subtitle="Gestão financeira completa do escritório de arquitetura"
       />
+
+      <OverdueExpenseNotifications />
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as FinanceTab)} className="space-y-6">
 
