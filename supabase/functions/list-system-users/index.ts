@@ -62,8 +62,14 @@ serve(async (req) => {
     }
 
     const role = callerProfile?.role as string | undefined;
+    console.log("User attempting to list users. Role:", role, "User ID:", callerUser.user.id);
+    
     if (!(role === "admin" || role === "supervisor")) {
-      return new Response(JSON.stringify({ error: "Sem permissão" }), {
+      console.log("Access denied. User role:", role);
+      return new Response(JSON.stringify({ 
+        error: "Sem permissão",
+        details: `Role '${role}' não tem acesso a esta funcionalidade` 
+      }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

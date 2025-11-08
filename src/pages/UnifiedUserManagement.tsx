@@ -127,9 +127,18 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
           },
         });
 
-      if (profilesError) throw profilesError;
+      console.log('list-system-users response:', { profilesResponse, profilesError });
+
+      if (profilesError) {
+        console.error('Edge function error:', profilesError);
+        throw new Error(`Erro ao chamar função: ${profilesError.message}`);
+      }
+      
       if (!profilesResponse?.success) {
-        throw new Error(profilesResponse?.error || 'Falha ao carregar usuários do sistema');
+        const errorMsg = profilesResponse?.error || 'Falha ao carregar usuários do sistema';
+        const details = profilesResponse?.details || '';
+        console.error('Function returned error:', errorMsg, details);
+        throw new Error(`${errorMsg}${details ? ` - ${details}` : ''}`);
       }
 
       const profiles = (profilesResponse?.profiles ?? []) as Array<{
@@ -201,11 +210,12 @@ export default function UnifiedUserManagement({ showHeader = true }: UnifiedUser
       };
       setStats(newStats);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao carregar dados:', error);
+      const errorMessage = error?.message || "Erro ao carregar dados do sistema";
       toast({
-        title: "Erro",
-        description: "Erro ao carregar dados do sistema",
+        title: "Erro ao carregar usuários",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
