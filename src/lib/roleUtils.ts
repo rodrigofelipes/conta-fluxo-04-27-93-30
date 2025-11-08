@@ -1,4 +1,4 @@
-export type Role = "admin" | "user" | "supervisor" | "coordenador" | "marketing";
+export type Role = "admin" | "user" | "supervisor" | "coordenador" | "marketing" | "cliente";
 
 export const getRoleLabel = (role: Role): string => {
   switch (role) {
@@ -10,6 +10,8 @@ export const getRoleLabel = (role: Role): string => {
       return 'Coordenador';
     case 'marketing':
       return 'Marketing';
+    case 'cliente':
+      return 'Cliente';
     case 'user':
       return 'Colaborador';
     default:
@@ -25,6 +27,8 @@ export const getRoleBadgeVariant = (role: Role): 'default' | 'secondary' | 'dest
     case 'coordenador':
       return 'default';
     case 'marketing':
+      return 'outline';
+    case 'cliente':
       return 'outline';
     case 'user':
     default:

@@ -22,6 +22,9 @@ import CoordinatorPhases from "./pages/CoordinatorPhases";
 import RulesAndFeatures from "./pages/RulesAndFeatures";
 import Marketing from "./pages/Marketing";
 import PaymentPortal from "./pages/PaymentPortal";
+import ClientPortal from "./pages/ClientPortal";
+import ClientLogin from "./pages/auth/ClientLogin";
+import ClientProtectedRoute from "./components/auth/ClientProtectedRoute";
 
 import Login from "./pages/auth/Login";
 import AdminLogin from "./pages/auth/AdminLogin";
@@ -58,6 +61,12 @@ const App = () => (
               <Route path="/2fa" element={<TwoFA />} />
               <Route path="/google-drive-callback" element={<GoogleDriveCallback />} />
               <Route path="/pay/:token" element={<PaymentPortal />} />
+              
+              {/* Client Portal Routes */}
+              <Route path="/portal-cliente/login" element={<ClientLogin />} />
+              <Route element={<ClientProtectedRoute />}>
+                <Route path="/portal-cliente/dashboard" element={<ClientPortal />} />
+              </Route>
 
               <Route
                 path="/"
